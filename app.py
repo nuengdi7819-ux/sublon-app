@@ -596,17 +596,17 @@ def index():
                 <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
                 {view_all_btn}
             </div>
-            <!-- ปรับแก้ระยะห่างช่องวันที่กับช่องค้นหาให้แยกออกจากกันอย่างชัดเจน -->
-           <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
-                    <div class="d-flex align-items-center gap-1">
-                        <small class="text-muted">เลือกวันที่:</small>
-                        <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
-                    </div>
-                    <div class="d-flex align-items-center gap-1">
-                        <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
-                    </div>
-                    <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
-                </form>
+            <!-- ช่องเลือกวันที่และช่องค้นหาถูกจัดแยกเป็นระเบียบเรียบร้อย -->
+            <form method="GET" class="d-flex flex-column gap-2 mb-2 w-150">
+                <div class="d-flex align-items-center gap-2">
+                    <small class="text-muted fw-bold" style="min-width: 70px;">เลือกวันที่:</small>
+                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">ค้นหา</button>
+                </div>
+            </form>
         </div>
         
         <div class="table-responsive desktop-table-view">
