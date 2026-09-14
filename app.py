@@ -526,6 +526,12 @@ def index():
         table_title = "📋 รายการทั้งหมด"
         view_all_btn = ''
 
+    sel_all = "selected" if not status_filter else ""
+    sel_normal = "selected" if status_filter == "ปกติ" else ""
+    sel_partial = "selected" if status_filter == "ตัดยอดบางส่วน" else ""
+    sel_watch = "selected" if status_filter == "จับตาพิเศษ" else ""
+    sel_returned = "selected" if status_filter == "คืนแล้ว" else ""
+
     content = f"""
     <div class="row mb-4">
         <div class="col-md mb-3">
@@ -605,16 +611,15 @@ def index():
                 {view_all_btn}
             </div>
             
-            <!-- ช่องตัวกรองสถานะ วันที่ และค้นหา -->
             <form method="GET" class="p-3 bg-light rounded border border-warning row g-2">
                 <div class="col-md-4">
                     <label class="form-label small fw-bold mb-1 text-muted">สถานะ:</label>
                     <select name="status_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">ทั้งหมด</option>
-                        <option value="ปกติ" {% if request.args.get('status_filter') == 'ปกติ' %}selected{% endif %}>ปกติ</option>
-                        <option value="ตัดยอดบางส่วน" {% if request.args.get('status_filter') == 'ตัดยอดบางส่วน' %}selected{% endif %}>ตัดยอดบางส่วน</option>
-                        <option value="จับตาพิเศษ" {% if request.args.get('status_filter') == 'จับตาพิเศษ' %}selected{% endif %}>จับตาพิเศษ</option>
-                        <option value="คืนแล้ว" {% if request.args.get('status_filter') == 'คืนแล้ว' %}selected{% endif %}>คืนแล้ว</option>
+                        <option value="" """ + sel_all + """>ทั้งหมด</option>
+                        <option value="ปกติ" """ + sel_normal + """>ปกติ</option>
+                        <option value="ตัดยอดบางส่วน" """ + sel_partial + """>ตัดยอดบางส่วน</option>
+                        <option value="จับตาพิเศษ" """ + sel_watch + """>จับตาพิเศษ</option>
+                        <option value="คืนแล้ว" """ + sel_returned + """>คืนแล้ว</option>
                     </select>
                 </div>
                 <div class="col-md-4">
