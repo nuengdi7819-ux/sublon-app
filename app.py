@@ -705,7 +705,7 @@ def index():
     page_type = 'today' if filter_today == '1' else 'dashboard'
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     html = html.replace('{% block content %}{% endblock %}', content)
-    return render_template_string(html, title="Dashboard", page=page_type, filter_today=filter_today)
+    return render_template_string(html, title="Dashboard", page=page_type, filter_today=filter_today, search_query=search_query, start_date_filter=start_date_str, end_date_filter=end_date_str, table_rows_html=table_rows_html, cards_html=cards_html, modals_html=modals_html)
 
 @app.route('/export_data')
 def export_data():
