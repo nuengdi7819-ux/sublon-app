@@ -532,6 +532,9 @@ def index():
     sel_watch = "selected" if status_filter == "จับตาพิเศษ" else ""
     sel_returned = "selected" if status_filter == "คืนแล้ว" else ""
 
+    table_rows_html = rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</td></tr>"
+    cards_html = cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</p>"
+
     content = f"""
     <div class="row mb-4">
         <div class="col-md mb-3">
@@ -656,13 +659,13 @@ def index():
                     </tr>
                 </thead>
                 <tbody>
-                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</td></tr>"}
+                    {table_rows_html}
                 </tbody>
             </table>
         </div>
 
         <div class="mobile-card-view">
-            {cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</p>"}
+            {cards_html}
         </div>
     </div>
 
