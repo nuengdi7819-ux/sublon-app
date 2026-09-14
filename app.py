@@ -312,10 +312,8 @@ def index():
 
     search_query = request.args.get('search', '').strip()
     filter_today = request.args.get('filter_today', '').strip()
-    start_date_str = request.args.get('start_date_filter', '').strip()
-    end_date_str = request.args.get('end_date_filter', '').strip()
+    target_date_str = request.args.get('target_date', '').strip()
     month_filter = request.args.get('month', '').strip()
-    status_filter = request.args.get('status_filter', '').strip()
     thai_today = get_thai_today()
 
     query = Transaction.query
@@ -325,42 +323,20 @@ def index():
             (Transaction.phone.contains(search_query))
         )
     
-    if status_filter:
-        query = query.filter(Transaction.status == status_filter)
-
     if filter_today == '1':
         query = query.filter(
             (Transaction.start_date == thai_today) | 
             (Transaction.last_payment_date == thai_today)
         )
-    elif start_date_str and end_date_str:
+    elif target_date_str:
         try:
-            start_d = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            end_d = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
             query = query.filter(
-                ((Transaction.start_date >= start_d) & (Transaction.start_date <= end_d)) |
-                ((Transaction.last_payment_date >= start_d) & (Transaction.last_payment_date <= end_d))
+                (Transaction.start_date == target_date) | 
+                (Transaction.last_payment_date == target_date)
             )
         except Exception as e:
-            print("Date range parse error:", e)
-    elif start_date_str:
-        try:
-            start_d = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            query = query.filter(
-                (Transaction.start_date >= start_d) | 
-                (Transaction.last_payment_date >= start_d)
-            )
-        except Exception as e:
-            print("Start date parse error:", e)
-    elif end_date_str:
-        try:
-            end_d = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.filter(
-                (Transaction.start_date <= end_d) | 
-                (Transaction.last_payment_date <= end_d)
-            )
-        except Exception as e:
-            print("End date parse error:", e)
+            print("Date parse error:", e)
     elif month_filter:
         query = query.filter(
             db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]),
@@ -396,8 +372,6 @@ def index():
         badge_color = 'bg-success'
         if tx.status == 'ตัดยอดบางส่วน':
             badge_color = 'bg-info text-dark'
-        elif tx.status == 'จับตาพิเศษ':
-            badge_color = 'bg-warning text-dark fw-bold'
         elif tx.status == 'คืนแล้ว':
             badge_color = 'bg-secondary'
 
@@ -467,7 +441,6 @@ def index():
 
         selected_normal = "selected" if tx.status == "ปกติ" else ""
         selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
-        selected_watch = "selected" if tx.status == "จับตาพิเศษ" else ""
         selected_returned = "selected" if tx.status == "คืนแล้ว" else ""
 
         modals_html += f"""
@@ -518,7 +491,6 @@ def index():
                                 <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
                                     <option value="ปกติ" {selected_normal}>ปกติ</option>
                                     <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
-                                    <option value="จับตาพิเศษ" {selected_watch}>จับตาพิเศษ</option>
                                     <option value="คืนแล้ว" {selected_returned}>คืนแล้ว</option>
                                 </select>
                             </div>
@@ -536,14 +508,8 @@ def index():
     if filter_today == '1':
         table_title = "📋 รายการความเคลื่อนไหววันนี้"
         view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
-    elif start_date_str and end_date_str:
-        table_title = f"📋 รายการความเคลื่อนไหว ตั้งแต่วันที่ {start_date_str} ถึง {end_date_str}"
-        view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
-    elif start_date_str:
-        table_title = f"📋 รายการความเคลื่อนไหว ตั้งแต่วันที่ {start_date_str}"
-        view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
-    elif end_date_str:
-        table_title = f"📋 รายการความเคลื่อนไหว ถึงวันที่ {end_date_str}"
+    elif target_date_str:
+        table_title = f"📋 รายการความเคลื่อนไหววันที่: {target_date_str}"
         view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
     elif month_filter:
         table_title = f"📋 รายการประจำเดือน: {month_filter}"
@@ -551,15 +517,6 @@ def index():
     else:
         table_title = "📋 รายการทั้งหมด"
         view_all_btn = ''
-
-    sel_all = "selected" if not status_filter else ""
-    sel_normal = "selected" if status_filter == "ปกติ" else ""
-    sel_partial = "selected" if status_filter == "ตัดยอดบางส่วน" else ""
-    sel_watch = "selected" if status_filter == "จับตาพิเศษ" else ""
-    sel_returned = "selected" if status_filter == "คืนแล้ว" else ""
-
-    table_rows_html = rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</td></tr>"
-    cards_html = cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</p>"
 
     content = f"""
     <div class="row mb-4">
@@ -634,38 +591,20 @@ def index():
     </div>
 
     <div class="card p-4 shadow-sm border-warning">
-        <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
                 <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
                 {view_all_btn}
             </div>
-            
-            <form method="GET" class="p-3 bg-light rounded border border-warning row g-2">
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold mb-1 text-muted">สถานะ:</label>
-                    <select name="status_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="" """ + sel_all + """>ทั้งหมด</option>
-                        <option value="ปกติ" """ + sel_normal + """>ปกติ</option>
-                        <option value="ตัดยอดบางส่วน" """ + sel_partial + """>ตัดยอดบางส่วน</option>
-                        <option value="จับตาพิเศษ" """ + sel_watch + """>จับตาพิเศษ</option>
-                        <option value="คืนแล้ว" """ + sel_returned + """>คืนแล้ว</option>
-                    </select>
+            <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="d-flex align-items-center gap-1">
+                    <small class="text-muted">เลือกวันที่:</small>
+                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold mb-1 text-muted">📅 ตั้งแต่วันที่:</label>
-                    <input type="date" name="start_date_filter" class="form-control form-control-sm" value="{start_date_str}" onchange="this.form.submit()">
+                <div class="d-flex align-items-center gap-1">
+                    <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold mb-1 text-muted">📅 ถึงวันที่:</label>
-                    <input type="date" name="end_date_filter" class="form-control form-control-sm" value="{end_date_str}" onchange="this.form.submit()">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold mb-1 text-muted">🔍 ค้นหา:</label>
-                    <div class="input-group input-group-sm">
-                        <input type="text" name="search" class="form-control" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
-                        <button type="submit" class="btn btn-outline-danger">ค้นหา</button>
-                    </div>
-                </div>
+                <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
             </form>
         </div>
         
@@ -689,13 +628,13 @@ def index():
                     </tr>
                 </thead>
                 <tbody>
-                    {table_rows_html}
+                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</td></tr>"}
                 </tbody>
             </table>
         </div>
 
         <div class="mobile-card-view">
-            {cards_html}
+            {cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</p>"}
         </div>
     </div>
 
@@ -705,7 +644,7 @@ def index():
     page_type = 'today' if filter_today == '1' else 'dashboard'
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     html = html.replace('{% block content %}{% endblock %}', content)
-    return render_template_string(html, title="Dashboard", page=page_type, filter_today=filter_today, search_query=search_query, start_date_filter=start_date_str, end_date_filter=end_date_str, table_rows_html=table_rows_html, cards_html=cards_html, modals_html=modals_html)
+    return render_template_string(html, title="Dashboard", page=page_type, filter_today=filter_today)
 
 @app.route('/export_data')
 def export_data():
@@ -852,6 +791,8 @@ def update_payment(tx_id):
             tx.principal = 0.0
             if not tx.closed_date:
                 tx.closed_date = thai_today
+        elif tx.principal < tx.original_principal:
+            tx.status = 'ตัดยอดบางส่วน'
         else:
             if new_status:
                 tx.status = new_status
@@ -893,7 +834,7 @@ def members():
             <td><strong>{t.total_paid:,.2f}</strong></td>
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
         </tr>
         """
     
@@ -952,7 +893,7 @@ def sales_members():
                 <td><strong>{t.total_paid:,.2f}</strong></td>
                 <td>{t.daily_interest:,.2f}</td>
                 <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-                <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+                <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
             </tr>
             """
         sales_content += f"""
@@ -1010,7 +951,7 @@ def customer_summary():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
         </tr>
         """
 
@@ -1068,7 +1009,7 @@ def customer_emergency():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
         </tr>
         """
 
@@ -1125,7 +1066,7 @@ def customer_gold():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
         </tr>
         """
 
@@ -1191,7 +1132,7 @@ def customer_debt():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{installment_info}</td>
             <td class="text-success fw-bold">{t.total_paid:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
         </tr>
         """
 
