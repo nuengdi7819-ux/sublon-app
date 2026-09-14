@@ -314,6 +314,7 @@ def index():
     filter_today = request.args.get('filter_today', '').strip()
     target_date_str = request.args.get('target_date', '').strip()
     month_filter = request.args.get('month', '').strip()
+    status_filter = request.args.get('status_filter', '').strip()
     thai_today = get_thai_today()
 
     query = Transaction.query
@@ -323,6 +324,9 @@ def index():
             (Transaction.phone.contains(search_query))
         )
     
+    if status_filter:
+        query = query.filter(Transaction.status == status_filter)
+
     if filter_today == '1':
         query = query.filter(
             (Transaction.start_date == thai_today) | 
@@ -372,6 +376,8 @@ def index():
         badge_color = 'bg-success'
         if tx.status == 'ตัดยอดบางส่วน':
             badge_color = 'bg-info text-dark'
+        elif tx.status == 'จับตาพิเศษ':
+            badge_color = 'bg-warning text-dark fw-bold'
         elif tx.status == 'คืนแล้ว':
             badge_color = 'bg-secondary'
 
@@ -441,6 +447,7 @@ def index():
 
         selected_normal = "selected" if tx.status == "ปกติ" else ""
         selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
+        selected_watch = "selected" if tx.status == "จับตาพิเศษ" else ""
         selected_returned = "selected" if tx.status == "คืนแล้ว" else ""
 
         modals_html += f"""
@@ -491,6 +498,7 @@ def index():
                                 <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
                                     <option value="ปกติ" {selected_normal}>ปกติ</option>
                                     <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
+                                    <option value="จับตาพิเศษ" {selected_watch}>จับตาพิเศษ</option>
                                     <option value="คืนแล้ว" {selected_returned}>คืนแล้ว</option>
                                 </select>
                             </div>
@@ -591,20 +599,34 @@ def index():
     </div>
 
     <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3 flex-wrap">
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
                 {view_all_btn}
             </div>
-            <!-- ช่องเลือกวันที่และช่องค้นหาถูกจัดแยกเป็นระเบียบเรียบร้อย -->
-            <form method="GET" class="d-flex flex-column gap-2 mb-2 w-150">
-                <div class="d-flex align-items-center gap-2">
-                    <small class="text-muted fw-bold" style="min-width: 70px;">เลือกวันที่:</small>
-                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
+            
+            <!-- ช่องตัวกรองสถานะ วันที่ และค้นหา -->
+            <form method="GET" class="p-3 bg-light rounded border border-warning row g-2">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold mb-1 text-muted">สถานะ:</label>
+                    <select name="status_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">ทั้งหมด</option>
+                        <option value="ปกติ" {% if request.args.get('status_filter') == 'ปกติ' %}selected{% endif %}>ปกติ</option>
+                        <option value="ตัดยอดบางส่วน" {% if request.args.get('status_filter') == 'ตัดยอดบางส่วน' %}selected{% endif %}>ตัดยอดบางส่วน</option>
+                        <option value="จับตาพิเศษ" {% if request.args.get('status_filter') == 'จับตาพิเศษ' %}selected{% endif %}>จับตาพิเศษ</option>
+                        <option value="คืนแล้ว" {% if request.args.get('status_filter') == 'คืนแล้ว' %}selected{% endif %}>คืนแล้ว</option>
+                    </select>
                 </div>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
-                    <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">ค้นหา</button>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold mb-1 text-muted">📅 เลือกวันที่:</label>
+                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}" onchange="this.form.submit()">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold mb-1 text-muted">🔍 ค้นหา:</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" class="form-control" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
+                        <button type="submit" class="btn btn-outline-danger">ค้นหา</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -792,8 +814,6 @@ def update_payment(tx_id):
             tx.principal = 0.0
             if not tx.closed_date:
                 tx.closed_date = thai_today
-        elif tx.principal < tx.original_principal:
-            tx.status = 'ตัดยอดบางส่วน'
         else:
             if new_status:
                 tx.status = new_status
@@ -835,7 +855,7 @@ def members():
             <td><strong>{t.total_paid:,.2f}</strong></td>
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
         </tr>
         """
     
@@ -894,7 +914,7 @@ def sales_members():
                 <td><strong>{t.total_paid:,.2f}</strong></td>
                 <td>{t.daily_interest:,.2f}</td>
                 <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-                <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+                <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
             </tr>
             """
         sales_content += f"""
@@ -952,7 +972,7 @@ def customer_summary():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
         </tr>
         """
 
@@ -1010,7 +1030,7 @@ def customer_emergency():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
         </tr>
         """
 
@@ -1067,7 +1087,7 @@ def customer_gold():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td>{t.paid_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
         </tr>
         """
 
@@ -1133,7 +1153,7 @@ def customer_debt():
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{installment_info}</td>
             <td class="text-success fw-bold">{t.total_paid:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else ('bg-warning text-dark fw-bold' if t.status=='จับตาพิเศษ' else 'bg-secondary'))}">{t.status}</span></td>
         </tr>
         """
 
