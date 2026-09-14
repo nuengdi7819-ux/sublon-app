@@ -597,16 +597,16 @@ def index():
                 {view_all_btn}
             </div>
             <!-- ปรับแก้ระยะห่างช่องวันที่กับช่องค้นหาให้แยกออกจากกันอย่างชัดเจน -->
-            <form method="GET" class="d-flex align-items-center flex-wrap gap-3">
-                <div class="d-flex align-items-center gap-2">
-                    <small class="text-muted fw-semibold">เลือกวันที่:</small>
-                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                    <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}" style="min-width: 200px;">
+           <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+                    <div class="d-flex align-items-center gap-1">
+                        <small class="text-muted">เลือกวันที่:</small>
+                        <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
+                    </div>
                     <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
-                </div>
-            </form>
+                </form>
         </div>
         
         <div class="table-responsive desktop-table-view">
