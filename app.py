@@ -1,6 +1,7 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 import os
 import io
 import csv
@@ -884,13 +885,10 @@ def all_transactions():
     for tx in transactions:
         calculate_tx_values(tx)
 
-    # แยกบัญชีที่ยังไม่ปิด (Active) และบัญชีที่ปิดแล้ว (Closed)
     active_txs = [t for t in transactions if t.principal > 0]
     closed_txs = [t for t in transactions if t.principal <= 0]
 
-    # เรียง Active ตามวันที่ชำระล่าสุด (ล่าสุดขึ้นก่อน) ถ้าไม่มีให้ใช้ start_date
     active_txs.sort(key=lambda x: (x.last_payment_date if x.last_payment_date else x.start_date), reverse=True)
-    # เรียง Closed ตามวันที่ปิด/ล่าสุด
     closed_txs.sort(key=lambda x: (x.last_payment_date if x.last_payment_date else x.start_date), reverse=True)
 
     def build_rows(tx_list, is_closed=False):
@@ -927,11 +925,11 @@ def all_transactions():
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการบัญชีที่ยังไม่ปิด (เรียงตามวันที่ชำระล่าสุด)</h4>
             <div class="d-flex align-items-center gap-2">
-                <form method="GET" class="d-flex align-items-center gap-2">
+                <form method="GET" class="d-flex align-items-center gap-1">
                     <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
                     <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
                 </form>
-                <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard</a>
+                <a href="/" class="btn btn-sm btn-success fw-bold text-nowrap">🏠 หน้าหลัก</a>
             </div>
         </div>
         <div class="table-responsive">
