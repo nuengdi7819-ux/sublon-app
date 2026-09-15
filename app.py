@@ -45,10 +45,8 @@ class Transaction(db.Model):
     paid_interest = db.Column(db.Float, default=0.0)     
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
-    
-    # เพิ่มฟิลด์สำหรับจัดการ 3 ประเภทการชำระ
-    schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') # จ่ายทุกวัน, มีกำหนดจ่าย, ยังไม่มีกำหนดจ่าย
-    due_date = db.Column(db.Date, nullable=True) # วันที่กำหนดจ่าย (กรณีเลือก "มีกำหนดจ่าย")
+    schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน')
+    due_date = db.Column(db.Date, nullable=True)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -67,6 +65,14 @@ class PaymentHistory(db.Model):
 
 with app.app_context():
     db.create_all()
+    # ตรวจสอบและเพิ่มคอลัมน์อัตโนมัติหากฐานข้อมูลเดิมยังไม่มี
+    try:
+        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'จ่ายทุกวัน';"))
+        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS due_date DATE;"))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print("Migration check error:", e)
 
 BASE_LAYOUT = """
 <!DOCTYPE html>
@@ -141,11 +147,9 @@ BASE_LAYOUT = """
             <li class="nav-item"><a href="/" class="nav-link {% if page == 'dashboard' %}active{% endif %}" onclick="toggleSidebar()">📊 Dashboard (รายการวันนี้)</a></li>
             <li><a href="/all_transactions" class="nav-link {% if page == 'all' %}active{% endif %}" onclick="toggleSidebar()">📋 รายการทั้งหมด</a></li>
             <li><a href="/members" class="nav-link {% if page == 'members' %}active{% endif %}" onclick="toggleSidebar()">👥 1. สมาชิกทั้งหมด</a></li>
-            <!-- เพิ่มหัวข้อย่อย 3 ประเภทใต้สมาชิกทั้งหมด -->
             <li><a href="/members_daily" class="nav-link sub-menu {% if page == 'members_daily' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.1 จ่ายทุกวัน (ต้องทวง)</a></li>
             <li><a href="/members_scheduled" class="nav-link sub-menu {% if page == 'members_scheduled' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.2 มีกำหนดจ่าย</a></li>
             <li><a href="/members_unscheduled" class="nav-link sub-menu {% if page == 'members_unscheduled' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.3 ยังไม่มีกำหนดจ่าย</a></li>
-            
             <li><a href="/sales_members" class="nav-link {% if page == 'sales' %}active{% endif %}" onclick="toggleSidebar()">📋 2. สมาชิกภายใต้เซลล์</a></li>
             <li><a href="/customer_summary" class="nav-link {% if page == 'customer' %}active{% endif %}" onclick="toggleSidebar()">📂 3. สรุปลูกค้า</a></li>
             <li><a href="/customer_emergency" class="nav-link sub-menu {% if page == 'emergency' %}active{% endif %}" onclick="toggleSidebar()">🔸 3.1 เงินฉุกเฉิน</a></li>
@@ -372,7 +376,6 @@ def index():
             db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1])
         )
     elif not search_query:
-        # ระบบแจ้งเตือนทวงเงินวันนี้: แสดงลูกค้าประเภท "จ่ายทุกวัน" ที่ยังไม่คืนครบ หรือ ลูกค้าที่มี "กำหนดจ่ายวันนี้"
         query = query.filter(
             ((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | 
             (Transaction.due_date == thai_today) |
@@ -584,8 +587,6 @@ def index():
                 <label class="form-label">วันที่กู้/วันที่เริ่ม</label>
                 <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
             </div>
-
-            <!-- เพิ่มเลือกประเภทการจ่ายเงิน -->
             <div class="col-md-3">
                 <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
                 <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
@@ -598,7 +599,6 @@ def index():
                 <label class="form-label text-primary fw-bold">วันที่ครบกำหนดจ่าย</label>
                 <input type="date" name="due_date" class="form-control border-primary" value="{thai_today.strftime('%Y-%m-%d')}">
             </div>
-
             <div class="col-md-3">
                 <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
                 <input type="number" step="any" name="principal" class="form-control" required>
@@ -661,7 +661,6 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
-# ฟังก์ชันแสดงรายชื่อสมาชิกแยกตาม 3 ประเภท (อยู่ใต้เมนูสมาชิกทั้งหมด)
 def render_members_by_schedule(schedule_filter, page_name, page_title):
     if 'admin' not in session: return redirect(url_for('login'))
     
