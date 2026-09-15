@@ -46,7 +46,7 @@ class Transaction(db.Model):
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
-    due_day_of_month = db.Column(db.Integer, nullable=True)
+    due_day_of_month = db.Column(db.String(50), nullable=True) # รองรับเก็บหลายรอบ เช่น "6,20"
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -67,7 +67,7 @@ with app.app_context():
     db.create_all()
     try:
         db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'จ่ายทุกวัน';"))
-        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS due_day_of_month INTEGER;"))
+        db.session.execute(db.text("ALTER TABLE transactions ALTER COLUMN due_day_of_month TYPE VARCHAR(50);"))
         db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -203,20 +203,6 @@ BASE_LAYOUT = """
         backdrop.classList.toggle('show');
     }
 
-    function togglePullBox(dayVal) {
-        let box = document.getElementById('pullBox' + dayVal);
-        let btn = document.getElementById('pullBtn' + dayVal);
-        if (box.style.display === 'none') {
-            box.style.display = 'block';
-            btn.innerHTML = '➖ ซ่อนกล่องเพิ่มรายชื่อ';
-            btn.classList.replace('btn-outline-danger', 'btn-secondary');
-        } else {
-            box.style.display = 'none';
-            btn.innerHTML = '➕ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้';
-            btn.classList.replace('btn-secondary', 'btn-outline-danger');
-        }
-    }
-
     function togglePayInput(id) {
         let selectElem = document.getElementById('payType' + id);
         let divElem = document.getElementById('amountDiv' + id);
@@ -242,12 +228,6 @@ BASE_LAYOUT = """
         let val = document.getElementById('scheduleTypeSelect').value;
         let dayDiv = document.getElementById('dueDayDiv');
         if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
-    }
-
-    function handleEditScheduleChange(id) {
-        let val = document.getElementById('editScheduleType' + id).value;
-        let div = document.getElementById('editDueDayDiv' + id);
-        if (val === 'กำหนดจ่ายประจำเดือน') { div.style.display = 'block'; } else { div.style.display = 'none'; }
     }
 
     function filterCheckboxes(dayVal) {
@@ -344,7 +324,10 @@ def index():
             tx_type = request.form.get('type')
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
-            due_day = int(request.form.get('due_day_of_month')) if (schedule_type == 'กำหนดจ่ายประจำเดือน' and request.form.get('due_day_of_month')) else None
+            
+            # รองรับเลือกหลายรอบ (Checkbox)
+            selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
+            due_day_str = ",".join(selected_due_days) if selected_due_days else None
 
             inst_amt = 0.0
             if tx_type == 'ยอดค้างเก่า': inst_amt = float(request.form.get('installment_amount', 0))
@@ -353,7 +336,7 @@ def index():
                 type=tx_type, customer_name=request.form.get('customer_name'), phone=request.form.get('phone'),
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
-                schedule_type=schedule_type, due_day_of_month=due_day, status='ปกติ'
+                schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ'
             )
             db.session.add(new_tx)
             db.session.commit()
@@ -368,7 +351,6 @@ def index():
     month_filter = request.args.get('month', '').strip()
     thai_today = get_thai_today()
     today_day = thai_today.day
-    _, last_day_of_current_month = calendar.monthrange(thai_today.year, thai_today.month)
 
     query = Transaction.query.filter(Transaction.principal > 0)
     if search_query:
@@ -389,25 +371,22 @@ def index():
     elif month_filter:
         query = query.filter(db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]), db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1]))
     elif not search_query:
-        if 4 <= today_day <= 6: match_days = [4, 5, 6]
-        elif 9 <= today_day <= 12: match_days = [9, 10, 11, 12]
-        elif 14 <= today_day <= 16: match_days = [14, 15, 16]
-        elif 20 <= today_day <= 23: match_days = [20, 21, 22, 23]
-        elif 24 <= today_day <= 26: match_days = [24, 25, 26]
-        elif today_day >= 29 or today_day <= 2: match_days = [29, 30, 31, 1, 2]
-        else: match_days = [today_day]
+        # ตรวจสอบรอบวันปัจจุบันว่าตรงกับช่วงไหน
+        current_match_codes = []
+        if 4 <= today_day <= 6: current_match_codes.append("6")
+        if 9 <= today_day <= 12: current_match_codes.append("12")
+        if 14 <= today_day <= 16: current_match_codes.append("16")
+        if 20 <= today_day <= 23: current_match_codes.append("23")
+        if 24 <= today_day <= 26: current_match_codes.append("26")
+        if today_day >= 29 or today_day <= 2: current_match_codes.append("2")
 
-        if today_day >= 29 or today_day <= 2:
-            scheduled_today = Transaction.query.filter(
-                Transaction.principal > 0, 
-                db.or_(
-                    Transaction.due_day_of_month.in_([29, 30, 31, 1, 2]),
-                    Transaction.due_day_of_month >= 29,
-                    Transaction.due_day_of_month <= 2
-                )
-            ).all()
-        else:
-            scheduled_today = Transaction.query.filter(Transaction.principal > 0, Transaction.due_day_of_month.in_(match_days)).all()
+        all_active_txs = Transaction.query.filter(Transaction.principal > 0).all()
+        scheduled_today = []
+        for t in all_active_txs:
+            if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
+                saved_codes = t.due_day_of_month.split(',')
+                if any(code in current_match_codes for code in saved_codes):
+                    scheduled_today.append(t)
 
         other_txs = Transaction.query.filter(
             Transaction.principal > 0,
@@ -455,15 +434,10 @@ def index():
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
         
         schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
-        if tx.schedule_type == 'กำหนดจ่ายประจำเดือน':
-            d_val = tx.due_day_of_month or 2
-            if d_val in [4,5,6]: d_txt = "วันที่ 4-6"
-            elif d_val in [9,10,11,12]: d_txt = "วันที่ 9-12"
-            elif d_val in [14,15,16]: d_txt = "วันที่ 14-16"
-            elif d_val in [20,21,22,23]: d_txt = "วันที่ 20-23"
-            elif d_val in [24,25,26]: d_txt = "วันที่ 24-26"
-            else: d_txt = "วันที่ 29-2"
-            schedule_badge = f'<span class="badge bg-primary">รอบ: {d_txt}</span>'
+        if tx.schedule_type == 'กำหนดจ่ายประจำเดือน' and tx.due_day_of_month:
+            code_map = {"2": "29-2", "6": "4-6", "12": "9-12", "16": "14-16", "23": "20-23", "26": "24-26"}
+            labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
+            schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
 
         rows += f"""
         <tr>
@@ -636,20 +610,20 @@ def index():
                 <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
                 <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
                     <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
-                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน</option>
+                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
                     <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                 </select>
             </div>
-            <div class="col-md-3" id="dueDayDiv" style="display: none;">
-                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
-                <select name="due_day_of_month" class="form-select border-primary">
-                    <option value="2">ช่วงวันที่ 29-2 (รอบข้ามเดือน)</option>
-                    <option value="6">ช่วงวันที่ 4-6</option>
-                    <option value="12">ช่วงวันที่ 9-12</option>
-                    <option value="16" selected>ช่วงวันที่ 14-16</option>
-                    <option value="23">ช่วงวันที่ 20-23</option>
-                    <option value="26">ช่วงวันที่ 24-26</option>
-                </select>
+            <div class="col-md-6" id="dueDayDiv" style="display: none;">
+                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย (เลือกได้มากกว่า 1 รอบหากจ่าย 2 รอบ/เดือน)</label>
+                <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2 (ข้ามเดือน)</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
+                </div>
             </div>
             <div class="col-md-3">
                 <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
@@ -720,18 +694,18 @@ def members_scheduled_all():
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
 
     sections = [
-        (2, "📅 รอบช่วงวันที่ 29-2 (รอบข้ามเดือน)", [29, 30, 31, 1, 2]),
-        (6, "📅 รอบช่วงวันที่ 4-6", [4, 5, 6]),
-        (12, "📅 รอบช่วงวันที่ 9-12", [9, 10, 11, 12]),
-        (16, "📅 รอบช่วงวันที่ 14-16", [14, 15, 16]),
-        (23, "📅 รอบช่วงวันที่ 20-23", [20, 21, 22, 23]),
-        (26, "📅 รอบช่วงวันที่ 24-26", [24, 25, 26])
+        ("2", "📅 รอบช่วงวันที่ 29-2 (รอบข้ามเดือน)", ["2", "29", "30", "31", "1"]),
+        ("6", "📅 รอบช่วงวันที่ 4-6", ["6"]),
+        ("12", "📅 รอบช่วงวันที่ 9-12", ["12"]),
+        ("16", "📅 รอบช่วงวันที่ 14-16", ["16"]),
+        ("23", "📅 รอบช่วงวันที่ 20-23", ["23"]),
+        ("26", "📅 รอบช่วงวันที่ 24-26", ["26"])
     ]
 
     all_sections_html = ""
     all_edit_modals = ""
 
-    for day_val, section_title, day_list in sections:
+    for day_val, section_title, target_codes in sections:
         checkboxes_html = ""
         for t in all_txs_for_select:
             checkboxes_html += f"""
@@ -744,36 +718,37 @@ def members_scheduled_all():
             """
 
         pull_section = f"""
-        <div class="mb-3">
-            <button type="button" class="btn btn-outline-danger btn-sm fw-bold" id="pullBtn{day_val}" onclick="togglePullBox({day_val})">➕ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้</button>
-            <div class="card p-3 mt-2 bg-light border-warning shadow-sm" id="pullBox{day_val}" style="display: none;">
-                <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
-                <form action="/quick_assign_schedule_multi" method="POST">
-                    <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
-                    <input type="hidden" name="target_day" value="{day_val}">
-                    
-                    <div class="mb-2">
-                        <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes({day_val})">
-                    </div>
-                    <div class="d-flex gap-2 mb-2">
-                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, true)">✅ เลือกทั้งหมด</button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, false)">❌ ล้างทั้งหมด</button>
-                    </div>
+        <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
+            <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
+            <form action="/quick_assign_schedule_multi" method="POST">
+                <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
+                <input type="hidden" name="target_day" value="{day_val}">
+                
+                <div class="mb-2">
+                    <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes('{day_val}')">
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', true)">✅ เลือกทั้งหมด</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', false)">❌ ล้างทั้งหมด</button>
+                </div>
 
-                    <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
-                        {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
-                    </div>
+                <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
+                    {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
+                </div>
 
-                    <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้</button>
-                </form>
-            </div>
+                <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้ (เพิ่มรอบนี้)</button>
+            </form>
         </div>
         """
 
-        if day_val == 2:
-            txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', db.or_(Transaction.due_day_of_month.in_(day_list), Transaction.due_day_of_month >= 29, Transaction.due_day_of_month <= 2)).order_by(Transaction.customer_name.asc()).all()
-        else:
-            txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', Transaction.due_day_of_month.in_(day_list)).order_by(Transaction.customer_name.asc()).all()
+        # ดึงลูกค้าที่มีรอบนี้อยู่ในรายการ (เนื่องจากเก็บเป็น comma-separated)
+        all_active_txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน').all()
+        txs = []
+        for t in all_active_txs:
+            if t.due_day_of_month:
+                saved = t.due_day_of_month.split(',')
+                if any(code in target_codes for code in saved):
+                    txs.append(t)
 
         rows = ""
         for t in txs:
@@ -802,7 +777,8 @@ def members_scheduled_all():
             sel_sched = "selected" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else ""
             sel_unsched = "selected" if t.schedule_type == "ยังไม่มีกำหนดจ่าย" else ""
             display_day_div = "block" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else "none"
-            day_selected = t.due_day_of_month or 16
+            
+            current_saved_list = t.due_day_of_month.split(',') if t.due_day_of_month else []
 
             all_edit_modals += f"""
             <div class="modal fade" id="editScheduleModal{t.id}" tabindex="-1">
@@ -823,15 +799,15 @@ def members_scheduled_all():
                                     </select>
                                 </div>
                                 <div class="mb-3" id="editDueDayDiv{t.id}" style="display: {display_day_div};">
-                                    <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
-                                    <select name="due_day_of_month" class="form-select border-primary">
-                                        <option value="2" {'selected' if day_selected >= 29 or day_selected <= 2 else ''}>ช่วงวันที่ 29-2 (รอบข้ามเดือน)</option>
-                                        <option value="6" {'selected' if day_selected in [4,5,6] else ''}>ช่วงวันที่ 4-6</option>
-                                        <option value="12" {'selected' if day_selected in [9,10,11,12] else ''}>ช่วงวันที่ 9-12</option>
-                                        <option value="16" {'selected' if day_selected in [14,15,16] else ''}>ช่วงวันที่ 14-16</option>
-                                        <option value="23" {'selected' if day_selected in [20,21,22,23] else ''}>ช่วงวันที่ 20-23</option>
-                                        <option value="26" {'selected' if day_selected in [24,25,26] else ''}>ช่วงวันที่ 24-26</option>
-                                    </select>
+                                    <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย (เลือกได้หลายรอบ)</label>
+                                    <div class="p-2 border rounded bg-light d-flex flex-wrap gap-3">
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" {'checked' if '2' in current_saved_list else ''}><label class="form-check-label small">29-2 (ข้ามเดือน)</label></div>
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" {'checked' if '6' in current_saved_list else ''}><label class="form-check-label small">4-6</label></div>
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" {'checked' if '12' in current_saved_list else ''}><label class="form-check-label small">9-12</label></div>
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" {'checked' if '16' in current_saved_list else ''}><label class="form-check-label small">14-16</label></div>
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" {'checked' if '23' in current_saved_list else ''}><label class="form-check-label small">20-23</label></div>
+                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" {'checked' if '26' in current_saved_list else ''}><label class="form-check-label small">24-26</label></div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="modal-footer py-2">
@@ -888,7 +864,8 @@ def update_schedule(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     tx.schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
     if tx.schedule_type == 'กำหนดจ่ายประจำเดือน':
-        tx.due_day_of_month = int(request.form.get('due_day_of_month', 16))
+        selected_days = request.form.getlist('due_day_of_month')
+        tx.due_day_of_month = ",".join(selected_days) if selected_days else None
     else:
         tx.due_day_of_month = None
     db.session.commit()
@@ -907,8 +884,12 @@ def quick_assign_schedule_multi():
             tx = Transaction.query.get(int(tx_id))
             if tx:
                 tx.schedule_type = target_schedule
-                if target_schedule == 'กำหนดจ่ายประจำเดือน':
-                    tx.due_day_of_month = int(target_day) if target_day else 16
+                if target_schedule == 'กำหนดจ่ายประจำเดือน' and target_day:
+                    # ผสมรอบใหม่เข้าไปโดยไม่ลบของเดิม (ถ้ามีอยู่แล้ว) หรือตั้งค่าเพิ่ม
+                    current_list = tx.due_day_of_month.split(',') if tx.due_day_of_month else []
+                    if target_day not in current_list:
+                        current_list.append(target_day)
+                    tx.due_day_of_month = ",".join(current_list)
                 else:
                     tx.due_day_of_month = None
         db.session.commit()
@@ -924,15 +905,10 @@ def members():
         calculate_tx_values(t)
         s_date = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
         sched_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
-        if t.schedule_type == 'กำหนดจ่ายประจำเดือน':
-            d_val = t.due_day_of_month or 16
-            if d_val in [4,5,6]: d_txt = "วันที่ 4-6"
-            elif d_val in [9,10,11,12]: d_txt = "วันที่ 9-12"
-            elif d_val in [14,15,16]: d_txt = "วันที่ 14-16"
-            elif d_val in [20,21,22,23]: d_txt = "วันที่ 20-23"
-            elif d_val in [24,25,26]: d_txt = "วันที่ 24-26"
-            else: d_txt = "วันที่ 29-2"
-            sched_badge = f'<span class="badge bg-primary">รอบ: {d_txt}</span>'
+        if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
+            code_map = {"2": "29-2", "6": "4-6", "12": "9-12", "16": "14-16", "23": "20-23", "26": "24-26"}
+            labels = [code_map.get(c, c) for c in t.due_day_of_month.split(',')]
+            sched_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
         rows += f"<tr><td><b>{t.customer_name}</b></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {'bg-success' if t.status=='ปกติ' else 'bg-secondary'}'>{t.status}</span></td></tr>"
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ (ยังไม่ปิดบัญชี)</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
@@ -1184,7 +1160,7 @@ def import_data():
                     try: c_date = datetime.strptime(row['ClosedDate'].split()[0], '%Y-%m-%d').date()
                     except: pass
                 
-                day_val = int(row['DueDayOfMonth']) if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
+                day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
