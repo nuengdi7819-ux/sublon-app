@@ -45,8 +45,8 @@ class Transaction(db.Model):
     paid_interest = db.Column(db.Float, default=0.0)     
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
-    schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน')
-    due_date = db.Column(db.Date, nullable=True)
+    schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
+    due_day_of_month = db.Column(db.Integer, nullable=True)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -67,7 +67,7 @@ with app.app_context():
     db.create_all()
     try:
         db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'จ่ายทุกวัน';"))
-        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS due_date DATE;"))
+        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS due_day_of_month INTEGER;"))
         db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -144,10 +144,25 @@ BASE_LAYOUT = """
         <ul class="nav nav-pills flex-column mb-auto">
             <li class="nav-item"><a href="/" class="nav-link {% if page == 'dashboard' %}active{% endif %}" onclick="toggleSidebar()">📊 Dashboard (รายการวันนี้)</a></li>
             <li><a href="/all_transactions" class="nav-link {% if page == 'all' %}active{% endif %}" onclick="toggleSidebar()">📋 รายการทั้งหมด</a></li>
+            
             <li><a href="/members" class="nav-link {% if page == 'members' %}active{% endif %}" onclick="toggleSidebar()">👥 1. สมาชิกทั้งหมด</a></li>
-            <li><a href="/members_daily" class="nav-link sub-menu {% if page == 'members_daily' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.1 จ่ายทุกวัน (ต้องทวง)</a></li>
-            <li><a href="/members_scheduled" class="nav-link sub-menu {% if page == 'members_scheduled' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.2 มีกำหนดจ่าย</a></li>
-            <li><a href="/members_unscheduled" class="nav-link sub-menu {% if page == 'members_unscheduled' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.3 ยังไม่มีกำหนดจ่าย</a></li>
+            <li><a href="/members_daily" class="nav-link sub-menu {% if page == 'members_daily' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.1 จ่ายทุกวัน (ทวงทุกวัน)</a></li>
+            <li><a href="/members_unscheduled" class="nav-link sub-menu {% if page == 'members_unscheduled' %}active{% endif %}" onclick="toggleSidebar()">🔸 1.2 ยังไม่มีกำหนดจ่าย</a></li>
+            
+            <!-- จัดกลุ่มรวมภายใต้หัวข้อย่อยกำหนดจ่าย -->
+            <li><a href="#scheduleSubMenu" data-bs-toggle="collapse" class="nav-link {% if 'sched_' in page %}active{% endif %} d-flex justify-content-between align-items-center">🔸 1.3 กำหนดจ่ายประจำเดือน <span style="font-size: 0.8rem;">▼</span></a></li>
+            <div class="collapse {% if 'sched_' in page %}show{% endif %}" id="scheduleSubMenu">
+                <ul class="btn-toggle-nav list-unstyled fw-normal pb-1 small ps-2">
+                    <li><a href="/members_sched/1" class="nav-link sub-menu {% if page == 'sched_1' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 1 ของเดือน</a></li>
+                    <li><a href="/members_sched/5" class="nav-link sub-menu {% if page == 'sched_5' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 5 ของเดือน</a></li>
+                    <li><a href="/members_sched/10" class="nav-link sub-menu {% if page == 'sched_10' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 10 ของเดือน</a></li>
+                    <li><a href="/members_sched/15" class="nav-link sub-menu {% if page == 'sched_15' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 14-15-16</a></li>
+                    <li><a href="/members_sched/20" class="nav-link sub-menu {% if page == 'sched_20' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 20 ของเดือน</a></li>
+                    <li><a href="/members_sched/25" class="nav-link sub-menu {% if page == 'sched_25' %}active{% endif %}" onclick="toggleSidebar()">▪️ วันที่ 25 ของเดือน</a></li>
+                    <li><a href="/members_sched/30" class="nav-link sub-menu {% if page == 'sched_30' %}active{% endif %}" onclick="toggleSidebar()">▪️ ช่วงสิ้นเดือน (30)</a></li>
+                </ul>
+            </div>
+
             <li><a href="/sales_members" class="nav-link {% if page == 'sales' %}active{% endif %}" onclick="toggleSidebar()">📋 2. สมาชิกภายใต้เซลล์</a></li>
             <li><a href="/customer_summary" class="nav-link {% if page == 'customer' %}active{% endif %}" onclick="toggleSidebar()">📂 3. สรุปลูกค้า</a></li>
             <li><a href="/customer_emergency" class="nav-link sub-menu {% if page == 'emergency' %}active{% endif %}" onclick="toggleSidebar()">🔸 3.1 เงินฉุกเฉิน</a></li>
@@ -224,21 +239,14 @@ BASE_LAYOUT = """
 
     function handleScheduleChange() {
         let val = document.getElementById('scheduleTypeSelect').value;
-        let dueDateDiv = document.getElementById('dueDateDiv');
-        if (val === 'มีกำหนดจ่าย') { dueDateDiv.style.display = 'block'; } else { dueDateDiv.style.display = 'none'; }
+        let dayDiv = document.getElementById('dueDayDiv');
+        if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
     }
 
     function handleEditScheduleChange(id) {
         let val = document.getElementById('editScheduleType' + id).value;
-        let div = document.getElementById('editDueDateDiv' + id);
-        if (val === 'มีกำหนดจ่าย') { div.style.display = 'block'; } else { div.style.display = 'none'; }
-    }
-
-    function toggleSelectAll(source) {
-        checkboxes = document.querySelectorAll('input[name="selected_ids"]');
-        for(let checkbox of checkboxes) {
-            checkbox.checked = source.checked;
-        }
+        let div = document.getElementById('editDueDayDiv' + id);
+        if (val === 'กำหนดจ่ายประจำเดือน') { div.style.display = 'block'; } else { div.style.display = 'none'; }
     }
 
     function updateInterestOnDateChange(id, startDateStr, dailyInterest, paidInterest) {
@@ -318,8 +326,7 @@ def index():
             tx_type = request.form.get('type')
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
-            due_date_str = request.form.get('due_date')
-            parsed_due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date() if (schedule_type == 'มีกำหนดจ่าย' and due_date_str) else None
+            due_day = int(request.form.get('due_day_of_month')) if (schedule_type == 'กำหนดจ่ายประจำเดือน' and request.form.get('due_day_of_month')) else None
 
             inst_amt = 0.0
             if tx_type == 'ยอดค้างเก่า': inst_amt = float(request.form.get('installment_amount', 0))
@@ -328,7 +335,7 @@ def index():
                 type=tx_type, customer_name=request.form.get('customer_name'), phone=request.form.get('phone'),
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
-                schedule_type=schedule_type, due_date=parsed_due_date
+                schedule_type=schedule_type, due_day_of_month=due_day
             )
             db.session.add(new_tx)
             db.session.commit()
@@ -342,6 +349,7 @@ def index():
     end_date_str = request.args.get('end_date', '').strip()
     month_filter = request.args.get('month', '').strip()
     thai_today = get_thai_today()
+    today_day = thai_today.day
 
     query = Transaction.query
     if search_query:
@@ -362,7 +370,19 @@ def index():
     elif month_filter:
         query = query.filter(db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]), db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1]))
     elif not search_query:
-        query = query.filter(((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | (Transaction.due_date == thai_today) | (Transaction.start_date == thai_today) | (Transaction.last_payment_date == thai_today))
+        if today_day in [14, 15, 16]:
+            match_days = [14, 15, 16]
+        elif today_day >= 28:
+            match_days = [28, 29, 30, 31]
+        else:
+            match_days = [today_day]
+
+        query = query.filter(
+            ((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | 
+            (Transaction.due_day_of_month.in_(match_days)) |
+            (Transaction.start_date == thai_today) | 
+            (Transaction.last_payment_date == thai_today)
+        )
 
     transactions = query.order_by(Transaction.customer_name.asc()).all()
     for tx in transactions:
@@ -393,9 +413,10 @@ def index():
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
         
-        due_str = tx.due_date.strftime('%d/%m/%Y') if tx.due_date else '-'
         schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
-        if tx.schedule_type == 'มีกำหนดจ่าย': schedule_badge = f'<span class="badge bg-primary">ครบกำหนด: {due_str}</span>'
+        if tx.schedule_type == 'กำหนดจ่ายประจำเดือน':
+            day_text = "วันที่ 14-15-16" if tx.due_day_of_month == 15 else ("สิ้นเดือน (30)" if tx.due_day_of_month == 30 else f"วันที่ {tx.due_day_of_month}")
+            schedule_badge = f'<span class="badge bg-primary">รอบ: {day_text}</span>'
 
         rows += f"""
         <tr>
@@ -531,7 +552,7 @@ def index():
         table_title = f"📋 ผลการค้นหา: \"{search_query}\""
         view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
     else:
-        table_title = "🔔 รายการที่ต้องทวงวันนี้ (จ่ายทุกวัน / ครบกำหนดวันนี้)"
+        table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
@@ -570,13 +591,21 @@ def index():
                 <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
                 <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
                     <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
-                    <option value="มีกำหนดจ่าย">มีกำหนดจ่าย (ระบุวัน)</option>
+                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เช่น วันที่ 15)</option>
                     <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                 </select>
             </div>
-            <div class="col-md-3" id="dueDateDiv" style="display: none;">
-                <label class="form-label text-primary fw-bold">วันที่ครบกำหนดจ่าย</label>
-                <input type="date" name="due_date" class="form-control border-primary" value="{thai_today.strftime('%Y-%m-%d')}">
+            <div class="col-md-3" id="dueDayDiv" style="display: none;">
+                <label class="form-label text-primary fw-bold">รอบวันที่ต้องจ่ายของเดือน</label>
+                <select name="due_day_of_month" class="form-select border-primary">
+                    <option value="1">วันที่ 1 ของเดือน</option>
+                    <option value="5">วันที่ 5 ของเดือน</option>
+                    <option value="10">วันที่ 10 ของเดือน</option>
+                    <option value="15" selected>วันที่ 14 - 15 - 16</option>
+                    <option value="20">วันที่ 20 ของเดือน</option>
+                    <option value="25">วันที่ 25 ของเดือน</option>
+                    <option value="30">ช่วงสิ้นเดือน (30)</option>
+                </select>
             </div>
             <div class="col-md-3">
                 <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
@@ -640,27 +669,36 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
-# ฟังก์ชันแสดงรายชื่อและระบบเลือกติ๊กหลายรายการพร้อมกัน
-def render_members_by_schedule(schedule_filter, page_name, page_title):
+def render_members_by_schedule(filter_type, day_val, page_name, page_title):
     if 'admin' not in session: return redirect(url_for('login'))
     
-    if schedule_filter:
-        txs = Transaction.query.filter_by(schedule_type=schedule_filter).order_by(Transaction.customer_name.asc()).all()
-    else:
-        txs = Transaction.query.order_by(Transaction.customer_name.asc()).all()
+    query = Transaction.query
+    if filter_type == 'daily':
+        query = query.filter_by(schedule_type='จ่ายทุกวัน')
+    elif filter_type == 'unscheduled':
+        query = query.filter_by(schedule_type='ยังไม่มีกำหนดจ่าย')
+    elif filter_type == 'scheduled_day':
+        if day_val == 15:
+            query = query.filter(Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', Transaction.due_day_of_month.in_([14, 15, 16]))
+        elif day_val == 30:
+            query = query.filter(Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', Transaction.due_day_of_month >= 28)
+        else:
+            query = query.filter_by(schedule_type='กำหนดจ่ายประจำเดือน', due_day_of_month=day_val)
+            
+    txs = query.order_by(Transaction.customer_name.asc()).all()
 
-    # ดึงรายชื่อทั้งหมดสำหรับตารางเลือกดึงเข้ากลุ่ม
-    all_active_txs = Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all()
+    all_txs_for_select = Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all()
+    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
 
     rows, edit_modals = "", ""
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
-        due_str = t.due_date.strftime('%d/%m/%Y') if t.due_date else '-'
-        due_iso = t.due_date.strftime('%Y-%m-%d') if t.due_date else get_thai_today().strftime('%Y-%m-%d')
         
         schedule_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
-        if t.schedule_type == 'มีกำหนดจ่าย': schedule_badge = f'<span class="badge bg-primary">กำหนด: {due_str}</span>'
+        if t.schedule_type == 'กำหนดจ่ายประจำเดือน':
+            d_txt = "วันที่ 14-15-16" if t.due_day_of_month == 15 else ("สิ้นเดือน (30)" if t.due_day_of_month == 30 else f"วันที่ {t.due_day_of_month}")
+            schedule_badge = f'<span class="badge bg-primary">รอบ: {d_txt}</span>'
 
         rows += f"""
         <tr>
@@ -682,9 +720,11 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
         """
 
         sel_daily = "selected" if t.schedule_type == "จ่ายทุกวัน" else ""
-        sel_sched = "selected" if t.schedule_type == "มีกำหนดจ่าย" else ""
+        sel_sched = "selected" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else ""
         sel_unsched = "selected" if t.schedule_type == "ยังไม่มีกำหนดจ่าย" else ""
-        display_due_div = "block" if t.schedule_type == "มีกำหนดจ่าย" else "none"
+        display_day_div = "block" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else "none"
+
+        day_selected = t.due_day_of_month or 15
 
         edit_modals += f"""
         <div class="modal fade" id="editScheduleModal{t.id}" tabindex="-1">
@@ -700,13 +740,21 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
                                 <label class="form-label fw-bold">เลือกประเภทกำหนดจ่ายใหม่</label>
                                 <select name="schedule_type" class="form-select border-warning" id="editScheduleType{t.id}" onchange="handleEditScheduleChange({t.id})" required>
                                     <option value="จ่ายทุกวัน" {sel_daily}>จ่ายทุกวัน (ทวงทุกวัน)</option>
-                                    <option value="มีกำหนดจ่าย" {sel_sched}>มีกำหนดจ่าย (ระบุวัน)</option>
+                                    <option value="กำหนดจ่ายประจำเดือน" {sel_sched}>กำหนดจ่ายประจำเดือน (เช่น วันที่ 15)</option>
                                     <option value="ยังไม่มีกำหนดจ่าย" {sel_unsched}>ยังไม่มีกำหนดจ่าย</option>
                                 </select>
                             </div>
-                            <div class="mb-3" id="editDueDateDiv{t.id}" style="display: {display_due_div};">
-                                <label class="form-label text-primary fw-bold">กำหนดวันที่ต้องจ่าย</label>
-                                <input type="date" name="due_date" class="form-control border-primary" value="{due_iso}">
+                            <div class="mb-3" id="editDueDayDiv{t.id}" style="display: {display_day_div};">
+                                <label class="form-label text-primary fw-bold">รอบวันที่ต้องจ่ายของเดือน</label>
+                                <select name="due_day_of_month" class="form-select border-primary">
+                                    <option value="1" {'selected' if day_selected==1 else ''}>วันที่ 1 ของเดือน</option>
+                                    <option value="5" {'selected' if day_selected==5 else ''}>วันที่ 5 ของเดือน</option>
+                                    <option value="10" {'selected' if day_selected==10 else ''}>วันที่ 10 ของเดือน</option>
+                                    <option value="15" {'selected' if day_selected==15 else ''}>วันที่ 14 - 15 - 16</option>
+                                    <option value="20" {'selected' if day_selected==20 else ''}>วันที่ 20 ของเดือน</option>
+                                    <option value="25" {'selected' if day_selected==25 else ''}>วันที่ 25 ของเดือน</option>
+                                    <option value="30" {'selected' if day_selected>=28 else ''}>ช่วงสิ้นเดือน (30)</option>
+                                </select>
                             </div>
                         </div>
                         <div class="modal-footer py-2">
@@ -719,59 +767,27 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
         </div>
         """
 
-    # ส่วนตารางเลือกติ๊กหลายรายการพร้อมกัน
-    pull_section = ""
-    if schedule_filter:
-        picker_rows = ""
-        for t in all_active_txs:
-            picker_rows += f"""
-            <tr>
-                <td style="text-align: center;"><input class="form-check-input" type="checkbox" name="selected_ids" value="{t.id}"></td>
-                <td><b>{t.customer_name}</b></td>
-                <td><span class="badge bg-secondary">{t.type}</span></td>
-                <td><span class="badge bg-dark">{t.schedule_type}</span></td>
-                <td>{t.original_principal:,.2f}</td>
-            </tr>
-            """
+    target_type = 'จ่ายทุกวัน' if filter_type == 'daily' else ('ยังไม่มีกำหนดจ่าย' if filter_type == 'unscheduled' else 'กำหนดจ่ายประจำเดือน')
+    default_day = day_val if filter_type == 'scheduled_day' else 15
 
-        pull_section = f"""
-        <div class="card mb-4 border-success shadow-sm">
-            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0 fs-6">⚡ ติ๊กเลือกรายชื่อเพื่อดึงเข้าหมวด "{page_title}" (เลือกได้หลายคนพร้อมกัน)</h5>
-                <button class="btn btn-sm btn-light text-success fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#multiSelectBox">📂 เปิด/ปิด ตารางเลือกรายชื่อ</button>
+    pull_section = f"""
+    <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
+        <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อที่มีอยู่ในระบบมาใส่ในหมวด "{page_title}" ทันที</h6>
+        <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
+            <input type="hidden" name="target_schedule" value="{target_type}">
+            <input type="hidden" name="target_day" value="{default_day}">
+            <div class="col-md-9">
+                <select name="transaction_id" class="form-select form-select-sm" required>
+                    <option value="">-- คลิกเลือกชื่อลูกค้าจากระบบเพื่อดึงมาใส่หมวดนี้ --</option>
+                    {select_options_html}
+                </select>
             </div>
-            <div class="collapse" id="multiSelectBox">
-                <div class="card-body bg-light">
-                    <form action="/batch_assign_schedule" method="POST">
-                        <input type="hidden" name="target_schedule" value="{schedule_filter}">
-                        <div class="row g-3 align-items-end mb-3">
-                            <div class="col-md-4" id="batchDueDateDiv" style="display: {'block' if schedule_filter == 'มีกำหนดจ่าย' else 'none'};">
-                                <label class="form-label text-primary fw-bold small">กำหนดวันที่ต้องจ่าย (สำหรับคนที่เลือก)</label>
-                                <input type="date" name="due_date" class="form-control form-control-sm border-primary" value="{get_thai_today().strftime('%Y-%m-%d')}">
-                            </div>
-                            <div class="col-md-4">
-                                <button type="submit" class="btn btn-success btn-sm fw-bold px-4 py-2 w-100" onclick="return confirm('ยืนยันดึงรายชื่อที่เลือกเข้าสู่หมวดนี้?')">📥 ยืนยันดึงรายชื่อเข้ากลุ่ม</button>
-                            </div>
-                        </div>
-                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
-                            <table class="table table-sm table-bordered bg-white align-middle">
-                                <thead class="table-dark sticky-top">
-                                    <tr>
-                                        <th style="width: 40px; text-align: center;"><input class="form-check-input" type="checkbox" onclick="toggleSelectAll(this)"></th>
-                                        <th>ชื่อลูกค้า</th>
-                                        <th>ประเภทรายการ</th>
-                                        <th>กลุ่มปัจจุบัน</th>
-                                        <th>เงินลงทุน/ยอดตั้งต้น</th>
-                                    </tr>
-                                </thead>
-                                <tbody>{picker_rows if picker_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายชื่อในระบบ</td></tr>"}</tbody>
-                            </table>
-                        </div>
-                    </form>
-                </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
             </div>
-        </div>
-        """
+        </form>
+    </div>
+    """
 
     content = f"""
     {pull_section}
@@ -795,7 +811,7 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
                         <th style="text-align: center;">จัดการกลุ่ม</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้ สามารถเปิดตารางด้านบนเพื่อติ๊กเลือกรายชื่อมาใส่ได้ทันที</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้ สามารถใช้ปุ่มด้านบนดึงรายชื่อมาใส่ได้ทันที</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -809,44 +825,60 @@ def update_schedule(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     tx.schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
-    due_str = request.form.get('due_date')
-    if tx.schedule_type == 'มีกำหนดจ่าย' and due_str:
-        tx.due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
+    if tx.schedule_type == 'กำหนดจ่ายประจำเดือน':
+        tx.due_day_of_month = int(request.form.get('due_day_of_month', 15))
     else:
-        tx.due_date = None
+        tx.due_day_of_month = None
     db.session.commit()
     db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
-@app.route('/batch_assign_schedule', methods=['POST'])
-def batch_assign_schedule():
+@app.route('/quick_assign_schedule', methods=['POST'])
+def quick_assign_schedule():
     if 'admin' not in session: return redirect(url_for('login'))
-    selected_ids = request.form.getlist('selected_ids')
+    tx_id = request.form.get('transaction_id')
     target_schedule = request.form.get('target_schedule')
-    due_str = request.form.get('due_date')
+    target_day = request.form.get('target_day')
     
-    if selected_ids:
-        parsed_due = datetime.strptime(due_str, '%Y-%m-%d').date() if (target_schedule == 'มีกำหนดจ่าย' and due_str) else None
-        for tid in selected_ids:
-            tx = Transaction.query.get(int(tid))
-            if tx:
-                tx.schedule_type = target_schedule
-                tx.due_date = parsed_due
-        db.session.commit()
-        db.session.remove()
+    if tx_id:
+        tx = Transaction.query.get(tx_id)
+        if tx:
+            tx.schedule_type = target_schedule
+            if target_schedule == 'กำหนดจ่ายประจำเดือน':
+                tx.due_day_of_month = int(target_day) if target_day else 15
+            else:
+                tx.due_day_of_month = None
+            db.session.commit()
+    db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/members')
-def members(): return render_members_by_schedule(None, 'members', 'สมาชิกทั้งหมด')
+def members():
+    if 'admin' not in session: return redirect(url_for('login'))
+    txs = Transaction.query.order_by(Transaction.customer_name.asc()).all()
+    rows = ""
+    for t in txs:
+        calculate_tx_values(t)
+        s_date = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
+        sched_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
+        if t.schedule_type == 'กำหนดจ่ายประจำเดือน':
+            d_txt = "วันที่ 14-15-16" if t.due_day_of_month == 15 else ("สิ้นเดือน (30)" if t.due_day_of_month == 30 else f"วันที่ {t.due_day_of_month}")
+            sched_badge = f'<span class="badge bg-primary">รอบ: {d_txt}</span>'
+        rows += f"<tr><td><b>{t.customer_name}</b></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {'bg-success' if t.status=='ปกติ' else 'bg-secondary'}'>{t.status}</span></td></tr>"
+    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
+    html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="สมาชิกทั้งหมด", page="members")
 
 @app.route('/members_daily')
-def members_daily(): return render_members_by_schedule('จ่ายทุกวัน', 'members_daily', '1.1 สมาชิกประเภท: จ่ายทุกวัน')
-
-@app.route('/members_scheduled')
-def members_scheduled(): return render_members_by_schedule('มีกำหนดจ่าย', 'members_scheduled', '1.2 สมาชิกประเภท: มีกำหนดจ่าย')
+def members_daily(): return render_members_by_schedule('daily', None, 'members_daily', '🔸 1.1 สมาชิกประเภท: จ่ายทุกวัน (ทวงทุกวัน)')
 
 @app.route('/members_unscheduled')
-def members_unscheduled(): return render_members_by_schedule('ยังไม่มีกำหนดจ่าย', 'members_unscheduled', '1.3 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย')
+def members_unscheduled(): return render_members_by_schedule('unscheduled', None, 'members_unscheduled', '🔸 1.2 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย')
+
+@app.route('/members_sched/<int:day>')
+def members_sched(day):
+    titles = {1: 'วันที่ 1 ของเดือน', 5: 'วันที่ 5 ของเดือน', 10: 'วันที่ 10 ของเดือน', 15: 'วันที่ 14 - 15 - 16 ของเดือน', 20: 'วันที่ 20 ของเดือน', 25: 'วันที่ 25 ของเดือน', 30: 'ช่วงสิ้นเดือน (30)'}
+    return render_members_by_schedule('scheduled_day', day, f'sched_{day}', f'📅 สมาชิกกำหนดจ่ายประจำเดือน: {titles.get(day, day)}')
 
 @app.route('/all_transactions')
 def all_transactions():
@@ -908,10 +940,10 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDate'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth'])
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
-        cw.writerow([t.id, t.type, t.customer_name, t.phone, t.sales_name, t.start_date, t.closed_date, t.original_principal, t.principal, t.daily_interest, t.paid_interest, t.status, t.installment_amount, total_paid, t.schedule_type, t.due_date])
+        cw.writerow([t.id, t.type, t.customer_name, t.phone, t.sales_name, t.start_date, t.closed_date, t.original_principal, t.principal, t.daily_interest, t.paid_interest, t.status, t.installment_amount, total_paid, t.schedule_type, t.due_day_of_month])
     output = io.BytesIO()
     output.write(si.getvalue().encode('utf-8-sig'))
     output.seek(0)
@@ -936,10 +968,8 @@ def import_data():
                 if row.get('ClosedDate'):
                     try: c_date = datetime.strptime(row['ClosedDate'].split()[0], '%Y-%m-%d').date()
                     except: pass
-                d_date = None
-                if row.get('DueDate'):
-                    try: d_date = datetime.strptime(row['DueDate'].split()[0], '%Y-%m-%d').date()
-                    except: pass
+                
+                day_val = int(row['DueDayOfMonth']) if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -948,7 +978,7 @@ def import_data():
                     principal=float(row.get('Principal', 0)), daily_interest=float(row.get('DailyInterest', 0)),
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
-                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_date=d_date
+                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val
                 )
                 db.session.add(new_t)
             db.session.commit()
