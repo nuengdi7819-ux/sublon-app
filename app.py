@@ -451,7 +451,7 @@ def index():
                             </div>
                             <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
-                                <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}" onchange="updateInterestOnDateChange({tx.id}, '{start_date_iso}', {tx.daily_interest}, {tx.paid_interest})">
+                                <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
                             </div>
                             <div class="mb-2">
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
@@ -1179,8 +1179,33 @@ def monthly_summary():
                 monthly_data[ym]['new_paid'] += collected_amount
                 monthly_data[ym]['profit'] += tx.paid_interest
 
-    monthly_rows = "".join([f"<tr><td>{ym}</td><td>{d['count']}</td><td>{d['new_investment']:,.2f}</td><td>{d['new_paid']:,.2f}</td><td>{d['debt_start']:,.2f}</td><td>{d['debt_paid']:,.2f}</td><td class='text-warning fw-bold'>{d['profit']:,.2f}</td></tr>" for ym, d in sorted(monthly_data.items(), reverse=True)])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4><div class="table-responsive"><table class="table table-bordered text-nowrap"><thead class="table-dark"><tr><th>เดือน</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บใหม่ได้</th><th>ค้างเก่าตั้งต้น</th><th>เก็บค้างเก่าได้</th><th>กำไรสะสม</th></tr></thead><tbody>{monthly_rows}</tbody></table></div></div>"""
+    monthly_rows = "".join([
+        f"<tr>"
+        f"<td><a href='/?month={ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
+        f"<td><a href='/?month={ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{d['count']} รายการ</a></td>"
+        f"<td>{d['new_investment']:,.2f}</td>"
+        f"<td>{d['new_paid']:,.2f}</td>"
+        f"<td>{d['debt_start']:,.2f}</td>"
+        f"<td>{d['debt_paid']:,.2f}</td>"
+        f"<td class='text-warning fw-bold'>{d['profit']:,.2f}</td>"
+        f"</tr>" 
+        for ym, d in sorted(monthly_data.items(), reverse=True)
+    ])
+    
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <h4 class="mb-3 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
+        <p class="text-muted small">💡 สามารถคลิกที่ชื่อ **เดือน** หรือ **จำนวนรายการ** เพื่อเข้าไปตรวจสอบรายชื่อลูกค้าในเดือนนั้นๆ ได้ทันที</p>
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr><th>เดือน</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บใหม่ได้</th><th>ค้างเก่าตั้งต้น</th><th>เก็บค้างเก่าได้</th><th>กำไรสะสม</th></tr>
+                </thead>
+                <tbody>{monthly_rows if monthly_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีข้อมูลผลประกอบการรายเดือน</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
     html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', 'สรุปยอดรายเดือน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สรุปยอดรายเดือน", page="monthly")
 
