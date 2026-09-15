@@ -46,7 +46,7 @@ class Transaction(db.Model):
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
-    due_day_of_month = db.Column(db.String(50), nullable=True) # รองรับเก็บหลายรอบ เช่น "6,20"
+    due_day_of_month = db.Column(db.String(50), nullable=True)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -324,8 +324,6 @@ def index():
             tx_type = request.form.get('type')
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
-            
-            # รองรับเลือกหลายรอบ (Checkbox)
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
             due_day_str = ",".join(selected_due_days) if selected_due_days else None
 
@@ -371,7 +369,6 @@ def index():
     elif month_filter:
         query = query.filter(db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]), db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1]))
     elif not search_query:
-        # ตรวจสอบรอบวันปัจจุบันว่าตรงกับช่วงไหน
         current_match_codes = []
         if 4 <= today_day <= 6: current_match_codes.append("6")
         if 9 <= today_day <= 12: current_match_codes.append("12")
@@ -719,29 +716,32 @@ def members_scheduled_all():
 
         pull_section = f"""
         <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
-            <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
-            <form action="/quick_assign_schedule_multi" method="POST">
-                <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
-                <input type="hidden" name="target_day" value="{day_val}">
-                
-                <div class="mb-2">
-                    <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes('{day_val}')">
-                </div>
-                <div class="d-flex gap-2 mb-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', true)">✅ เลือกทั้งหมด</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', false)">❌ ล้างทั้งหมด</button>
-                </div>
+            <button class="btn btn-outline-danger btn-sm fw-bold mb-2 w-100 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdd{day_val}">
+                ➕ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้ ({section_title})
+            </button>
+            <div class="collapse" id="collapseAdd{day_val}">
+                <form action="/quick_assign_schedule_multi" method="POST" class="mt-2">
+                    <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
+                    <input type="hidden" name="target_day" value="{day_val}">
+                    
+                    <div class="mb-2">
+                        <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes('{day_val}')">
+                    </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', true)">✅ เลือกที่แสดง</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes('{day_val}', false)">❌ ล้างทั้งหมด</button>
+                    </div>
 
-                <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
-                    {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
-                </div>
+                    <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
+                        {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
+                    </div>
 
-                <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้ (เพิ่มรอบนี้)</button>
-            </form>
+                    <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 บันทึกดึงรายชื่อที่เลือกเข้ากลุ่มนี้</button>
+                </form>
+            </div>
         </div>
         """
 
-        # ดึงลูกค้าที่มีรอบนี้อยู่ในรายการ (เนื่องจากเก็บเป็น comma-separated)
         all_active_txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน').all()
         txs = []
         for t in all_active_txs:
@@ -850,7 +850,7 @@ def members_scheduled_all():
     content = f"""
     <div class="mb-4">
         <h4 class="text-danger fw-bold">📅 บริหารจัดการสมาชิก: กำหนดจ่ายประจำเดือน (แบ่งตามช่วงวันเลท)</h4>
-        <p class="text-muted small">รวมรายชื่อรอบกำหนดจ่ายประจำเดือนทุกช่วงวันไว้ในหน้าเดียว สามารถเลือกติ๊กหลายคนพร้อมกันเพื่อดึงเข้ากลุ่มได้ทันที</p>
+        <p class="text-muted small">กดปุ่ม "+ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้" เพื่อเปิดหน้าต่างเลือกรายชื่อและค้นหาลูกค้าได้อย่างสะดวก</p>
     </div>
     {all_sections_html}
     {all_edit_modals}
@@ -885,7 +885,6 @@ def quick_assign_schedule_multi():
             if tx:
                 tx.schedule_type = target_schedule
                 if target_schedule == 'กำหนดจ่ายประจำเดือน' and target_day:
-                    # ผสมรอบใหม่เข้าไปโดยไม่ลบของเดิม (ถ้ามีอยู่แล้ว) หรือตั้งค่าเพิ่ม
                     current_list = tx.due_day_of_month.split(',') if tx.due_day_of_month else []
                     if target_day not in current_list:
                         current_list.append(target_day)
