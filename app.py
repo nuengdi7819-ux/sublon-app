@@ -140,8 +140,8 @@ BASE_LAYOUT = """
         </div>
         <div class="mb-3 px-2 d-none d-lg-block text-warning small border-bottom border-secondary pb-2">ผู้ใช้งาน: <b>{{ session.get('admin') }}</b></div>
         <ul class="nav nav-pills flex-column mb-auto">
-            <li class="nav-item"><a href="/" class="nav-link {% if page == 'dashboard' %}active{% endif %}" onclick="toggleSidebar()">📊 Dashboard</a></li>
-            <li><a href="/?filter_today=1" class="nav-link {% if page == 'today' %}active{% endif %}" onclick="toggleSidebar()">📋 เช็คยอดความเคลื่อนไหววันนี้</a></li>
+            <li class="nav-item"><a href="/" class="nav-link {% if page == 'dashboard' %}active{% endif %}" onclick="toggleSidebar()">📊 Dashboard (รายการวันนี้)</a></li>
+            <li><a href="/all_transactions" class="nav-link {% if page == 'all' %}active{% endif %}" onclick="toggleSidebar()">📋 รายการทั้งหมด</a></li>
             <li><a href="/members" class="nav-link {% if page == 'members' %}active{% endif %}" onclick="toggleSidebar()">👥 1. สมาชิกทั้งหมด</a></li>
             <li><a href="/sales_members" class="nav-link {% if page == 'sales' %}active{% endif %}" onclick="toggleSidebar()">📋 2. สมาชิกภายใต้เซลล์</a></li>
             <li><a href="/customer_summary" class="nav-link {% if page == 'customer' %}active{% endif %}" onclick="toggleSidebar()">📂 3. สรุปลูกค้า</a></li>
@@ -326,24 +326,19 @@ def index():
         return redirect(url_for('index'))
 
     search_query = request.args.get('search', '').strip()
-    filter_today = request.args.get('filter_today', '').strip()
     target_date_str = request.args.get('target_date', '').strip()
     month_filter = request.args.get('month', '').strip()
     thai_today = get_thai_today()
 
     query = Transaction.query
     if search_query:
+        search_pattern = f"%{search_query}%"
         query = query.filter(
-            (Transaction.customer_name.contains(search_query)) | 
-            (Transaction.phone.contains(search_query))
+            (Transaction.customer_name.ilike(search_pattern)) | 
+            (Transaction.phone.ilike(search_pattern))
         )
     
-    if filter_today == '1':
-        query = query.filter(
-            (Transaction.start_date == thai_today) | 
-            (Transaction.last_payment_date == thai_today)
-        )
-    elif target_date_str:
+    if target_date_str:
         try:
             target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
             query = query.filter(
@@ -356,6 +351,11 @@ def index():
         query = query.filter(
             db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]),
             db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1])
+        )
+    else:
+        query = query.filter(
+            (Transaction.start_date == thai_today) | 
+            (Transaction.last_payment_date == thai_today)
         )
 
     transactions = query.order_by(Transaction.customer_name.asc()).all()
@@ -528,18 +528,15 @@ def index():
         </div>
         """
 
-    if filter_today == '1':
-        table_title = "📋 รายการความเคลื่อนไหววันนี้"
-        view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
-    elif target_date_str:
+    if target_date_str:
         table_title = f"📋 รายการความเคลื่อนไหววันที่: {target_date_str}"
-        view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
     elif month_filter:
         table_title = f"📋 รายการประจำเดือน: {month_filter}"
-        view_all_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการทั้งหมด</a>'
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
     else:
-        table_title = "📋 รายการทั้งหมด"
-        view_all_btn = ''
+        table_title = "📋 รายการความเคลื่อนไหววันนี้"
+        view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
     <div class="row mb-4">
@@ -617,7 +614,7 @@ def index():
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div class="d-flex align-items-center gap-3 flex-wrap">
                 <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
-                {view_all_btn}
+                {view_today_btn}
             </div>
             <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
                 <div class="d-flex align-items-center gap-1">
@@ -651,23 +648,96 @@ def index():
                     </tr>
                 </thead>
                 <tbody>
-                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</td></tr>"}
+                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการความเคลื่อนไหววันนี้</td></tr>"}
                 </tbody>
             </table>
         </div>
 
         <div class="mobile-card-view">
-            {cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการ</p>"}
+            {cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการความเคลื่อนไหววันนี้</p>"}
         </div>
     </div>
 
     {modals_html}
     """
 
-    page_type = 'today' if filter_today == '1' else 'dashboard'
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     html = html.replace('{% block content %}{% endblock %}', content)
-    return render_template_string(html, title="Dashboard", page=page_type, filter_today=filter_today)
+    return render_template_string(html, title="Dashboard", page="dashboard")
+
+@app.route('/all_transactions')
+def all_transactions():
+    if 'admin' not in session:
+        return redirect(url_for('login'))
+        
+    search_query = request.args.get('search', '').strip()
+    query = Transaction.query
+    if search_query:
+        search_pattern = f"%{search_query}%"
+        query = query.filter(
+            (Transaction.customer_name.ilike(search_pattern)) | 
+            (Transaction.phone.ilike(search_pattern))
+        )
+    transactions = query.order_by(Transaction.customer_name.asc()).all()
+
+    rows = ""
+    for tx in transactions:
+        calculate_tx_values(tx)
+        badge_color = 'bg-success'
+        if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
+        elif tx.status == 'คืนแล้ว': badge_color = 'bg-secondary'
+        
+        start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
+        last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
+        
+        rows += f"""
+        <tr>
+            <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{tx.customer_name}</td>
+            <td>{tx.phone or '-'}</td>
+            <td><span class="badge bg-secondary">{tx.type}</span></td>
+            <td>{start_date_str}</td>
+            <td>{last_pay_str}</td>
+            <td>{tx.original_principal:,.2f}</td>
+            <td>{tx.principal:,.2f}</td>
+            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
+            <td>{tx.daily_interest:,.2f}</td>
+            <td>{tx.accumulated_interest:,.2f}</td>
+            <td><span class="badge {badge_color}">{tx.status}</span></td>
+            <td><a href="/" class="btn btn-sm btn-warning">จัดการ</a></td>
+        </tr>
+        """
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการทั้งหมดในระบบ</h4>
+            <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard (รายการวันนี้)</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ชื่อลูกค้า</th>
+                        <th>เบอร์โทร</th>
+                        <th>ประเภท</th>
+                        <th>วันที่กู้</th>
+                        <th>ชำระล่าสุด</th>
+                        <th>เงินลงทุน</th>
+                        <th>ต้นคงค้าง</th>
+                        <th>ชำระแล้ว</th>
+                        <th>ดอก/วัน</th>
+                        <th>ดอกสะสม</th>
+                        <th>สถานะ</th>
+                        <th>จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในระบบ</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
+    html = BASE_LAYOUT.replace('{% block header %}รายการทั้งหมด{% endblock %}', 'รายการทั้งหมด').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="รายการทั้งหมด", page="all")
 
 @app.route('/export_data')
 def export_data():
