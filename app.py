@@ -65,14 +65,12 @@ class PaymentHistory(db.Model):
 
 with app.app_context():
     db.create_all()
-    # ตรวจสอบและเพิ่มคอลัมน์อัตโนมัติหากฐานข้อมูลเดิมยังไม่มี
     try:
         db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'จ่ายทุกวัน';"))
         db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS due_date DATE;"))
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        print("Migration check error:", e)
 
 BASE_LAYOUT = """
 <!DOCTYPE html>
@@ -221,21 +219,19 @@ BASE_LAYOUT = """
     function handleTypeChange() {
         let typeVal = document.getElementById('txTypeSelect').value;
         let instDiv = document.getElementById('installmentDiv');
-        if (typeVal === 'ยอดค้างเก่า') {
-            instDiv.style.display = 'block';
-        } else {
-            instDiv.style.display = 'none';
-        }
+        if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
     }
 
     function handleScheduleChange() {
         let val = document.getElementById('scheduleTypeSelect').value;
         let dueDateDiv = document.getElementById('dueDateDiv');
-        if (val === 'มีกำหนดจ่าย') {
-            dueDateDiv.style.display = 'block';
-        } else {
-            dueDateDiv.style.display = 'none';
-        }
+        if (val === 'มีกำหนดจ่าย') { dueDateDiv.style.display = 'block'; } else { dueDateDiv.style.display = 'none'; }
+    }
+
+    function handleEditScheduleChange(id) {
+        let val = document.getElementById('editScheduleType' + id).value;
+        let div = document.getElementById('editDueDateDiv' + id);
+        if (val === 'มีกำหนดจ่าย') { div.style.display = 'block'; } else { div.style.display = 'none'; }
     }
 
     function updateInterestOnDateChange(id, startDateStr, dailyInterest, paidInterest) {
@@ -319,29 +315,19 @@ def index():
             parsed_due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date() if (schedule_type == 'มีกำหนดจ่าย' and due_date_str) else None
 
             inst_amt = 0.0
-            if tx_type == 'ยอดค้างเก่า':
-                inst_amt = float(request.form.get('installment_amount', 0))
+            if tx_type == 'ยอดค้างเก่า': inst_amt = float(request.form.get('installment_amount', 0))
 
             new_tx = Transaction(
-                type=tx_type,
-                customer_name=request.form.get('customer_name'),
-                phone=request.form.get('phone'),
-                sales_name=current_sales,
-                start_date=parsed_date,
-                original_principal=p_val,
-                principal=p_val,
-                daily_interest=d_interest,
-                initial_daily_interest=d_interest,
-                installment_amount=inst_amt,
-                schedule_type=schedule_type,
-                due_date=parsed_due_date
+                type=tx_type, customer_name=request.form.get('customer_name'), phone=request.form.get('phone'),
+                sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
+                daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
+                schedule_type=schedule_type, due_date=parsed_due_date
             )
             db.session.add(new_tx)
             db.session.commit()
             db.session.remove()
             return redirect(url_for('index'))
-        except Exception as e:
-            print("Error adding transaction:", e)
+        except Exception as e: print("Error:", e)
         return redirect(url_for('index'))
 
     search_query = request.args.get('search', '').strip()
@@ -351,7 +337,6 @@ def index():
     thai_today = get_thai_today()
 
     query = Transaction.query
-
     if search_query:
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
@@ -360,31 +345,19 @@ def index():
         try:
             s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.filter(
-                (Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) |
-                (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date)
-            )
-        except Exception as e: print("Date range error:", e)
+            query = query.filter((Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) | (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date))
+        except Exception as e: print("Date error:", e)
     elif start_date_str:
         try:
             target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             query = query.filter((Transaction.start_date == target_date) | (Transaction.last_payment_date == target_date))
         except Exception as e: print("Date error:", e)
     elif month_filter:
-        query = query.filter(
-            db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]),
-            db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1])
-        )
+        query = query.filter(db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]), db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1]))
     elif not search_query:
-        query = query.filter(
-            ((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | 
-            (Transaction.due_date == thai_today) |
-            (Transaction.start_date == thai_today) | 
-            (Transaction.last_payment_date == thai_today)
-        )
+        query = query.filter(((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | (Transaction.due_date == thai_today) | (Transaction.start_date == thai_today) | (Transaction.last_payment_date == thai_today))
 
     transactions = query.order_by(Transaction.customer_name.asc()).all()
-
     for tx in transactions:
         calculate_tx_values(tx)
         tx.days_passed = f"{tx.days_passed_val} วัน"
@@ -398,7 +371,6 @@ def index():
     total_new_investment = sum(tx.original_principal for tx in all_txs if tx.type != 'ยอดค้างเก่า')
     total_debt_principal = sum(tx.principal for tx in all_txs if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs if tx.type != 'ยอดค้างเก่า' and tx.status != 'คืนแล้ว' and tx.principal > 0)
-    
     base_profit = sum(((tx.original_principal - tx.principal)) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest for tx in all_txs)
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_profit = base_profit + total_fine
@@ -661,6 +633,7 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
+# ฟังก์ชันแสดงรายชื่อและเพิ่มปุ่มแก้ไขกลุ่มแบบรวดเร็วทันใจ
 def render_members_by_schedule(schedule_filter, page_name, page_title):
     if 'admin' not in session: return redirect(url_for('login'))
     
@@ -669,11 +642,17 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
     else:
         txs = Transaction.query.order_by(Transaction.customer_name.asc()).all()
 
-    rows = ""
+    # ดึงรายชื่อทั้งหมดสำหรับปุ่มดึงรายชื่อเข้ามาใส่กลุ่มนี้
+    all_txs_for_select = Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all()
+    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
+
+    rows, edit_modals = "", ""
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
         due_str = t.due_date.strftime('%d/%m/%Y') if t.due_date else '-'
+        due_iso = t.due_date.strftime('%Y-%m-%d') if t.due_date else get_thai_today().strftime('%Y-%m-%d')
+        
         schedule_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
         if t.schedule_type == 'มีกำหนดจ่าย': schedule_badge = f'<span class="badge bg-primary">กำหนด: {due_str}</span>'
 
@@ -690,10 +669,77 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
             <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
+            <td style="text-align: center;">
+                <button type="button" class="btn btn-sm btn-warning fw-bold px-2 py-1" data-bs-toggle="modal" data-bs-target="#editScheduleModal{t.id}">⚙️ เปลี่ยนกลุ่ม</button>
+            </td>
         </tr>
         """
-    
+
+        sel_daily = "selected" if t.schedule_type == "จ่ายทุกวัน" else ""
+        sel_sched = "selected" if t.schedule_type == "มีกำหนดจ่าย" else ""
+        sel_unsched = "selected" if t.schedule_type == "ยังไม่มีกำหนดจ่าย" else ""
+        display_due_div = "block" if t.schedule_type == "มีกำหนดจ่าย" else "none"
+
+        edit_modals += f"""
+        <div class="modal fade" id="editScheduleModal{t.id}" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-warning">
+                    <form action="/update_schedule/{t.id}" method="POST">
+                        <div class="modal-header bg-warning text-dark py-2">
+                            <h5 class="modal-title fs-6 fw-bold">เปลี่ยนประเภทการชำระ: {t.customer_name}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body py-3">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">เลือกประเภทกำหนดจ่ายใหม่</label>
+                                name="schedule_type" class="form-select border-warning" id="editScheduleType{t.id}" onchange="handleEditScheduleChange({t.id})" required>
+                                    <option value="จ่ายทุกวัน" {sel_daily}>จ่ายทุกวัน (ทวงทุกวัน)</option>
+                                    <option value="มีกำหนดจ่าย" {sel_sched}>มีกำหนดจ่าย (ระบุวัน)</option>
+                                    <option value="ยังไม่มีกำหนดจ่าย" {sel_unsched}>ยังไม่มีกำหนดจ่าย</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="editDueDateDiv{t.id}" style="display: {display_due_div};">
+                                <label class="form-label text-primary fw-bold">กำหนดวันที่ต้องจ่าย</label>
+                                <input type="date" name="due_date" class="form-control border-primary" value="{due_iso}">
+                            </div>
+                        </div>
+                        <div class="modal-footer py-2">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-3">บันทึกการเปลี่ยนกลุ่ม</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        """
+
+    # ปุ่มดึงรายชื่อเข้ามาใส่กลุ่มนี้อย่างรวดเร็ว (กรณีอยู่หน้าเฉพาะกลุ่ม)
+    pull_section = ""
+    if schedule_filter:
+        default_target_schedule = schedule_filter
+        pull_section = f"""
+        <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
+            <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อที่มีอยู่ในระบบมาใส่ในหมวด "{page_title}" ทันที</h6>
+            <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
+                <input type="hidden" name="target_schedule" value="{default_target_schedule}">
+                <div class="col-md-7">
+                    <select name="transaction_id" class="form-select form-select-sm" required>
+                        <option value="">-- คลิกลือกชื่อลูกค้าจากระบบเพื่อดึงมาใส่หมวดนี้ --</option>
+                        {select_options_html}
+                    </select>
+                </div>
+                <div class="col-md-3" id="quickDueDateDiv" style="display: {'block' if schedule_filter == 'มีกำหนดจ่าย' else 'none'};">
+                    <input type="date" name="due_date" class="form-control form-control-sm" value="{get_thai_today().strftime('%Y-%m-%d')}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
+                </div>
+            </form>
+        </div>
+        """
+
     content = f"""
+    {pull_section}
     <div class="card p-4 shadow-sm border-warning">
         <h4 class="mb-3 fs-5 text-danger fw-bold">👥 {page_title} (เรียงตามตัวอักษร)</h4>
         <div class="table-responsive">
@@ -711,15 +757,50 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
                         <th>ดอกเบี้ย/วัน</th>
                         <th>ดอกเบี้ยสะสม</th>
                         <th>สถานะ</th>
+                        <th style="text-align: center;">จัดการกลุ่ม</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้ สามารถใช้ปุ่มด้านบนดึงรายชื่อมาใส่ได้ทันที</td></tr>"}</tbody>
             </table>
         </div>
     </div>
+    {edit_modals}
     """
     html = BASE_LAYOUT.replace('{% block header %}' + page_title + '{% endblock %}', page_title).replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=page_title, page=page_name)
+
+@app.route('/update_schedule/<int:tx_id>', methods=['POST'])
+def update_schedule(tx_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    tx = Transaction.query.get_or_404(tx_id)
+    tx.schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
+    due_str = request.form.get('due_date')
+    if tx.schedule_type == 'มีกำหนดจ่าย' and due_str:
+        tx.due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
+    else:
+        tx.due_date = None
+    db.session.commit()
+    db.session.remove()
+    return redirect(request.referrer or url_for('index'))
+
+@app.route('/quick_assign_schedule', methods=['POST'])
+def quick_assign_schedule():
+    if 'admin' not in session: return redirect(url_for('login'))
+    tx_id = request.form.get('transaction_id')
+    target_schedule = request.form.get('target_schedule')
+    due_str = request.form.get('due_date')
+    
+    if tx_id:
+        tx = Transaction.query.get(tx_id)
+        if tx:
+            tx.schedule_type = target_schedule
+            if target_schedule == 'มีกำหนดจ่าย' and due_str:
+                tx.due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
+            else:
+                tx.due_date = None
+            db.session.commit()
+    db.session.remove()
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/members')
 def members(): return render_members_by_schedule(None, 'members', 'สมาชิกทั้งหมด')
@@ -827,21 +908,13 @@ def import_data():
                     except: pass
 
                 new_t = Transaction(
-                    type=row.get('Type', 'เงินฉุกเฉิน'),
-                    customer_name=row.get('CustomerName', 'ไม่ระบุ'),
-                    phone=row.get('Phone', ''),
-                    sales_name=row.get('SalesName', session.get('admin')),
-                    start_date=s_date,
-                    closed_date=c_date,
-                    original_principal=float(row.get('OriginalPrincipal', 0)),
-                    principal=float(row.get('Principal', 0)),
-                    daily_interest=float(row.get('DailyInterest', 0)),
-                    initial_daily_interest=float(row.get('DailyInterest', 0)),
-                    paid_interest=float(row.get('PaidInterest', 0)),
-                    status=row.get('Status', 'ปกติ'),
-                    installment_amount=float(row.get('InstallmentAmount', 0)),
-                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'),
-                    due_date=d_date
+                    type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
+                    phone=row.get('Phone', ''), sales_name=row.get('SalesName', session.get('admin')),
+                    start_date=s_date, closed_date=c_date, original_principal=float(row.get('OriginalPrincipal', 0)),
+                    principal=float(row.get('Principal', 0)), daily_interest=float(row.get('DailyInterest', 0)),
+                    initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
+                    status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
+                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_date=d_date
                 )
                 db.session.add(new_t)
             db.session.commit()
