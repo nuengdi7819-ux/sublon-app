@@ -46,6 +46,21 @@ class Transaction(db.Model):
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
 
+class PaymentHistory(db.Model):
+    __tablename__ = 'payment_history'
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=False)
+    payment_date = db.Column(db.Date, nullable=False, default=get_thai_today)
+    pay_amount = db.Column(db.Float, default=0.0)
+    fine_amount = db.Column(db.Float, default=0.0)
+    discount_amount = db.Column(db.Float, default=0.0)
+    interest_paid = db.Column(db.Float, default=0.0)
+    principal_reduced = db.Column(db.Float, default=0.0)
+    note = db.Column(db.String(255), nullable=True)
+    admin_name = db.Column(db.String(100), nullable=True)
+
+    transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
+
 with app.app_context():
     db.create_all()
 
@@ -466,13 +481,13 @@ def index():
                             <div class="mb-2">
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
                                 <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น)</option>
+                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
                                     <option value="full">คืนครบทั้งหมด (ปิดบัญชี)</option>
                                 </select>
                             </div>
                             <div class="mb-2" id="amountDiv{tx.id}">
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="กรอกจำนวนเงิน">
+                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
                             </div>
 
                             <div class="row g-2 mb-2">
@@ -486,6 +501,11 @@ def index():
                                 </div>
                             </div>
 
+                            <div class="mb-2">
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
+                                <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
+                            </div>
+
                             <div class="mb-1">
                                 <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ</label>
                                 <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
@@ -495,9 +515,12 @@ def index():
                                 </select>
                             </div>
                         </div>
-                        <div class="modal-footer bg-light py-2">
-                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-4" onclick="closeAllModals()">บันทึกการชำระ</button>
+                        <div class="modal-footer bg-light py-2 justify-content-between">
+                            <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ดูประวัติการจ่าย</a>
+                            <div>
+                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -732,10 +755,15 @@ def update_payment(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     payment_type = request.form.get('payment_type')
     thai_today = get_thai_today()
+    
+    raw_pay_amount = request.form.get('pay_amount', '')
+    pay_amount = float(raw_pay_amount) if raw_pay_amount != '' else 0.0
+    
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
     new_status = request.form.get('new_status')
     closed_date_str = request.form.get('closed_date')
+    note_text = request.form.get('note', '').strip()
     
     if closed_date_str:
         try:
@@ -756,33 +784,41 @@ def update_payment(tx_id):
         total_acc_interest = 0.0
 
     tx.last_payment_date = thai_today
+    
+    actual_interest_paid = 0.0
+    actual_principal_reduced = 0.0
 
     if payment_type == 'full':
         full_collection = total_acc_interest + fine_amt
         if full_collection > 0:
             tx.paid_interest += full_collection
+            actual_interest_paid = full_collection
             
+        actual_principal_reduced = tx.principal
         tx.principal = 0.0
         tx.status = 'คืนแล้ว'
         if not tx.closed_date:
             tx.closed_date = thai_today
     else:
-        pay_amount = float(request.form.get('pay_amount', 0))
         effective_pay = pay_amount + fine_amt
         total_reduction = effective_pay + discount_amt
         
         if effective_pay >= total_acc_interest:
             interest_paid = total_acc_interest
+            actual_interest_paid = interest_paid
             remainder = total_reduction - total_acc_interest
             tx.paid_interest += interest_paid
             if remainder > 0:
                 tx.principal -= remainder
+                actual_principal_reduced = remainder
                 if tx.principal < 0:
                     tx.principal = 0.0
         else:
             tx.paid_interest += effective_pay
+            actual_interest_paid = effective_pay
             if discount_amt > 0:
                 tx.principal -= discount_amt
+                actual_principal_reduced = discount_amt
                 if tx.principal < 0:
                     tx.principal = 0.0
             
@@ -797,6 +833,19 @@ def update_payment(tx_id):
             if new_status:
                 tx.status = new_status
 
+    history = PaymentHistory(
+        transaction_id=tx.id,
+        payment_date=thai_today,
+        pay_amount=pay_amount,
+        fine_amount=fine_amt,
+        discount_amount=discount_amt,
+        interest_paid=actual_interest_paid,
+        principal_reduced=actual_principal_reduced,
+        note=note_text,
+        admin_name=session.get('admin')
+    )
+    db.session.add(history)
+
     db.session.commit()
     db.session.remove()
     return redirect(url_for('index'))
@@ -810,6 +859,60 @@ def delete_tx(tx_id):
     db.session.commit()
     db.session.remove()
     return redirect(url_for('index'))
+
+@app.route('/history/<int:tx_id>')
+def payment_history(tx_id):
+    if 'admin' not in session:
+        return redirect(url_for('login'))
+        
+    tx = Transaction.query.get_or_404(tx_id)
+    histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc(), PaymentHistory.id.desc()).all()
+    
+    rows = ""
+    for h in histories:
+        date_str = h.payment_date.strftime('%d/%m/%Y') if h.payment_date else '-'
+        rows += f"""
+        <tr>
+            <td>{date_str}</td>
+            <td class="text-primary">{h.pay_amount:,.2f}</td>
+            <td class="text-danger">{h.fine_amount:,.2f}</td>
+            <td class="text-muted">{h.discount_amount:,.2f}</td>
+            <td>{h.interest_paid:,.2f}</td>
+            <td>{h.principal_reduced:,.2f}</td>
+            <td>{h.note or '-'}</td>
+            <td><span class="badge bg-secondary">{h.admin_name or '-'}</span></td>
+        </tr>
+        """
+        
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name} (ประเภท: {tx.type})</h4>
+            <a href="/" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>
+                        <th>วันที่ทำรายการ</th>
+                        <th>ยอดจ่ายจริง</th>
+                        <th>ค่าปรับ</th>
+                        <th>ส่วนลด</th>
+                        <th>ตัดดอกเบี้ย</th>
+                        <th>ตัดเงินต้น</th>
+                        <th>หมายเหตุ</th>
+                        <th>ผู้บันทึก</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows if rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    """
+    html = BASE_LAYOUT.replace('{% block header %}ประวัติการชำระเงิน{% endblock %}', 'ประวัติการชำระเงิน').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="ประวัติการชำระเงิน", page="dashboard")
 
 @app.route('/members')
 def members():
