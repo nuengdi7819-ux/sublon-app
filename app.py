@@ -236,6 +236,29 @@ BASE_LAYOUT = """
         if (val === 'กำหนดจ่ายประจำเดือน') { div.style.display = 'block'; } else { div.style.display = 'none'; }
     }
 
+    function filterCheckboxes(dayVal) {
+        let input = document.getElementById('searchBox' + dayVal).value.toLowerCase();
+        let items = document.querySelectorAll('.customer-item-' + dayVal);
+        items.forEach(item => {
+            let text = item.getAttribute('data-name').toLowerCase();
+            if (text.includes(input)) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    function selectAllCheckboxes(dayVal, select) {
+        let items = document.querySelectorAll('.customer-item-' + dayVal);
+        items.forEach(item => {
+            if (item.style.display !== 'none') {
+                let cb = item.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = select;
+            }
+        });
+    }
+
     function updateInterestOnDateChange(id, startDateStr, dailyInterest, paidInterest) {
         let dateInput = document.getElementById('closedDate' + id);
         let interestDisplay = document.getElementById('accInterestDisplay' + id);
@@ -354,7 +377,7 @@ def index():
     elif not search_query:
         if today_day in [14, 15, 16]:
             match_days = [14, 15, 16]
-        elif today_day >= last_day_of_current_month - 2: # ครอบคลุมวันสุดท้ายของเดือน (เช่น 28,29,30,31)
+        elif today_day >= last_day_of_current_month - 2:
             match_days = list(range(last_day_of_current_month - 2, last_day_of_current_month + 1)) + [30]
         else:
             match_days = [today_day]
@@ -662,7 +685,6 @@ def members_scheduled_all():
     if 'admin' not in session: return redirect(url_for('login'))
 
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
-    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
 
     sections = [
         (1, "📅 รอบวันที่ 1 ของเดือน"),
@@ -678,6 +700,42 @@ def members_scheduled_all():
     all_edit_modals = ""
 
     for day_val, section_title in sections:
+        # สร้างส่วนเลือกแบบ Multi-checkbox พร้อมช่องค้นหา
+        checkboxes_html = ""
+        for t in all_txs_for_select:
+            checkboxes_html += f"""
+            <div class="form-check customer-item-{day_val}" data-name="{t.customer_name}">
+                <input class="form-check-input" type="checkbox" name="transaction_ids" value="{t.id}" id="chk_{day_val}_{t.id}">
+                <label class="form-check-label small" for="chk_{day_val}_{t.id}">
+                    <b>{t.customer_name}</b> (ทุน: {t.original_principal:,.0f} | ปัจจุบัน: {t.schedule_type})
+                </label>
+            </div>
+            """
+
+        pull_section = f"""
+        <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
+            <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
+            <form action="/quick_assign_schedule_multi" method="POST">
+                <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
+                <input type="hidden" name="target_day" value="{day_val}">
+                
+                <div class="mb-2">
+                    <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes({day_val})">
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, true)">✅ เลือกทั้งหมด</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, false)">❌ ล้างทั้งหมด</button>
+                </div>
+
+                <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
+                    {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
+                </div>
+
+                <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้</button>
+            </form>
+        </div>
+        """
+
         if day_val == 15:
             txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', Transaction.due_day_of_month.in_([14, 15, 16])).order_by(Transaction.customer_name.asc()).all()
         elif day_val == 30:
@@ -758,21 +816,7 @@ def members_scheduled_all():
         all_sections_html += f"""
         <div class="card p-3 mb-4 shadow-sm border-warning">
             <h5 class="text-danger fw-bold mb-3">{section_title}</h5>
-            <div class="card p-2 mb-3 bg-light border">
-                <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
-                    <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
-                    <input type="hidden" name="target_day" value="{day_val}">
-                    <div class="col-md-9">
-                        <select name="transaction_id" class="form-select form-select-sm" required>
-                            <option value="">-- ดึงรายชื่อจากระบบมาใส่ใน {section_title} --</option>
-                            {select_options_html}
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
-                    </div>
-                </form>
-            </div>
+            {pull_section}
             <div class="table-responsive">
                 <table class="table table-striped text-nowrap align-middle">
                     <thead class="table-dark">
@@ -799,7 +843,7 @@ def members_scheduled_all():
     content = f"""
     <div class="mb-4">
         <h4 class="text-danger fw-bold">📅 บริหารจัดการสมาชิก: กำหนดจ่ายประจำเดือน (แบ่งตามรอบวัน)</h4>
-        <p class="text-muted small">รวมรายชื่อรอบกำหนดจ่ายประจำเดือนทุกช่วงวันไว้ในหน้าเดียว สามารถเลือกดึงรายชื่อหรือย้ายกลุ่มได้ทันที</p>
+        <p class="text-muted small">รวมรายชื่อรอบกำหนดจ่ายประจำเดือนทุกช่วงวันไว้ในหน้าเดียว สามารถเลือกติ๊กหลายคนพร้อมกันเพื่อดึงเข้ากลุ่มได้ทันที</p>
     </div>
     {all_sections_html}
     {all_edit_modals}
@@ -820,22 +864,23 @@ def update_schedule(tx_id):
     db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
-@app.route('/quick_assign_schedule', methods=['POST'])
-def quick_assign_schedule():
+@app.route('/quick_assign_schedule_multi', methods=['POST'])
+def quick_assign_schedule_multi():
     if 'admin' not in session: return redirect(url_for('login'))
-    tx_id = request.form.get('transaction_id')
+    tx_ids = request.form.getlist('transaction_ids')
     target_schedule = request.form.get('target_schedule')
     target_day = request.form.get('target_day')
     
-    if tx_id:
-        tx = Transaction.query.get(tx_id)
-        if tx:
-            tx.schedule_type = target_schedule
-            if target_schedule == 'กำหนดจ่ายประจำเดือน':
-                tx.due_day_of_month = int(target_day) if target_day else 15
-            else:
-                tx.due_day_of_month = None
-            db.session.commit()
+    if tx_ids:
+        for tx_id in tx_ids:
+            tx = Transaction.query.get(int(tx_id))
+            if tx:
+                tx.schedule_type = target_schedule
+                if target_schedule == 'กำหนดจ่ายประจำเดือน':
+                    tx.due_day_of_month = int(target_day) if target_day else 15
+                else:
+                    tx.due_day_of_month = None
+        db.session.commit()
     db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
@@ -999,6 +1044,19 @@ def members_unscheduled():
     """
     html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', '1.2 ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
+
+@app.route('/quick_assign_schedule', methods=['POST'])
+def quick_assign_schedule():
+    if 'admin' not in session: return redirect(url_for('login'))
+    tx_id = request.form.get('transaction_id')
+    target_schedule = request.form.get('target_schedule')
+    if tx_id:
+        tx = Transaction.query.get(tx_id)
+        if tx:
+            tx.schedule_type = target_schedule
+            db.session.commit()
+    db.session.remove()
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/all_transactions')
 def all_transactions():
