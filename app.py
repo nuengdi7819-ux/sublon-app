@@ -351,7 +351,6 @@ def index():
     all_txs_ever = Transaction.query.all()
     for tx in all_txs_ever: calculate_tx_values(tx)
 
-    # นับจำนวนรายการที่ยังค้างอยู่ของแต่ละลูกค้า
     customer_active_counts = defaultdict(int)
     for t in all_txs_ever:
         if t.principal > 0 and t.customer_name:
@@ -657,6 +656,7 @@ def customer_details(cust_name):
             <td>{tx.principal:,.2f}</td>
             <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
             <td>{tx.daily_interest:,.2f}</td>
+            <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
                 <a href="/" class="btn btn-sm btn-warning">ไปจัดการหน้าหลัก</a>
@@ -684,11 +684,12 @@ def customer_details(cust_name):
                         <th>ต้นคงค้าง</th>
                         <th>ชำระแล้ว</th>
                         <th>ดอก/วัน</th>
+                        <th>ดอกเบี้ยสะสม</th>
                         <th>สถานะ</th>
                         <th class="text-center">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
