@@ -326,11 +326,14 @@ def index():
         return redirect(url_for('index'))
 
     search_query = request.args.get('search', '').strip()
-    target_date_str = request.args.get('target_date', '').strip()
+    start_date_str = request.args.get('start_date', '').strip()
+    end_date_str = request.args.get('end_date', '').strip()
     month_filter = request.args.get('month', '').strip()
     thai_today = get_thai_today()
 
     query = Transaction.query
+
+    # 1. ระบบค้นหาชื่อหรือเบอร์โทร (ค้นหาจากสมาชิกทั้งหมดในระบบ)
     if search_query:
         search_pattern = f"%{search_query}%"
         query = query.filter(
@@ -338,9 +341,20 @@ def index():
             (Transaction.phone.ilike(search_pattern))
         )
     
-    if target_date_str:
+    # 2. ระบบกรองตามช่วงวันที่ (จากวันที่... ถึงวันที่...) หรือ วันที่เดี่ยว หรือ เดือน
+    if start_date_str and end_date_str:
         try:
-            target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+            s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            query = query.filter(
+                (Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) |
+                (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date)
+            )
+        except Exception as e:
+            print("Date range parse error:", e)
+    elif start_date_str:
+        try:
+            target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             query = query.filter(
                 (Transaction.start_date == target_date) | 
                 (Transaction.last_payment_date == target_date)
@@ -352,7 +366,8 @@ def index():
             db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]),
             db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1])
         )
-    else:
+    elif not search_query:
+        # ค่าเริ่มต้นหน้าแรก (ถ้าไม่มีการค้นหาหรือกรองช่วงวันที่) ให้แสดงเฉพาะรายการของวันนี้
         query = query.filter(
             (Transaction.start_date == thai_today) | 
             (Transaction.last_payment_date == thai_today)
@@ -375,10 +390,12 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs if tx.type != 'ยอดค้างเก่า' and tx.status != 'คืนแล้ว' and tx.principal > 0)
     
-    total_profit = sum(
+    base_profit = sum(
         ((tx.original_principal - tx.principal)) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest 
         for tx in all_txs
     )
+    total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
+    total_profit = base_profit + total_fine
 
     rows = ""
     cards = ""
@@ -390,7 +407,7 @@ def index():
         elif tx.status == 'คืนแล้ว':
             badge_color = 'bg-secondary'
 
-        start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
+        start_date_str_fmt = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         start_date_iso = tx.start_date.strftime('%Y-%m-%d') if tx.start_date else thai_today.strftime('%Y-%m-%d')
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
@@ -405,7 +422,7 @@ def index():
             <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{tx.customer_name}</td>
             <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
-            <td>{start_date_str}</td>
+            <td>{start_date_str_fmt}</td>
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
@@ -438,7 +455,7 @@ def index():
                 </div>
                 <hr class="my-2">
                 <div class="row g-1 small mb-3">
-                    <div class="col-6">📅 วันที่เริ่ม: {start_date_str}</div>
+                    <div class="col-6">📅 วันที่เริ่ม: {start_date_str_fmt}</div>
                     <div class="col-6">⏱️ เวลา: {display_days}</div>
                     <div class="col-6">💰 เงินลงทุน: <b>{tx.original_principal:,.2f}</b></div>
                     <div class="col-6 text-danger">💼 ต้นคงค้าง: <b>{tx.principal:,.2f}</b></div>
@@ -528,11 +545,17 @@ def index():
         </div>
         """
 
-    if target_date_str:
-        table_title = f"📋 รายการความเคลื่อนไหววันที่: {target_date_str}"
+    if start_date_str and end_date_str:
+        table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
+    elif start_date_str:
+        table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
         view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
     elif month_filter:
         table_title = f"📋 รายการประจำเดือน: {month_filter}"
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
+    elif search_query:
+        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
         view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการวันนี้</a>'
     else:
         table_title = "📋 รายการความเคลื่อนไหววันนี้"
@@ -616,15 +639,20 @@ def index():
                 <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
                 {view_today_btn}
             </div>
+            <!-- ฟอร์มค้นหาและเลือกช่วงวันที่ -->
             <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
                 <div class="d-flex align-items-center gap-1">
-                    <small class="text-muted">เลือกวันที่:</small>
-                    <input type="date" name="target_date" class="form-control form-control-sm" value="{target_date_str}">
+                    <small class="text-muted">จาก:</small>
+                    <input type="date" name="start_date" class="form-control form-control-sm" value="{start_date_str}">
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <small class="text-muted">ถึง:</small>
+                    <input type="date" name="end_date" class="form-control form-control-sm" value="{end_date_str}">
                 </div>
                 <div class="d-flex align-items-center gap-1">
                     <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
                 </div>
-                <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
+                <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา / เช็กยอด</button>
             </form>
         </div>
         
@@ -648,13 +676,13 @@ def index():
                     </tr>
                 </thead>
                 <tbody>
-                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีข้อมูลรายการความเคลื่อนไหววันนี้</td></tr>"}
+                    {rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่พบข้อมูลตามเงื่อนไขที่ค้นหา</td></tr>"}
                 </tbody>
             </table>
         </div>
 
         <div class="mobile-card-view">
-            {cards if cards else "<p class='text-center text-muted'>ยังไม่มีข้อมูลรายการความเคลื่อนไหววันนี้</p>"}
+            {cards if cards else "<p class='text-center text-muted'>ไม่พบข้อมูลตามเงื่อนไขที่ค้นหา</p>"}
         </div>
     </div>
 
