@@ -102,12 +102,6 @@ BASE_LAYOUT = """
             .main-content { margin-left: 0; padding: 12px; }
             .mobile-header { display: flex; justify-content: space-between; align-items: center; }
             .sidebar-backdrop.show { display: block; }
-            .desktop-table-view { display: none; }
-            .mobile-card-view { display: block; }
-        }
-        @media (min-width: 993px) {
-            .desktop-table-view { display: block; }
-            .mobile-card-view { display: none; }
         }
     </style>
 </head>
@@ -219,48 +213,6 @@ BASE_LAYOUT = """
         let val = document.getElementById('scheduleTypeSelect').value;
         let dayDiv = document.getElementById('dueDayDiv');
         if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
-    }
-
-    function filterCheckboxes(dayVal) {
-        let input = document.getElementById('searchBox' + dayVal).value.toLowerCase();
-        let items = document.querySelectorAll('.customer-item-' + dayVal);
-        items.forEach(item => {
-            let text = item.getAttribute('data-name').toLowerCase();
-            if (text.includes(input)) {
-                item.style.display = '';
-            } else {
-                item.style.display = 'none';
-            }
-        });
-    }
-
-    function selectAllCheckboxes(dayVal, select) {
-        let items = document.querySelectorAll('.customer-item-' + dayVal);
-        items.forEach(item => {
-            if (item.style.display !== 'none') {
-                let cb = item.querySelector('input[type="checkbox"]');
-                if (cb) cb.checked = select;
-            }
-        });
-    }
-
-    function updateInterestOnDateChange(id, startDateStr, dailyInterest, paidInterest) {
-        let dateInput = document.getElementById('closedDate' + id);
-        let interestDisplay = document.getElementById('accInterestDisplay' + id);
-        if (!dateInput || !interestDisplay) return;
-
-        let selectedDateVal = dateInput.value;
-        let endDate = selectedDateVal ? new Date(selectedDateVal) : new Date();
-        let startDate = new Date(startDateStr);
-
-        let diffTime = endDate - startDate;
-        let diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        if (diffDays < 1) diffDays = 1;
-
-        let totalAcc = (dailyInterest * diffDays) - paidInterest;
-        if (totalAcc < 0) totalAcc = 0.0;
-
-        interestDisplay.innerText = totalAcc.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " บาท";
     }
 
     function closeAllModals() {
@@ -678,7 +630,6 @@ def index():
 @app.route('/members_scheduled_all')
 def members_scheduled_all():
     if 'admin' not in session: return redirect(url_for('login'))
-
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
 
     sections = [
@@ -762,53 +713,6 @@ def members_scheduled_all():
                     <button type="button" class="btn btn-sm btn-warning fw-bold px-2 py-1" data-bs-toggle="modal" data-bs-target="#editScheduleModal{t.id}">⚙️ เปลี่ยนกลุ่ม</button>
                 </td>
             </tr>
-            """
-
-            sel_daily = "selected" if t.schedule_type == "จ่ายทุกวัน" else ""
-            sel_sched = "selected" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else ""
-            sel_unsched = "selected" if t.schedule_type == "ยังไม่มีกำหนดจ่าย" else ""
-            display_day_div = "block" if t.schedule_type == "กำหนดจ่ายประจำเดือน" else "none"
-            
-            current_saved_list = t.due_day_of_month.split(',') if t.due_day_of_month else []
-
-            all_edit_modals += f"""
-            <div class="modal fade" id="editScheduleModal{t.id}" tabindex="-1">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content border-warning">
-                        <form action="/update_schedule/{t.id}" method="POST">
-                            <div class="modal-header bg-warning text-dark py-2">
-                                <h5 class="modal-title fs-6 fw-bold">เปลี่ยนประเภทการชำระ: {t.customer_name}</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body py-3">
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold">เลือกประเภทกำหนดจ่ายใหม่</label>
-                                    <select name="schedule_type" class="form-select border-warning" id="editScheduleType{t.id}" onchange="handleEditScheduleChange({t.id})" required>
-                                        <option value="จ่ายทุกวัน" {sel_daily}>จ่ายทุกวัน (ทวงทุกวัน)</option>
-                                        <option value="กำหนดจ่ายประจำเดือน" {sel_sched}>กำหนดจ่ายประจำเดือน</option>
-                                        <option value="ยังไม่มีกำหนดจ่าย" {sel_unsched}>ยังไม่มีกำหนดจ่าย</option>
-                                    </select>
-                                </div>
-                                <div class="mb-3" id="editDueDayDiv{t.id}" style="display: {display_day_div};">
-                                    <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย (เลือกได้หลายรอบ)</label>
-                                    <div class="p-2 border rounded bg-light d-flex flex-wrap gap-3">
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" {'checked' if '2' in current_saved_list else ''}><label class="form-check-label small">29-2 (ข้ามเดือน)</label></div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" {'checked' if '6' in current_saved_list else ''}><label class="form-check-label small">4-6</label></div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" {'checked' if '12' in current_saved_list else ''}><label class="form-check-label small">9-12</label></div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" {'checked' if '16' in current_saved_list else ''}><label class="form-check-label small">14-16</label></div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" {'checked' if '23' in current_saved_list else ''}><label class="form-check-label small">20-23</label></div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" {'checked' if '26' in current_saved_list else ''}><label class="form-check-label small">24-26</label></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="modal-footer py-2">
-                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3">บันทึกการเปลี่ยนกลุ่ม</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
             """
 
         all_sections_html += f"""
@@ -895,10 +799,6 @@ def members():
         calculate_tx_values(t)
         s_date = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
         sched_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
-        if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
-            code_map = {"2": "29-2", "6": "4-6", "12": "9-12", "16": "14-16", "23": "20-23", "26": "24-26"}
-            labels = [code_map.get(c, c) for c in t.due_day_of_month.split(',')]
-            sched_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
         rows += f"<tr><td><b>{t.customer_name}</b></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {'bg-success' if t.status=='ปกติ' else 'bg-secondary'}'>{t.status}</span></td></tr>"
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ (ยังไม่ปิดบัญชี)</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
@@ -908,70 +808,25 @@ def members():
 def members_daily():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'จ่ายทุกวัน').order_by(Transaction.customer_name.asc()).all()
-    
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
-    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
+    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f})</option>' for t in all_txs_for_select])
 
     rows = ""
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
-        rows += f"""
-        <tr>
-            <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{t.customer_name}</td>
-            <td>{t.phone or '-'}</td>
-            <td><span class="badge bg-danger">{t.sales_name}</span></td>
-            <td>{start_str}</td>
-            <td>{t.original_principal:,.2f}</td>
-            <td>{t.principal:,.2f}</td>
-            <td><strong>{t.total_paid:,.2f}</strong></td>
-            <td>{t.daily_interest:,.2f}</td>
-            <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else 'bg-info text-dark'}">{t.status}</span></td>
-        </tr>
-        """
+        rows += f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
     
-    pull_section = f"""
+    content = f"""
     <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
-        <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อมาใส่ในหมวด "จ่ายทุกวัน" ทันที</h6>
+        <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อมาใส่ในหมวด "จ่ายทุกวัน"</h6>
         <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
             <input type="hidden" name="target_schedule" value="จ่ายทุกวัน">
-            <div class="col-md-9">
-                <select name="transaction_id" class="form-select form-select-sm" required>
-                    <option value="">-- คลิกเลือกชื่อลูกค้าจากระบบเพื่อดึงมาใส่หมวดนี้ --</option>
-                    {select_options_html}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
-            </div>
+            <div class="col-md-9"><select name="transaction_id" class="form-select form-select-sm" required><option value="">-- เลือกชื่อลูกค้า --</option>{select_options_html}</select></div>
+            <div class="col-md-3"><button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่ม</button></div>
         </form>
     </div>
-    """
-    content = f"""
-    {pull_section}
-    <div class="card p-4 shadow-sm border-warning">
-        <h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.1 สมาชิกประเภท: จ่ายทุกวัน (ทวงทุกวัน)</h4>
-        <div class="table-responsive">
-            <table class="table table-striped text-nowrap align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
-                        <th>เบอร์โทร</th>
-                        <th>เซลล์ผู้ดูแล</th>
-                        <th>วันที่กู้</th>
-                        <th>เงินลงทุน</th>
-                        <th>ต้นคงค้าง</th>
-                        <th>ยอดที่ชำระมาแล้ว</th>
-                        <th>ดอกเบี้ย/วัน</th>
-                        <th>ดอกเบี้ยสะสม</th>
-                        <th>สถานะ</th>
-                    </tr>
-                </thead>
-                <tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้</td></tr>"}</tbody>
-            </table>
-        </div>
-    </div>
+    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.1 สมาชิกประเภท: จ่ายทุกวัน</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
     """
     html = BASE_LAYOUT.replace('{% block header %}1.1 จ่ายทุกวัน{% endblock %}', '1.1 จ่ายทุกวัน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="จ่ายทุกวัน", page="members_daily")
@@ -980,70 +835,25 @@ def members_daily():
 def members_unscheduled():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'ยังไม่มีกำหนดจ่าย').order_by(Transaction.customer_name.asc()).all()
-    
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
-    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
+    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f})</option>' for t in all_txs_for_select])
 
     rows = ""
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
-        rows += f"""
-        <tr>
-            <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{t.customer_name}</td>
-            <td>{t.phone or '-'}</td>
-            <td><span class="badge bg-danger">{t.sales_name}</span></td>
-            <td>{start_str}</td>
-            <td>{t.original_principal:,.2f}</td>
-            <td>{t.principal:,.2f}</td>
-            <td><strong>{t.total_paid:,.2f}</strong></td>
-            <td>{t.daily_interest:,.2f}</td>
-            <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else 'bg-info text-dark'}">{t.status}</span></td>
-        </tr>
-        """
+        rows += f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
     
-    pull_section = f"""
+    content = f"""
     <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
-        <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อมาใส่ในหมวด "ยังไม่มีกำหนดจ่าย" ทันที</h6>
+        <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อมาใส่ในหมวด "ยังไม่มีกำหนดจ่าย"</h6>
         <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
             <input type="hidden" name="target_schedule" value="ยังไม่มีกำหนดจ่าย">
-            <div class="col-md-9">
-                <select name="transaction_id" class="form-select form-select-sm" required>
-                    <option value="">-- คลิกเลือกชื่อลูกค้าจากระบบเพื่อดึงมาใส่หมวดนี้ --</option>
-                    {select_options_html}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
-            </div>
+            <div class="col-md-9"><select name="transaction_id" class="form-select form-select-sm" required><option value="">-- เลือกชื่อลูกค้า --</option>{select_options_html}</select></div>
+            <div class="col-md-3"><button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่ม</button></div>
         </form>
     </div>
-    """
-    content = f"""
-    {pull_section}
-    <div class="card p-4 shadow-sm border-warning">
-        <h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.2 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย</h4>
-        <div class="table-responsive">
-            <table class="table table-striped text-nowrap align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
-                        <th>เบอร์โทร</th>
-                        <th>เซลล์ผู้ดูแล</th>
-                        <th>วันที่กู้</th>
-                        <th>เงินลงทุน</th>
-                        <th>ต้นคงค้าง</th>
-                        <th>ยอดที่ชำระมาแล้ว</th>
-                        <th>ดอกเบี้ย/วัน</th>
-                        <th>ดอกเบี้ยสะสม</th>
-                        <th>สถานะ</th>
-                    </tr>
-                </thead>
-                <tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้</td></tr>"}</tbody>
-            </table>
-        </div>
-    </div>
+    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.2 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
     """
     html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', '1.2 ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
@@ -1069,46 +879,82 @@ def all_transactions():
     if search_query:
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
-    transactions = query.order_by(Transaction.customer_name.asc()).all()
-
-    rows = ""
+    
+    transactions = query.all()
     for tx in transactions:
         calculate_tx_values(tx)
-        badge_color = 'bg-success'
-        if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
-        elif tx.principal <= 0: badge_color = 'bg-secondary'
-        start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
-        last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
-        
-        rows += f"""
-        <tr>
-            <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{tx.customer_name}</td>
-            <td>{tx.phone or '-'}</td>
-            <td><span class="badge bg-secondary">{tx.type}</span></td>
-            <td>{start_date_str}</td>
-            <td>{last_pay_str}</td>
-            <td>{tx.original_principal:,.2f}</td>
-            <td>{tx.principal:,.2f}</td>
-            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
-            <td>{tx.daily_interest:,.2f}</td>
-            <td>{tx.accumulated_interest:,.2f}</td>
-            <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
-            <td><a href="/" class="btn btn-sm btn-warning">จัดการ</a></td>
-        </tr>
-        """
+
+    # แยกบัญชีที่ยังไม่ปิด (Active) และบัญชีที่ปิดแล้ว (Closed)
+    active_txs = [t for t in transactions if t.principal > 0]
+    closed_txs = [t for t in transactions if t.principal <= 0]
+
+    # เรียง Active ตามวันที่ชำระล่าสุด (ล่าสุดขึ้นก่อน) ถ้าไม่มีให้ใช้ start_date
+    active_txs.sort(key=lambda x: (x.last_payment_date if x.last_payment_date else x.start_date), reverse=True)
+    # เรียง Closed ตามวันที่ปิด/ล่าสุด
+    closed_txs.sort(key=lambda x: (x.last_payment_date if x.last_payment_date else x.start_date), reverse=True)
+
+    def build_rows(tx_list, is_closed=False):
+        res = ""
+        for tx in tx_list:
+            badge_color = 'bg-success' if not is_closed else 'bg-secondary'
+            if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
+            start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
+            last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
+            
+            res += f"""
+            <tr>
+                <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500;">{tx.customer_name}</td>
+                <td>{tx.phone or '-'}</td>
+                <td><span class="badge bg-secondary">{tx.type}</span></td>
+                <td>{start_date_str}</td>
+                <td>{last_pay_str}</td>
+                <td>{tx.original_principal:,.2f}</td>
+                <td>{tx.principal:,.2f}</td>
+                <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
+                <td>{tx.daily_interest:,.2f}</td>
+                <td>{tx.accumulated_interest:,.2f}</td>
+                <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
+                <td><a href="/" class="btn btn-sm btn-warning">จัดการ</a></td>
+            </tr>
+            """
+        return res
+
+    active_rows = build_rows(active_txs, False)
+    closed_rows = build_rows(closed_txs, True)
 
     content = f"""
-    <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการทั้งหมดในระบบ (รวมที่ปิดบัญชีแล้ว)</h4>
-            <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard</a>
+    <div class="card p-4 shadow-sm border-warning mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการบัญชีที่ยังไม่ปิด (เรียงตามวันที่ชำระล่าสุด)</h4>
+            <div class="d-flex align-items-center gap-2">
+                <form method="GET" class="d-flex align-items-center gap-2">
+                    <input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา</button>
+                </form>
+                <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard</a>
+            </div>
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
                     <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในระบบ</td></tr>"}</tbody>
+                <tbody>{active_rows if active_rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการบัญชีที่เปิดอยู่</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 shadow-sm border-secondary">
+        <div class="mb-3">
+            <h4 class="mb-0 fs-5 text-secondary fw-bold">📁 ประวัติบัญชีที่ปิดแล้ว (คืนครบทั้งหมด)</h4>
+            <small class="text-muted">รายการทั้งหมดที่ลูกค้าชำระครบและปิดบัญชีเรียบร้อยแล้ว</small>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-secondary">
+                    <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
+                </thead>
+                <tbody>{closed_rows if closed_rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีบัญชีที่ปิดแล้ว</td></tr>"}</tbody>
             </table>
         </div>
     </div>
