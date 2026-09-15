@@ -234,6 +234,13 @@ BASE_LAYOUT = """
         if (val === 'มีกำหนดจ่าย') { div.style.display = 'block'; } else { div.style.display = 'none'; }
     }
 
+    function toggleSelectAll(source) {
+        checkboxes = document.querySelectorAll('input[name="selected_ids"]');
+        for(let checkbox of checkboxes) {
+            checkbox.checked = source.checked;
+        }
+    }
+
     function updateInterestOnDateChange(id, startDateStr, dailyInterest, paidInterest) {
         let dateInput = document.getElementById('closedDate' + id);
         let interestDisplay = document.getElementById('accInterestDisplay' + id);
@@ -336,8 +343,7 @@ def index():
     month_filter = request.args.get('month', '').strip()
     thai_today = get_thai_today()
 
-    query = Transaction.query.filter(Transaction.status != 'คืนแล้ว') # ซ่อนรายการที่คืนครบแล้ว
-
+    query = Transaction.query
     if search_query:
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
@@ -356,12 +362,7 @@ def index():
     elif month_filter:
         query = query.filter(db.extract('year', Transaction.start_date) == int(month_filter.split('-')[0]), db.extract('month', Transaction.start_date) == int(month_filter.split('-')[1]))
     elif not search_query:
-        query = query.filter(
-            ((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | 
-            (Transaction.due_date == thai_today) | 
-            (Transaction.start_date == thai_today) | 
-            (Transaction.last_payment_date == thai_today)
-        )
+        query = query.filter(((Transaction.schedule_type == 'จ่ายทุกวัน') & (Transaction.principal > 0)) | (Transaction.due_date == thai_today) | (Transaction.start_date == thai_today) | (Transaction.last_payment_date == thai_today))
 
     transactions = query.order_by(Transaction.customer_name.asc()).all()
     for tx in transactions:
@@ -371,8 +372,7 @@ def index():
     all_txs = Transaction.query.all()
     for tx in all_txs: calculate_tx_values(tx)
 
-    # รายชื่อลูกค้าสำหรับช่องค้นหา (เฉพาะที่ยังไม่คืนครบ)
-    unique_customers = sorted(list(set(t.customer_name for t in all_txs if t.customer_name and t.status != 'คืนแล้ว')))
+    unique_customers = sorted(list(set(t.customer_name for t in all_txs if t.customer_name)))
     datalist_options = "".join([f'<option value="{name}">' for name in unique_customers])
 
     total_new_investment = sum(tx.original_principal for tx in all_txs if tx.type != 'ยอดค้างเก่า')
@@ -386,6 +386,7 @@ def index():
     for tx in transactions:
         badge_color = 'bg-success'
         if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
+        elif tx.status == 'คืนแล้ว': badge_color = 'bg-secondary'
 
         start_date_str_fmt = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         start_date_iso = tx.start_date.strftime('%Y-%m-%d') if tx.start_date else thai_today.strftime('%Y-%m-%d')
@@ -639,18 +640,17 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
+# ฟังก์ชันแสดงรายชื่อและระบบเลือกติ๊กหลายรายการพร้อมกัน
 def render_members_by_schedule(schedule_filter, page_name, page_title):
     if 'admin' not in session: return redirect(url_for('login'))
     
-    # ดึงเฉพาะรายการที่ยังไม่คืนครบ (status != 'คืนแล้ว') มาแสดงในหมวดหมู่ต่างๆ
-    base_query = Transaction.query.filter(Transaction.status != 'คืนแล้ว')
     if schedule_filter:
-        txs = base_query.filter_by(schedule_type=schedule_filter).order_by(Transaction.customer_name.asc()).all()
+        txs = Transaction.query.filter_by(schedule_type=schedule_filter).order_by(Transaction.customer_name.asc()).all()
     else:
-        txs = base_query.order_by(Transaction.customer_name.asc()).all()
+        txs = Transaction.query.order_by(Transaction.customer_name.asc()).all()
 
-    all_txs_for_select = base_query.order_by(Transaction.customer_name.asc()).all()
-    select_options_html = "".join([f'<option value="{t.id}">{t.customer_name} (ทุน: {t.original_principal:,.0f} | ปัจจุบันอยู่: {t.schedule_type})</option>' for t in all_txs_for_select])
+    # ดึงรายชื่อทั้งหมดสำหรับตารางเลือกดึงเข้ากลุ่ม
+    all_active_txs = Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all()
 
     rows, edit_modals = "", ""
     for t in txs:
@@ -674,7 +674,7 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
             <td><strong>{t.total_paid:,.2f}</strong></td>
             <td>{t.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
-            <td><span class="badge {'bg-success' if t.status=='ปกติ' else 'bg-info text-dark'}">{t.status}</span></td>
+            <td><span class="badge {'bg-success' if t.status=='ปกติ' else ('bg-info text-dark' if t.status=='ตัดยอดบางส่วน' else 'bg-secondary')}">{t.status}</span></td>
             <td style="text-align: center;">
                 <button type="button" class="btn btn-sm btn-warning fw-bold px-2 py-1" data-bs-toggle="modal" data-bs-target="#editScheduleModal{t.id}">⚙️ เปลี่ยนกลุ่ม</button>
             </td>
@@ -719,26 +719,57 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
         </div>
         """
 
+    # ส่วนตารางเลือกติ๊กหลายรายการพร้อมกัน
     pull_section = ""
     if schedule_filter:
+        picker_rows = ""
+        for t in all_active_txs:
+            picker_rows += f"""
+            <tr>
+                <td style="text-align: center;"><input class="form-check-input" type="checkbox" name="selected_ids" value="{t.id}"></td>
+                <td><b>{t.customer_name}</b></td>
+                <td><span class="badge bg-secondary">{t.type}</span></td>
+                <td><span class="badge bg-dark">{t.schedule_type}</span></td>
+                <td>{t.original_principal:,.2f}</td>
+            </tr>
+            """
+
         pull_section = f"""
-        <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
-            <h6 class="text-danger fw-bold mb-2">⚡ ดึงรายชื่อที่มีอยู่ในระบบมาใส่ในหมวด "{page_title}" ทันที</h6>
-            <form action="/quick_assign_schedule" method="POST" class="row g-2 align-items-center">
-                <input type="hidden" name="target_schedule" value="{schedule_filter}">
-                <div class="col-md-7">
-                    <select name="transaction_id" class="form-select form-select-sm" required>
-                        <option value="">-- คลิกลือกชื่อลูกค้าจากระบบเพื่อดึงมาใส่หมวดนี้ --</option>
-                        {select_options_html}
-                    </select>
+        <div class="card mb-4 border-success shadow-sm">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fs-6">⚡ ติ๊กเลือกรายชื่อเพื่อดึงเข้าหมวด "{page_title}" (เลือกได้หลายคนพร้อมกัน)</h5>
+                <button class="btn btn-sm btn-light text-success fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#multiSelectBox">📂 เปิด/ปิด ตารางเลือกรายชื่อ</button>
+            </div>
+            <div class="collapse" id="multiSelectBox">
+                <div class="card-body bg-light">
+                    <form action="/batch_assign_schedule" method="POST">
+                        <input type="hidden" name="target_schedule" value="{schedule_filter}">
+                        <div class="row g-3 align-items-end mb-3">
+                            <div class="col-md-4" id="batchDueDateDiv" style="display: {'block' if schedule_filter == 'มีกำหนดจ่าย' else 'none'};">
+                                <label class="form-label text-primary fw-bold small">กำหนดวันที่ต้องจ่าย (สำหรับคนที่เลือก)</label>
+                                <input type="date" name="due_date" class="form-control form-control-sm border-primary" value="{get_thai_today().strftime('%Y-%m-%d')}">
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-success btn-sm fw-bold px-4 py-2 w-100" onclick="return confirm('ยืนยันดึงรายชื่อที่เลือกเข้าสู่หมวดนี้?')">📥 ยืนยันดึงรายชื่อเข้ากลุ่ม</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-bordered bg-white align-middle">
+                                <thead class="table-dark sticky-top">
+                                    <tr>
+                                        <th style="width: 40px; text-align: center;"><input class="form-check-input" type="checkbox" onclick="toggleSelectAll(this)"></th>
+                                        <th>ชื่อลูกค้า</th>
+                                        <th>ประเภทรายการ</th>
+                                        <th>กลุ่มปัจจุบัน</th>
+                                        <th>เงินลงทุน/ยอดตั้งต้น</th>
+                                    </tr>
+                                </thead>
+                                <tbody>{picker_rows if picker_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายชื่อในระบบ</td></tr>"}</tbody>
+                            </table>
+                        </div>
+                    </form>
                 </div>
-                <div class="col-md-3" id="quickDueDateDiv" style="display: {'block' if schedule_filter == 'มีกำหนดจ่าย' else 'none'};">
-                    <input type="date" name="due_date" class="form-control form-control-sm" value="{get_thai_today().strftime('%Y-%m-%d')}">
-                </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่มนี้</button>
-                </div>
-            </form>
+            </div>
         </div>
         """
 
@@ -764,7 +795,7 @@ def render_members_by_schedule(schedule_filter, page_name, page_title):
                         <th style="text-align: center;">จัดการกลุ่ม</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้ สามารถใช้ปุ่มด้านบนดึงรายชื่อมาใส่ได้ทันที</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิกในกลุ่มนี้ สามารถเปิดตารางด้านบนเพื่อติ๊กเลือกรายชื่อมาใส่ได้ทันที</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -787,23 +818,22 @@ def update_schedule(tx_id):
     db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
-@app.route('/quick_assign_schedule', methods=['POST'])
-def quick_assign_schedule():
+@app.route('/batch_assign_schedule', methods=['POST'])
+def batch_assign_schedule():
     if 'admin' not in session: return redirect(url_for('login'))
-    tx_id = request.form.get('transaction_id')
+    selected_ids = request.form.getlist('selected_ids')
     target_schedule = request.form.get('target_schedule')
     due_str = request.form.get('due_date')
     
-    if tx_id:
-        tx = Transaction.query.get(tx_id)
-        if tx:
-            tx.schedule_type = target_schedule
-            if target_schedule == 'มีกำหนดจ่าย' and due_str:
-                tx.due_date = datetime.strptime(due_str, '%Y-%m-%d').date()
-            else:
-                tx.due_date = None
-            db.session.commit()
-    db.session.remove()
+    if selected_ids:
+        parsed_due = datetime.strptime(due_str, '%Y-%m-%d').date() if (target_schedule == 'มีกำหนดจ่าย' and due_str) else None
+        for tid in selected_ids:
+            tx = Transaction.query.get(int(tid))
+            if tx:
+                tx.schedule_type = target_schedule
+                tx.due_date = parsed_due
+        db.session.commit()
+        db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/members')
@@ -822,7 +852,7 @@ def members_unscheduled(): return render_members_by_schedule('ยังไม่
 def all_transactions():
     if 'admin' not in session: return redirect(url_for('login'))
     search_query = request.args.get('search', '').strip()
-    query = Transaction.query.filter(Transaction.status != 'คืนแล้ว')
+    query = Transaction.query
     if search_query:
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
@@ -833,6 +863,7 @@ def all_transactions():
         calculate_tx_values(tx)
         badge_color = 'bg-success'
         if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
+        elif tx.status == 'คืนแล้ว': badge_color = 'bg-secondary'
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         
@@ -856,15 +887,15 @@ def all_transactions():
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการทั้งหมดในระบบ (เฉพาะที่ยังไม่คืนครบ)</h4>
-            <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard</a>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการทั้งหมดในระบบ</h4>
+            <a href="/" class="btn btn-sm btn-success fw-bold">🏠 กลับหน้า Dashboard (รายการแจ้งเตือนวันนี้)</a>
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
                     <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการค้างในระบบ</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในระบบ</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1030,7 +1061,7 @@ def payment_history(tx_id):
 def sales_members():
     if 'admin' not in session: return redirect(url_for('login'))
     sales_data = defaultdict(list)
-    for tx in Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all():
+    for tx in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         calculate_tx_values(tx)
         sales_data[tx.sales_name].append(tx)
 
@@ -1049,29 +1080,29 @@ def sales_members():
 @app.route('/customer_summary')
 def customer_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{t.type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td>{t.paid_interest:,.2f}</td><td><span class='badge bg-success'>{t.status}</span></td></tr>" for t in Transaction.query.filter(Transaction.status != 'คืนแล้ว').order_by(Transaction.customer_name.asc()).all() if calculate_tx_values(t) or True])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📂 สรุปข้อมูลลูกค้าทั้งหมด (เฉพาะที่ยังไม่คืนครบ)</h4><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>กำไรสะสม</th><th>สถานะ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
+    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{t.type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td>{t.paid_interest:,.2f}</td><td><span class='badge bg-success'>{t.status}</span></td></tr>" for t in Transaction.query.order_by(Transaction.customer_name.asc()).all() if calculate_tx_values(t) or True])
+    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📂 สรุปข้อมูลลูกค้าทั้งหมด</h4><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>กำไรสะสม</th><th>สถานะ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}3. สรุปลูกค้า{% endblock %}', 'สรุปลูกค้า').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สรุปลูกค้า", page="customer")
 
 @app.route('/customer_emergency')
 def customer_emergency():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='เงินฉุกเฉิน').filter(Transaction.status != 'คืนแล้ว').all() if calculate_tx_values(t) or True])
+    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='เงินฉุกเฉิน').all() if calculate_tx_values(t) or True])
     html = BASE_LAYOUT.replace('{% block header %}3.1 เงินฉุกเฉิน{% endblock %}', 'เงินฉุกเฉิน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="เงินฉุกเฉิน", page="emergency")
 
 @app.route('/customer_gold')
 def customer_gold():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ผ่อนทอง').filter(Transaction.status != 'คืนแล้ว').all() if calculate_tx_values(t) or True])
+    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ผ่อนทอง').all() if calculate_tx_values(t) or True])
     html = BASE_LAYOUT.replace('{% block header %}3.2 ผ่อนทอง{% endblock %}', 'ผ่อนทอง').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ผ่อนทอง", page="gold")
 
 @app.route('/customer_debt')
 def customer_debt():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ยอดค้างเก่า').filter(Transaction.status != 'คืนแล้ว').all() if calculate_tx_values(t) or True])
+    rows = "".join([f"<tr><td>{t.customer_name}</td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ยอดค้างเก่า').all() if calculate_tx_values(t) or True])
     html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
 
