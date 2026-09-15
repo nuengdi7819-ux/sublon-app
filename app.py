@@ -1,8 +1,6 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone, timedelta
-import calendar
-from collections import defaultdict
 import os
 import io
 import csv
@@ -65,12 +63,6 @@ class PaymentHistory(db.Model):
 
 with app.app_context():
     db.create_all()
-    try:
-        db.session.execute(db.text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'จ่ายทุกวัน';"))
-        db.session.execute(db.text("ALTER TABLE transactions ALTER COLUMN due_day_of_month TYPE VARCHAR(50);"))
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
 
 BASE_LAYOUT = """
 <!DOCTYPE html>
@@ -95,10 +87,9 @@ BASE_LAYOUT = """
         .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
 
-        .table-responsive::-webkit-scrollbar { height: 12px; }
+        .table-responsive::-webkit-scrollbar { height: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
         .table-responsive::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 6px; }
-        .table-responsive::-webkit-scrollbar-thumb:hover { background: #b38f27; }
 
         @media (max-width: 768px) {
             .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
