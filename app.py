@@ -789,7 +789,7 @@ def update_payment(tx_id):
     actual_principal_reduced = 0.0
 
     if payment_type == 'full':
-        full_collection = total_acc_interest + fine_amt
+        full_collection = total_acc_interest
         if full_collection > 0:
             tx.paid_interest += full_collection
             actual_interest_paid = full_collection
@@ -800,7 +800,7 @@ def update_payment(tx_id):
         if not tx.closed_date:
             tx.closed_date = thai_today
     else:
-        effective_pay = pay_amount + fine_amt
+        effective_pay = pay_amount 
         total_reduction = effective_pay + discount_amt
         
         if effective_pay >= total_acc_interest:
