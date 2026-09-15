@@ -383,12 +383,18 @@ def index():
         elif 25 <= today_day <= 28: match_days = [25, 26, 27, 28]
         else: match_days = list(range(29, last_day_of_current_month + 1))
 
-        scheduled_today = Transaction.query.filter(Transaction.principal > 0, Transaction.due_day_of_month.in_(match_days) | ((today_day >= 29) & (Transaction.due_day_of_month >= 29))).all()
+        if today_day >= 29:
+            scheduled_today = Transaction.query.filter(Transaction.principal > 0, db.or_(Transaction.due_day_of_month.in_(match_days), Transaction.due_day_of_month >= 29)).all()
+        else:
+            scheduled_today = Transaction.query.filter(Transaction.principal > 0, Transaction.due_day_of_month.in_(match_days)).all()
+
         other_txs = Transaction.query.filter(
             Transaction.principal > 0,
-            ((Transaction.schedule_type == 'จ่ายทุกวัน') | 
-            (Transaction.start_date == thai_today) | 
-            (Transaction.last_payment_date == thai_today))
+            db.or_(
+                Transaction.schedule_type == 'จ่ายทุกวัน',
+                Transaction.start_date == thai_today,
+                Transaction.last_payment_date == thai_today
+            )
         ).all()
 
         seen_ids = set()
@@ -429,7 +435,7 @@ def index():
         
         schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
         if tx.schedule_type == 'กำหนดจ่ายประจำเดือน':
-            d_val = tx.due_day_of_month or 4
+            d_val = tx.due_day_of_month or 19
             if d_val in [1,2,3,4]: d_txt = "วันที่ 1-4"
             elif d_val in [5,6,7,8,9]: d_txt = "วันที่ 5-9"
             elif d_val in [10,11,12,13,14]: d_txt = "วันที่ 10-14"
@@ -744,7 +750,7 @@ def members_scheduled_all():
         """
 
         if day_val == 31:
-            txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', (Transaction.due_day_of_month.in_(day_list)) | (Transaction.due_day_of_month >= 29)).order_by(Transaction.customer_name.asc()).all()
+            txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', db.or_(Transaction.due_day_of_month.in_(day_list), Transaction.due_day_of_month >= 29)).order_by(Transaction.customer_name.asc()).all()
         else:
             txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'กำหนดจ่ายประจำเดือน', Transaction.due_day_of_month.in_(day_list)).order_by(Transaction.customer_name.asc()).all()
 
