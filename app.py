@@ -203,6 +203,20 @@ BASE_LAYOUT = """
         backdrop.classList.toggle('show');
     }
 
+    function togglePullBox(dayVal) {
+        let box = document.getElementById('pullBox' + dayVal);
+        let btn = document.getElementById('pullBtn' + dayVal);
+        if (box.style.display === 'none') {
+            box.style.display = 'block';
+            btn.innerHTML = '➖ ซ่อนกล่องเพิ่มรายชื่อ';
+            btn.classList.replace('btn-outline-danger', 'btn-secondary');
+        } else {
+            box.style.display = 'none';
+            btn.innerHTML = '➕ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้';
+            btn.classList.replace('btn-secondary', 'btn-outline-danger');
+        }
+    }
+
     function togglePayInput(id) {
         let selectElem = document.getElementById('payType' + id);
         let divElem = document.getElementById('amountDiv' + id);
@@ -730,26 +744,29 @@ def members_scheduled_all():
             """
 
         pull_section = f"""
-        <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
-            <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
-            <form action="/quick_assign_schedule_multi" method="POST">
-                <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
-                <input type="hidden" name="target_day" value="{day_val}">
-                
-                <div class="mb-2">
-                    <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes({day_val})">
-                </div>
-                <div class="d-flex gap-2 mb-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, true)">✅ เลือกทั้งหมด</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, false)">❌ ล้างทั้งหมด</button>
-                </div>
+        <div class="mb-3">
+            <button type="button" class="btn btn-outline-danger btn-sm fw-bold" id="pullBtn{day_val}" onclick="togglePullBox({day_val})">➕ เลือกเพิ่มรายชื่อเข้ากลุ่มนี้</button>
+            <div class="card p-3 mt-2 bg-light border-warning shadow-sm" id="pullBox{day_val}" style="display: none;">
+                <h6 class="text-danger fw-bold mb-2">⚡ เลือกรายชื่อหลายคนเพื่อดึงเข้า {section_title}</h6>
+                <form action="/quick_assign_schedule_multi" method="POST">
+                    <input type="hidden" name="target_schedule" value="กำหนดจ่ายประจำเดือน">
+                    <input type="hidden" name="target_day" value="{day_val}">
+                    
+                    <div class="mb-2">
+                        <input type="text" id="searchBox{day_val}" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." onkeyup="filterCheckboxes({day_val})">
+                    </div>
+                    <div class="d-flex gap-2 mb-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, true)">✅ เลือกทั้งหมด</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="selectAllCheckboxes({day_val}, false)">❌ ล้างทั้งหมด</button>
+                    </div>
 
-                <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
-                    {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
-                </div>
+                    <div class="border rounded p-2 bg-white mb-2" style="max-height: 160px; overflow-y: auto;">
+                        {checkboxes_html if checkboxes_html else '<p class="text-muted small mb-0">ไม่มีรายชื่อในระบบ</p>'}
+                    </div>
 
-                <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้</button>
-            </form>
+                    <button type="submit" class="btn btn-sm btn-success fw-bold w-100">📥 ดึงรายชื่อที่เลือกเข้ากลุ่มนี้</button>
+                </form>
+            </div>
         </div>
         """
 
