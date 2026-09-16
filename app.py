@@ -85,8 +85,8 @@ BASE_LAYOUT = """
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
         .sidebar-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1045; }
 
-        .btn-lime { background-color: #32CD32; border-color: #32CD32; color: #000; font-weight: 600; }
-        .btn-lime:hover { background-color: #28a428; border-color: #28a428; color: #fff; }
+        .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
+        .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
 
         .table-responsive::-webkit-scrollbar { height: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
@@ -94,7 +94,7 @@ BASE_LAYOUT = """
 
         @media (max-width: 768px) {
             .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
-            .modal-body { max-height: 75vh; overflow-y: auto; }
+            .modal-body { max-height: 70vh; overflow-y: auto; }
         }
 
         @media (max-width: 992px) {
@@ -191,21 +191,14 @@ BASE_LAYOUT = """
 
     function togglePayInput(id) {
         let selectElem = document.getElementById('payType' + id);
-        let amountContainer = document.getElementById('amountContainer' + id);
-        let adjustContainer = document.getElementById('adjustContainer' + id);
+        let divElem = document.getElementById('amountDiv' + id);
         let statusElem = document.getElementById('newStatus' + id);
-        
-        if (selectElem) {
+        if (selectElem && divElem) {
             if (selectElem.value === 'full') {
-                if(amountContainer) amountContainer.style.display = 'none';
-                if(adjustContainer) adjustContainer.style.display = 'none';
+                divElem.style.display = 'none';
                 if (statusElem) { statusElem.value = 'คืนแล้ว'; }
-            } else if (selectElem.value === 'adjust') {
-                if(amountContainer) amountContainer.style.display = 'none';
-                if(adjustContainer) adjustContainer.style.display = 'block';
             } else {
-                if(amountContainer) amountContainer.style.display = 'block';
-                if(adjustContainer) adjustContainer.style.display = 'none';
+                divElem.style.display = 'block';
                 if (statusElem) { statusElem.value = 'ตัดยอดบางส่วน'; }
             }
         }
@@ -253,7 +246,7 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    total_history_pay = sum(h.pay_amount + h.fine_amount for h in tx.histories if h.pay_amount > 0 or h.fine_amount > 0) if tx.histories else 0.0
+    total_history_pay = sum(h.pay_amount + h.fine_amount for h in tx.histories) if tx.histories else 0.0
     
     if tx.type == 'ยอดค้างเก่า':
         debt_reduction = (tx.original_principal - tx.principal)
@@ -305,29 +298,18 @@ def index():
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
     
-    table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
-    view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
-
     if start_date_str and end_date_str:
         try:
             s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
             query = query.filter((Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) | (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date))
-            table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
-            view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         except Exception as e: print("Date error:", e)
     elif start_date_str:
         try:
             target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             query = query.filter((Transaction.start_date == target_date) | (Transaction.last_payment_date == target_date))
-            table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
-            view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         except Exception as e: print("Date error:", e)
-    elif search_query:
-        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
-        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
-        transactions = query.order_by(Transaction.customer_name.asc()).all()
-    else:
+    elif not search_query:
         current_match_codes = []
         if 4 <= today_day <= 6: current_match_codes.append("6")
         if 9 <= today_day <= 12: current_match_codes.append("12")
@@ -359,8 +341,7 @@ def index():
             if t.id not in seen_ids:
                 seen_ids.add(t.id)
                 transactions.append(t)
-
-    if start_date_str or search_query:
+    else:
         transactions = query.order_by(Transaction.customer_name.asc()).all()
 
     for tx in transactions:
@@ -381,15 +362,9 @@ def index():
     total_new_investment = sum(tx.original_principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า')
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
-    
-    # 💰 ใช้สูตรคำนวณกำไรสะสมทั้งหมดแบบเดิม (ที่ได้ยอด 4.6 หมื่นกว่าบาท)
-    histories_all = PaymentHistory.query.all()
-    normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
-    adjust_pay_total = sum(abs(h.principal_reduced) for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
-    debt_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
-    debt_profit_total = sum((tx.original_principal - tx.principal) for tx in debt_txs)
-    
-    total_profit = normal_pay_total + adjust_pay_total + debt_profit_total
+    base_profit = sum(((tx.original_principal - tx.principal)) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest for tx in all_txs_ever)
+    total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
+    total_profit = base_profit + total_fine
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -428,7 +403,7 @@ def index():
             <td><span class="badge {badge_color}">{tx.status}</span></td>
             <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center;">
                 <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
-                    <button type="button" class="btn btn-sm btn-lime w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
+                    <button type="button" class="btn btn-sm btn-warning w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger w-100" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </td>
@@ -459,7 +434,7 @@ def index():
                     <div class="col-12 text-danger fw-bold mt-1">🔥 ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท</div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-lime btn-sm w-100 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">💰 อัพเดทยอด</button>
+                    <button type="button" class="btn btn-warning btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">⚙️ จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-outline-danger btn-sm" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </div>
@@ -472,83 +447,59 @@ def index():
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content" style="border: 2px solid #32CD32;">
+                <div class="modal-content border-warning">
                     <form action="/update_payment/{tx.id}" method="POST">
-                        <div class="modal-header text-dark py-2" style="background-color: #32CD32;">
-                            <h5 class="modal-title fs-6 fw-bold">💰 อัพเดทยอด: {tx.customer_name}</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <div class="modal-header bg-danger text-white py-2">
+                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
+                            <div class="p-2 mb-2 bg-light rounded border d-flex justify-content-between align-items-center">
+                                <div><small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small><b>{tx.principal:,.2f} บาท</b></div>
+                                <div class="text-end"><small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small><b class="text-danger" id="accInterestDisplay{tx.id}">{tx.accumulated_interest:,.2f} บาท</b></div>
+                            </div>
+                            <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
+                                <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
+                                <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
+                                    <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                </select>
+                            </div>
+                            <div class="mb-2" id="amountDiv{tx.id}">
+                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
+                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                            </div>
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <div class="p-2 bg-light rounded border text-center">
-                                        <small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small>
-                                        <b class="text-danger fs-6">{tx.principal:,.2f} ฿</b>
-                                    </div>
+                                    <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
+                                    <input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                 </div>
                                 <div class="col-6">
-                                    <div class="p-2 bg-light rounded border text-center">
-                                        <small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small>
-                                        <b class="text-primary fs-6">{tx.accumulated_interest:,.2f} ฿</b>
-                                    </div>
+                                    <label class="form-label text-warning text-dark small fw-bold mb-1" style="font-size: 0.75rem;">เบี้ยค่าปรับ (บาท)</label>
+                                    <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                 </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label fw-bold mb-1 text-dark" style="font-size: 0.85rem;">ประเภทการอัพเดท</label>
-                                <select name="payment_type" class="form-select form-select-sm" style="border-color: #32CD32;" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                    <option value="partial">💵 จ่ายบางส่วน (ตัดดอก/ตัดต้น/ค่าปรับ)</option>
-                                    <option value="full">✅ ปิดบัญชี (คืนครบทั้งหมด)</option>
-                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
-                                </select>
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
+                                <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
                             </div>
-                            
-                            <div id="amountContainer{tx.id}">
-                                <div class="mb-2">
-                                    <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินรับจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="ระบุจำนวนเงินที่รับชำระ">
-                                </div>
-                                <div class="row g-2 mb-2">
-                                    <div class="col-6">
-                                        <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
-                                        <input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0" placeholder="0">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label text-warning text-dark small fw-bold mb-1" style="font-size: 0.75rem;">เบี้ยค่าปรับ (บาท)</label>
-                                        <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
-                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
-                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
-                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
-                            </div>
-
-                            <div class="row g-2 mb-1">
-                                <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">วันที่ทำรายการ</label>
-                                    <input type="date" name="closed_date" class="form-control form-control-sm" value="{closed_date_str if closed_date_str else thai_today.strftime('%Y-%m-%d')}">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">สถานะบัญชี</label>
-                                    <select name="new_status" class="form-select form-select-sm" id="newStatus{tx.id}">
-                                        <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
-                                    </select>
-                                </div>
-                            </div>
-
                             <div class="mb-1">
-                                <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">หมายเหตุ</label>
-                                <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น โอนผ่าน KTB, แก้ไขยอดผิด">
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ</label>
+                                <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
+                                    <option value="ปกติ" {selected_normal}>ปกติ</option>
+                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
+                                </select>
                             </div>
                         </div>
                         <div class="modal-footer bg-light py-2 justify-content-between">
-                            <a href="/history/{tx.id}" class="btn btn-outline-secondary btn-sm" target="_blank">📜 ประวัติ</a>
+                            <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ดูประวัติการจ่าย</a>
                             <div>
-                                <button type="button" class="btn btn-outline-dark btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-lime btn-sm fw-bold px-3 shadow-sm" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
                             </div>
                         </div>
                     </form>
@@ -557,44 +508,25 @@ def index():
         </div>
         """
 
+    if start_date_str and end_date_str:
+        table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
+    elif start_date_str:
+        table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
+    elif search_query:
+        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
+    else:
+        table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
+        view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
+
     content = f"""
     <div class="row mb-4">
-        <div class="col-md mb-3">
-            <a href="/summary_breakdown/new_investment" class="text-decoration-none">
-                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #004d99, #3399ff); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
-                    <h5>🔱 เงินลงทุนใหม่</h5>
-                    <h3>{total_new_investment:,.2f} บาท</h3>
-                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
-                </div>
-            </a>
-        </div>
-        <div class="col-md mb-3">
-            <a href="/summary_breakdown/debt_remaining" class="text-decoration-none">
-                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
-                    <h5>📂 ยอดค้างเก่าคงเหลือ</h5>
-                    <h3>{total_debt_principal:,.2f} บาท</h3>
-                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
-                </div>
-            </a>
-        </div>
-        <div class="col-md mb-3">
-            <a href="/summary_breakdown/new_remaining" class="text-decoration-none">
-                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
-                    <h5>💼 เงินต้นคงค้าง</h5>
-                    <h3>{total_new_principal:,.2f} บาท</h3>
-                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
-                </div>
-            </a>
-        </div>
-        <div class="col-md mb-3">
-            <a href="/summary_breakdown/profit_breakdown" class="text-decoration-none">
-                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
-                    <h5>💰 กำไรสะสมทั้งหมด</h5>
-                    <h3>{total_profit:,.2f} บาท</h3>
-                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูรายละเอียดแยกตามประเภท</small>
-                </div>
-            </a>
-        </div>
+        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);"><h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3></div></div>
+        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b);"><h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3></div></div>
+        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d);"><h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3></div></div>
+        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c);"><h5>💰 กำไรสะสมทั้งหมด</h5><h3>{total_profit:,.2f} บาท</h3></div></div>
     </div>
 
     <div class="card p-4 shadow-sm mb-4 border-warning">
@@ -702,178 +634,6 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
-@app.route('/summary_breakdown/<breakdown_type>')
-def summary_breakdown(breakdown_type):
-    if 'admin' not in session: return redirect(url_for('login'))
-    
-    all_txs_ever = Transaction.query.all()
-    for tx in all_txs_ever: calculate_tx_values(tx)
-    
-    title_text = ""
-    rows = ""
-    table_headers = ""
-    
-    if breakdown_type == 'new_investment':
-        title_text = "🔱 รายละเอียดที่มา: เงินลงทุนใหม่ทั้งหมด (เงินฉุกเฉิน และ ผ่อนทอง)"
-        txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า']
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td><b>{tx.original_principal:,.2f}</b></td><td>{tx.principal:,.2f}</td><td><span class='badge {'bg-success' if tx.principal>0 else 'bg-danger'}'>{tx.status}</span></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้? (ยอดลงทุนจะถูกตัดออกจากระบบ)')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุนตั้งต้น</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
-        
-    elif breakdown_type == 'debt_remaining':
-        title_text = "📂 รายละเอียดที่มา: ยอดค้างเก่าคงเหลือ"
-        txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-warning'>{tx.principal:,.2f}</b></td><td><strong class='text-primary'>{(tx.original_principal - tx.principal):,.2f}</strong></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้?')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่เริ่ม</th><th>ยอดค้างตั้งต้น</th><th>ยอดค้างคงเหลือ</th><th>ชำระลดแล้ว</th><th class='text-center'>จัดการ</th>"
-        
-    elif breakdown_type == 'new_remaining':
-        title_text = "💼 รายละเอียดที่มา: เงินต้นคงค้าง (เฉพาะบัญชีใหม่ที่ยังไม่ปิด)"
-        txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-danger'>{tx.principal:,.2f}</b></td><td><span class='badge bg-success'>{tx.status}</span></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้?')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
-        
-    elif breakdown_type == 'profit_breakdown':
-        histories_all = PaymentHistory.query.all()
-        normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
-        normal_pay_count = sum(1 for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
-
-        adjust_pay_total = sum(abs(h.principal_reduced) for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
-        adjust_pay_count = sum(1 for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
-
-        debt_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
-        debt_profit_total = sum((tx.original_principal - tx.principal) for tx in debt_txs)
-        debt_profit_count = len(debt_txs)
-
-        grand_total_sum = normal_pay_total + adjust_pay_total + debt_profit_total
-        grand_total_count = normal_pay_count + adjust_pay_count + debt_profit_count
-
-        content = f"""
-        <div class="card p-4 shadow-sm border-warning mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดรวมกำไร (แยกตามประเภทรายการ)</h4>
-                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับหน้าหลัก</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-striped align-middle text-nowrap">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ประเภทรายการ</th>
-                            <th>ยอดรวม (บาท)</th>
-                            <th>จำนวนรายการ</th>
-                            <th class="text-center">ตรวจสอบ / จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><b>รับชำระเงิน (ยอดปกติ)</b></td>
-                            <td class="text-success fw-bold">{normal_pay_total:,.2f}</td>
-                            <td>{normal_pay_count} รายการ</td>
-                            <td class="text-center"><a href="/summary_breakdown/normal_pay" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
-                        </tr>
-                        <tr>
-                            <td><b>ปรับ (ยอดชำระ/ปรับปรุง)</b></td>
-                            <td class="text-warning text-dark fw-bold">{adjust_pay_total:,.2f}</td>
-                            <td>{adjust_pay_count} รายการ</td>
-                            <td class="text-center"><a href="/summary_breakdown/adjust_pay" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
-                        </tr>
-                        <tr>
-                            <td><b>กำไรส่วนต่างยอดค้างเก่า (ส่วนต่างรวม)</b></td>
-                            <td class="text-primary fw-bold">{debt_profit_total:,.2f}</td>
-                            <td>{debt_profit_count} รายการ</td>
-                            <td class="text-center"><a href="/summary_breakdown/debt_profit" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
-                        </tr>
-                        <tr class="table-warning">
-                            <td><b>รวมทั้งสิ้น (กำไรสะสมทั้งหมด)</b></td>
-                            <td class="text-danger fw-bold">{grand_total_sum:,.2f}</td>
-                            <td><b>{grand_total_count} รายการ</b></td>
-                            <td></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        """
-        html = BASE_LAYOUT.replace('{% block header %}รายละเอียดที่มา{% endblock %}', 'รายละเอียดกำไรสะสมทั้งหมด').replace('{% block content %}{% endblock %}', content)
-        return render_template_string(html, title="กำไรสะสมทั้งหมด", page="dashboard")
-
-    elif breakdown_type == 'normal_pay':
-        title_text = "🟢 รายละเอียด: รับชำระเงิน (ยอดปกติ)"
-        histories = PaymentHistory.query.filter(db.or_(PaymentHistory.pay_amount > 0, PaymentHistory.fine_amount > 0)).order_by(PaymentHistory.payment_date.desc()).all()
-        for h in histories:
-            if not h.transaction: continue
-            actual_received = h.pay_amount + h.fine_amount
-            rows += f"""
-            <tr>
-                <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
-                <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
-                <td><span class='badge bg-secondary'>{h.transaction.type}</span></td>
-                <td class='text-success fw-bold'>{actual_received:,.2f}</td>
-                <td>{h.fine_amount:,.2f}</td>
-                <td>{h.note or 'รับชำระปกติ'}</td>
-                <td>{h.admin_name or '-'}</td>
-                <td class='text-center'><a href='/history/{h.transaction_id}' class='btn btn-sm btn-outline-primary' target='_blank'>🔍 เช็กบิล</a></td>
-            </tr>
-            """
-        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดรับจริง (บาท)</th><th>ค่าปรับ</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th>"
-
-    elif breakdown_type == 'adjust_pay':
-        title_text = "🟡 รายละเอียด: ปรับ (ยอดชำระ/ปรับปรุง)"
-        histories = PaymentHistory.query.filter(PaymentHistory.note.ilike('%ปรับปรุงยอดเงินต้น%')).order_by(PaymentHistory.payment_date.desc()).all()
-        for h in histories:
-            if not h.transaction: continue
-            adj_val = abs(h.principal_reduced)
-            rows += f"""
-            <tr>
-                <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
-                <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
-                <td><span class='badge bg-warning text-dark'>{h.transaction.type}</span></td>
-                <td class='text-warning text-dark fw-bold'>{adj_val:,.2f}</td>
-                <td>{h.note or '-'}</td>
-                <td>{h.admin_name or '-'}</td>
-                <td class='text-center'><a href='/history/{h.transaction_id}' class='btn btn-sm btn-outline-primary' target='_blank'>🔍 เช็กบิล</a></td>
-            </tr>
-            """
-        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดปรับ (บาท)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th>"
-
-    elif breakdown_type == 'debt_profit':
-        title_text = "🔵 รายละเอียด: กำไรส่วนต่างยอดค้างเก่า (ส่วนต่างรวม)"
-        txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
-        for tx in txs:
-            diff_val = tx.original_principal - tx.principal
-            rows += f"""
-            <tr>
-                <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
-                <td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td>
-                <td>{tx.original_principal:,.2f}</td>
-                <td>{tx.principal:,.2f}</td>
-                <td class='text-primary fw-bold'>{diff_val:,.2f}</td>
-                <td><span class='badge bg-success'>{tx.status}</span></td>
-                <td class='text-center'><a href='/customer_details/{tx.customer_name}' class='btn btn-sm btn-outline-dark fw-bold' target='_blank'>🔍 เช็กบัญชี</a></td>
-            </tr>
-            """
-        table_headers = "<th>วันที่เริ่ม</th><th>ชื่อลูกค้า</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ส่วนต่างกำไร (บาท)</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
-
-    else:
-        return redirect(url_for('index'))
-
-    content = f"""
-    <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">{title_text}</h4>
-            <a href="/summary_breakdown/profit_breakdown" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับไปหน้าตารางสรุปกำไร</a>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark">
-                    <tr>{table_headers}</tr>
-                </thead>
-                <tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
-            </table>
-        </div>
-    </div>
-    """
-    html = BASE_LAYOUT.replace('{% block header %}รายละเอียดที่มา{% endblock %}', 'รายละเอียดที่มาของยอด').replace('{% block content %}{% endblock %}', content)
-    return render_template_string(html, title="รายละเอียดที่มา", page="dashboard")
-
 @app.route('/customer_details/<path:cust_name>')
 def customer_details(cust_name):
     if 'admin' not in session: return redirect(url_for('login'))
@@ -907,7 +667,7 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-lime fw-bold px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
+                <button type="button" class="btn btn-sm btn-warning fw-bold px-3" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
             </td>
         </tr>
         """
@@ -915,83 +675,59 @@ def customer_details(cust_name):
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content" style="border: 2px solid #32CD32;">
+                <div class="modal-content border-warning">
                     <form action="/update_payment/{tx.id}" method="POST">
-                        <div class="modal-header text-dark py-2" style="background-color: #32CD32;">
-                            <h5 class="modal-title fs-6 fw-bold">💰 อัพเดทยอด: {tx.customer_name}</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <div class="modal-header bg-danger text-white py-2">
+                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
+                            <div class="p-2 mb-2 bg-light rounded border d-flex justify-content-between align-items-center">
+                                <div><small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small><b>{tx.principal:,.2f} บาท</b></div>
+                                <div class="text-end"><small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small><b class="text-danger" id="accInterestDisplay{tx.id}">{tx.accumulated_interest:,.2f} บาท</b></div>
+                            </div>
+                            <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
+                                <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
+                                <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
+                                    <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                </select>
+                            </div>
+                            <div class="mb-2" id="amountDiv{tx.id}">
+                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
+                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                            </div>
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <div class="p-2 bg-light rounded border text-center">
-                                        <small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small>
-                                        <b class="text-danger fs-6">{tx.principal:,.2f} ฿</b>
-                                    </div>
+                                    <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
+                                    <input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                 </div>
                                 <div class="col-6">
-                                    <div class="p-2 bg-light rounded border text-center">
-                                        <small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small>
-                                        <b class="text-primary fs-6">{tx.accumulated_interest:,.2f} ฿</b>
-                                    </div>
+                                    <label class="form-label text-warning text-dark small fw-bold mb-1" style="font-size: 0.75rem;">เบี้ยค่าปรับ (บาท)</label>
+                                    <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                 </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label fw-bold mb-1 text-dark" style="font-size: 0.85rem;">ประเภทการอัพเดท</label>
-                                <select name="payment_type" class="form-select form-select-sm" style="border-color: #32CD32;" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                    <option value="partial">💵 จ่ายบางส่วน (ตัดดอก/ตัดต้น/ค่าปรับ)</option>
-                                    <option value="full">✅ ปิดบัญชี (คืนครบทั้งหมด)</option>
-                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
-                                </select>
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
+                                <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
                             </div>
-                            
-                            <div id="amountContainer{tx.id}">
-                                <div class="mb-2">
-                                    <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินรับจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="ระบุจำนวนเงินที่รับชำระ">
-                                </div>
-                                <div class="row g-2 mb-2">
-                                    <div class="col-6">
-                                        <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
-                                        <input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0" placeholder="0">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label text-warning text-dark small fw-bold mb-1" style="font-size: 0.75rem;">เบี้ยค่าปรับ (บาท)</label>
-                                        <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
-                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
-                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
-                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
-                            </div>
-
-                            <div class="row g-2 mb-1">
-                                <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">วันที่ทำรายการ</label>
-                                    <input type="date" name="closed_date" class="form-control form-control-sm" value="{closed_date_str if closed_date_str else thai_today.strftime('%Y-%m-%d')}">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">สถานะบัญชี</label>
-                                    <select name="new_status" class="form-select form-select-sm" id="newStatus{tx.id}">
-                                        <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
-                                    </select>
-                                </div>
-                            </div>
-
                             <div class="mb-1">
-                                <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">หมายเหตุ</label>
-                                <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น โอนผ่าน KTB, แก้ไขยอดผิด">
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ</label>
+                                <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
+                                    <option value="ปกติ" {selected_normal}>ปกติ</option>
+                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
+                                </select>
                             </div>
                         </div>
                         <div class="modal-footer bg-light py-2 justify-content-between">
-                            <a href="/history/{tx.id}" class="btn btn-outline-secondary btn-sm" target="_blank">📜 ประวัติ</a>
+                            <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ดูประวัติการจ่าย</a>
                             <div>
-                                <button type="button" class="btn btn-outline-dark btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-lime btn-sm fw-bold px-3 shadow-sm" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
                             </div>
                         </div>
                     </form>
@@ -1044,14 +780,9 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
-    # ดึง ID ของรายการที่มีการจ่ายเงินจริงในเดือนนั้นๆ อย่างถูกต้อง
-    tx_ids_from_history = [h.transaction_id for h in PaymentHistory.query.all() if h.payment_date and h.payment_date.strftime('%Y-%m') == ym]
-
     txs = Transaction.query.filter(
-        db.or_(
-            db.and_(db.extract('year', Transaction.start_date) == year_i, db.extract('month', Transaction.start_date) == month_i),
-            Transaction.id.in_(tx_ids_from_history) if tx_ids_from_history else False
-        )
+        db.extract('year', Transaction.start_date) == year_i,
+        db.extract('month', Transaction.start_date) == month_i
     ).order_by(Transaction.start_date.desc()).all()
 
     rows = ""
@@ -1078,7 +809,7 @@ def monthly_details(ym):
             <td>{tx.daily_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <a href="/" class="btn btn-sm btn-lime fw-bold">อัพเดทยอด</a>
+                <a href="/" class="btn btn-sm btn-warning">จัดการ</a>
             </td>
         </tr>
         """
@@ -1404,7 +1135,7 @@ def all_transactions():
                 <td>{tx.daily_interest:,.2f}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
-                <td><a href="/" class="btn btn-sm btn-lime fw-bold shadow-sm">อัพเดทยอด</a></td>
+                <td><a href="/" class="btn btn-sm btn-warning">จัดการ</a></td>
             </tr>
             """
         return res
@@ -1510,9 +1241,12 @@ def update_payment(tx_id):
     payment_type = request.form.get('payment_type')
     thai_today = get_thai_today()
     
+    pay_amount = float(request.form.get('pay_amount')) if request.form.get('pay_amount', '') != '' else 0.0
+    discount_amt = float(request.form.get('discount_amount', 0))
+    fine_amt = float(request.form.get('fine_amount', 0))
+    new_status = request.form.get('new_status')
     closed_date_str = request.form.get('closed_date')
     note_text = request.form.get('note', '').strip()
-    new_status = request.form.get('new_status')
     
     tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
     calc_end_date = tx.closed_date if tx.closed_date else thai_today
@@ -1525,21 +1259,8 @@ def update_payment(tx_id):
 
     tx.last_payment_date = thai_today
     actual_interest_paid, actual_principal_reduced = 0.0, 0.0
-    pay_amount, discount_amt, fine_amt = 0.0, 0.0, 0.0
 
-    if payment_type == 'adjust':
-        adjust_amount = float(request.form.get('adjust_amount', 0))
-        tx.principal += adjust_amount
-        if tx.principal < 0: tx.principal = 0.0
-        
-        actual_principal_reduced = -adjust_amount
-        if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
-
-    elif payment_type == 'full':
-        pay_amount = float(request.form.get('pay_amount', 0))
-        discount_amt = float(request.form.get('discount_amount', 0))
-        fine_amt = float(request.form.get('fine_amount', 0))
-        
+    if payment_type == 'full':
         if total_acc_interest > 0:
             tx.paid_interest += total_acc_interest
             actual_interest_paid = total_acc_interest
@@ -1548,10 +1269,6 @@ def update_payment(tx_id):
         tx.status = 'คืนแล้ว'
         if not tx.closed_date: tx.closed_date = thai_today
     else:
-        pay_amount = float(request.form.get('pay_amount')) if request.form.get('pay_amount', '') != '' else 0.0
-        discount_amt = float(request.form.get('discount_amount', 0))
-        fine_amt = float(request.form.get('fine_amount', 0))
-
         total_reduction = pay_amount + discount_amt
         if pay_amount >= total_acc_interest:
             actual_interest_paid = total_acc_interest
@@ -1585,31 +1302,6 @@ def update_payment(tx_id):
     ))
     db.session.commit()
     db.session.remove()
-    return redirect(url_for('index'))
-
-@app.route('/delete_history/<int:history_id>')
-def delete_history(history_id):
-    if 'admin' not in session: return redirect(url_for('login'))
-    history = PaymentHistory.query.get_or_404(history_id)
-    tx = history.transaction
-    
-    if history.note and "ปรับปรุงยอดเงินต้น" in history.note:
-        tx.principal -= (-history.principal_reduced)
-    else:
-        if history.principal_reduced != 0:
-            tx.principal += history.principal_reduced
-        if history.interest_paid > 0:
-            tx.paid_interest -= history.interest_paid
-            if tx.paid_interest < 0: tx.paid_interest = 0.0
-
-    if tx.principal > 0:
-        if tx.status == 'คืนแล้ว':
-            tx.status = 'ปกติ'
-            tx.closed_date = None
-
-    db.session.delete(history)
-    db.session.commit()
-    db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/delete_tx/<int:tx_id>')
@@ -1618,15 +1310,13 @@ def delete_tx(tx_id):
     db.session.delete(Transaction.query.get_or_404(tx_id))
     db.session.commit()
     db.session.remove()
-    return redirect(request.referrer or url_for('index'))
+    return redirect(url_for('index'))
 
 @app.route('/history/<int:tx_id>')
 def payment_history(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
-    histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
-    
-    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-muted'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td class='text-center'><a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนยอดเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')\">❌ ลบ/ยกเลิก</a></td></tr>" for h in histories])
+    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-muted'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()])
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
@@ -1636,8 +1326,8 @@ def payment_history(tx_id):
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th></tr></thead>
-                <tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"}</tbody>
+                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead>
+                <tbody>{rows if rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1697,39 +1387,25 @@ def customer_debt():
 @app.route('/monthly_summary')
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
-    
-    histories_all = PaymentHistory.query.all()
-    for h in histories_all:
-        if not h.transaction: continue
-        ym = h.payment_date.strftime('%Y-%m')
-        monthly_data[ym]['count'].add(h.transaction_id)
-        
-        actual_received = h.pay_amount + h.fine_amount
-        if h.transaction.type == 'ยอดค้างเก่า':
-            monthly_data[ym]['debt_paid'] += actual_received
-            monthly_data[ym]['profit'] += actual_received
-        else:
-            monthly_data[ym]['new_paid'] += actual_received
-            monthly_data[ym]['profit'] += h.interest_paid
-
-    all_txs_ever = Transaction.query.all()
-    for tx in all_txs_ever:
+    monthly_data = defaultdict(lambda: {'count': 0, 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
+    for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
-            monthly_data[ym]['count'].add(tx.id)
+            monthly_data[ym]['count'] += 1
+            collected_amount = (tx.original_principal - tx.principal) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest
             if tx.type == 'ยอดค้างเก่า':
                 monthly_data[ym]['debt_start'] += tx.original_principal
-                diff = tx.original_principal - tx.principal
-                if diff > 0 and not tx.histories:
-                    monthly_data[ym]['profit'] += diff
+                monthly_data[ym]['debt_paid'] += collected_amount
+                monthly_data[ym]['profit'] += collected_amount
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
+                monthly_data[ym]['new_paid'] += collected_amount
+                monthly_data[ym]['profit'] += tx.paid_interest
 
     monthly_rows = "".join([
         f"<tr>"
         f"<td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
-        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{len(d['count'])} รายการ</a></td>"
+        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{d['count']} รายการ</a></td>"
         f"<td>{d['new_investment']:,.2f}</td>"
         f"<td>{d['new_paid']:,.2f}</td>"
         f"<td>{d['debt_start']:,.2f}</td>"
