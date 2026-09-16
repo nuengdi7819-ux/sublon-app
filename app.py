@@ -726,33 +726,35 @@ def summary_breakdown(breakdown_type):
         table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'profit_breakdown':
-        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (แสดงเฉพาะรายการที่มีตัวเงินเคลื่อนไหว)"
+        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (คลิกตรวจสอบประวัติการตัดยอดได้)"
         
         histories = PaymentHistory.query.order_by(PaymentHistory.payment_date.desc(), PaymentHistory.id.desc()).all()
         for h in histories:
-            if h.interest_paid > 0 or h.fine_amount > 0 or h.pay_amount > 0 or h.discount_amount > 0:
-                new_val = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else 0.0
-                debt_val = h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else 0.0
-                fine_val = h.fine_amount
-                
-                rows += f"""
-                <tr>
-                    <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
-                    <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
-                    <td><span class='badge bg-secondary'>{h.transaction.type}</span></td>
-                    <td class='text-success'><b>{new_val:,.2f}</b></td>
-                    <td class='text-primary'><b>{debt_val:,.2f}</b></td>
-                    <td class='text-warning text-dark'><b>{fine_val:,.2f}</b></td>
-                    <td>{h.note or 'รับชำระปกติ'}</td>
-                    <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
-                    <td class='text-center'><a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick="return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนยอดเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')">❌ ลบ/ยกเลิก</a></td>
-                </tr>
-                """
+            new_val = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else 0.0
+            debt_val = h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else 0.0
+            fine_val = h.fine_amount
+            
+            rows += f"""
+            <tr>
+                <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
+                <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
+                <td><span class='badge bg-secondary'>{h.transaction.type}</span></td>
+                <td class='text-success'><b>{new_val:,.2f}</b></td>
+                <td class='text-primary'><b>{debt_val:,.2f}</b></td>
+                <td class='text-warning text-dark'><b>{fine_val:,.2f}</b></td>
+                <td>{h.note or 'รับชำระปกติ'}</td>
+                <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
+                <td class='text-center'>
+                    <a href='/history/{h.transaction_id}' class='btn btn-sm btn-outline-primary fw-bold' target='_blank'>🔍 เช็กบิล</a>
+                    <a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick="return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนยอดเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')">❌ ลบ</a>
+                </td>
+            </tr>
+            """
 
         for tx in all_txs_ever:
             if tx.type == 'ยอดค้างเก่า':
                 debt_profit = tx.original_principal - tx.principal
-                if debt_profit > 0:
+                if debt_profit != 0:
                     rows += f"""
                     <tr>
                         <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
@@ -763,11 +765,13 @@ def summary_breakdown(breakdown_type):
                         <td class='text-warning text-dark'><b>0.00</b></td>
                         <td>กำไรส่วนต่างยอดค้างเก่า (ตั้งต้น - คงเหลือ) [สถานะ: {tx.status}]</td>
                         <td><span class='badge bg-secondary'>{tx.sales_name}</span></td>
-                        <td class='text-center'><span class="text-muted small">คำนวณอัตโนมัติ</span></td>
+                        <td class='text-center'>
+                            <a href='/customer_details/{tx.customer_name}' class='btn btn-sm btn-outline-dark fw-bold' target='_blank'>🔍 เช็กบัญชี</a>
+                        </td>
                     </tr>
                     """
 
-        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดใหม่ (ดอกเบี้ย)</th><th>ยอดค้าง (ส่วนต่างเก่า)</th><th>ยอดปรับ (ค่าปรับ)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ (ยกเลิกรายการ)</th>"
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดใหม่ (ดอกเบี้ย)</th><th>ยอดค้าง (ส่วนต่างเก่า)</th><th>ยอดปรับ (ค่าปรับ)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>ตรวจสอบ / จัดการ</th>"
     else:
         return redirect(url_for('index'))
 
