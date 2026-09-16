@@ -382,8 +382,11 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # คำนวณกำไรสะสมจากยอดรับชำระจริงทั้งหมด (รวมเงินต้นที่รับคืน + ดอกเบี้ย + ค่าปรับ)
-    total_profit = db.session.query(db.func.sum(PaymentHistory.pay_amount + PaymentHistory.fine_amount)).scalar() or 0.0
+    # คำนวณกำไรสะสมย้อนหลังทั้งหมดตั้งแต่วันแรกที่สร้างระบบ
+    history_collected = db.session.query(db.func.sum(PaymentHistory.pay_amount + PaymentHistory.fine_amount)).scalar() or 0.0
+    debt_profit_all = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.original_principal > tx.principal)
+    new_interest_all = sum(tx.paid_interest for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า')
+    total_profit = history_collected + debt_profit_all + new_interest_all
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -751,6 +754,26 @@ def summary_breakdown(breakdown_type):
                     </td>
                 </tr>
                 """
+
+        for tx in all_txs_ever:
+            if tx.type == 'ยอดค้างเก่า':
+                debt_profit = tx.original_principal - tx.principal
+                if debt_profit != 0:
+                    rows += f"""
+                    <tr>
+                        <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
+                        <td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td>
+                        <td><span class='badge bg-warning text-dark'>ยอดค้างเก่า (ส่วนต่างรวม)</span></td>
+                        <td class='text-success'><b>{debt_profit:,.2f}</b></td>
+                        <td class='text-warning text-dark'><b>0.00</b></td>
+                        <td class='text-muted'><b>0.00</b></td>
+                        <td>กำไรส่วนต่างยอดค้างเก่า (ตั้งต้น - คงเหลือ) [สถานะ: {tx.status}]</td>
+                        <td><span class='badge bg-secondary'>{tx.sales_name}</span></td>
+                        <td class='text-center'>
+                            <a href='/customer_details/{tx.customer_name}' class='btn btn-sm btn-outline-dark fw-bold' target='_blank'>🔍 เช็กบัญชี</a>
+                        </td>
+                    </tr>
+                    """
 
         table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดรับจริง (บาท)</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>ตรวจสอบ / จัดการ</th>"
     else:
