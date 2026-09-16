@@ -88,7 +88,6 @@ BASE_LAYOUT = """
         .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
 
-        /* ปุ่มจัดการยอดสีเขียวอ่อน */
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
@@ -377,6 +376,11 @@ def index():
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_profit = base_profit + total_fine
 
+    # คำนวณยอดเก็บสดวันนี้ และจำนวนครั้งที่อัพเดตในวันนี้
+    today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
+    today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
+    today_update_count = len(today_histories)
+
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
         badge_color = 'bg-success'
@@ -546,6 +550,32 @@ def index():
         <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b);"><h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3></div></div>
         <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d);"><h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3></div></div>
         <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c);"><h5>💰 กำไรสะสมทั้งหมด</h5><h3>{total_profit:,.2f} บาท</h3></div></div>
+    </div>
+
+    <!-- การ์ดสรุปยอดประจำวันนี้ -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1 text-white-50">💵 ยอดเก็บสดวันนี้</h6>
+                        <h3 class="fw-bold mb-0">{today_collected_cash:,.2f} บาท</h3>
+                    </div>
+                    <div class="fs-1 opacity-50">📥</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1 text-white-50">🔄 จำนวนครั้งที่อัพเดตยอดวันนี้</h6>
+                        <h3 class="fw-bold mb-0">{today_update_count} ครั้ง</h3>
+                    </div>
+                    <div class="fs-1 opacity-50">⚡</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card p-4 shadow-sm mb-4 border-warning">
