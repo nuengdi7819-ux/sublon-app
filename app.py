@@ -306,7 +306,6 @@ def index():
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
     
-    # กำหนดค่าเริ่มต้นให้กับตัวแปร table_title และ view_today_btn ป้องกัน Error
     table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
     view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
@@ -362,7 +361,6 @@ def index():
                 seen_ids.add(t.id)
                 transactions.append(t)
 
-    # หากมีการกรองวันที่หรือค้นหา ให้ดึงข้อมูลจาก query มาใช้
     if start_date_str or search_query:
         transactions = query.order_by(Transaction.customer_name.asc()).all()
 
@@ -556,10 +554,42 @@ def index():
 
     content = f"""
     <div class="row mb-4">
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);"><h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b);"><h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d);"><h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c);"><h5>💰 กำไรสะสมทั้งหมด</h5><h3>{total_profit:,.2f} บาท</h3></div></div>
+        <div class="col-md mb-3">
+            <a href="/summary_breakdown/new_investment" class="text-decoration-none">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #004d99, #3399ff); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
+                    <h5>🔱 เงินลงทุนใหม่</h5>
+                    <h3>{total_new_investment:,.2f} บาท</h3>
+                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
+                </div>
+            </a>
+        </div>
+        <div class="col-md mb-3">
+            <a href="/summary_breakdown/debt_remaining" class="text-decoration-none">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
+                    <h5>📂 ยอดค้างเก่าคงเหลือ</h5>
+                    <h3>{total_debt_principal:,.2f} บาท</h3>
+                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
+                </div>
+            </a>
+        </div>
+        <div class="col-md mb-3">
+            <a href="/summary_breakdown/new_remaining" class="text-decoration-none">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
+                    <h5>💼 เงินต้นคงค้าง</h5>
+                    <h3>{total_new_principal:,.2f} บาท</h3>
+                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
+                </div>
+            </a>
+        </div>
+        <div class="col-md mb-3">
+            <a href="/summary_breakdown/profit_breakdown" class="text-decoration-none">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer; transition: transform 0.2s;" title="คลิกเพื่อตรวจสอบที่มา">
+                    <h5>💰 กำไรสะสมทั้งหมด</h5>
+                    <h3>{total_profit:,.2f} บาท</h3>
+                    <small class="text-light opacity-75" style="font-size: 0.78rem;">🔍 คลิกเพื่อดูที่มา</small>
+                </div>
+            </a>
+        </div>
     </div>
 
     <div class="card p-4 shadow-sm mb-4 border-warning">
@@ -666,6 +696,62 @@ def index():
     """
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
+
+@app.route('/summary_breakdown/<breakdown_type>')
+def summary_breakdown(breakdown_type):
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    all_txs_ever = Transaction.query.all()
+    for tx in all_txs_ever: calculate_tx_values(tx)
+    
+    title_text = ""
+    rows = ""
+    table_headers = ""
+    
+    if breakdown_type == 'new_investment':
+        title_text = "🔱 รายละเอียดที่มา: เงินลงทุนใหม่ทั้งหมด (เงินฉุกเฉิน และ ผ่อนทอง)"
+        txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า']
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td><b>{tx.original_principal:,.2f}</b></td><td>{tx.principal:,.2f}</td><td><span class='badge {'bg-success' if tx.principal>0 else 'bg-danger'}'>{tx.status}</span></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุนตั้งต้น</th><th>ต้นคงค้าง</th><th>สถานะ</th>"
+        
+    elif breakdown_type == 'debt_remaining':
+        title_text = "📂 รายละเอียดที่มา: ยอดค้างเก่าคงเหลือ"
+        txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-warning'>{tx.principal:,.2f}</b></td><td><strong class='text-primary'>{(tx.original_principal - tx.principal):,.2f}</strong></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่เริ่ม</th><th>ยอดค้างตั้งต้น</th><th>ยอดค้างคงเหลือ</th><th>ชำระลดแล้ว</th>"
+        
+    elif breakdown_type == 'new_remaining':
+        title_text = "💼 รายละเอียดที่มา: เงินต้นคงค้าง (เฉพาะบัญชีใหม่ที่ยังไม่ปิด)"
+        txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-danger'>{tx.principal:,.2f}</b></td><td><span class='badge bg-success'>{tx.status}</span></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th>"
+        
+    elif breakdown_type == 'profit_breakdown':
+        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (รวมดอกเบี้ยรับและค่าปรับ)"
+        histories = PaymentHistory.query.order_by(PaymentHistory.payment_date.desc()).all()
+        rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td><td><span class='badge bg-secondary'>{h.transaction.type}</span></td><td class='text-success'><b>{h.interest_paid:,.2f}</b></td><td class='text-warning text-dark'><b>{h.fine_amount:,.2f}</b></td><td>{h.note or '-'}</td></tr>" for h in histories if h.interest_paid > 0 or h.fine_amount > 0])
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ดอกเบี้ยที่ได้รับ</th><th>ค่าปรับ</th><th>หมายเหตุ</th>"
+    else:
+        return redirect(url_for('index'))
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">{title_text}</h4>
+            <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับหน้าหลัก</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>{table_headers}</tr>
+                </thead>
+                <tbody>{rows if rows else "<tr><td colspan='7' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
+    html = BASE_LAYOUT.replace('{% block header %}รายละเอียดที่มา{% endblock %}', 'รายละเอียดที่มาของยอด').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="รายละเอียดที่มา", page="dashboard")
 
 @app.route('/customer_details/<path:cust_name>')
 def customer_details(cust_name):
