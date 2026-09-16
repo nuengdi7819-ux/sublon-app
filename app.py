@@ -382,14 +382,26 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # คำนวณกำไรสะสมทั้งหมด
-    histories_all = PaymentHistory.query.all()
-    normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
-    adjust_pay_total = sum(abs(h.principal_reduced) for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
-    debt_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
-    debt_profit_total = sum((tx.original_principal - tx.principal) for tx in debt_txs)
-    
-    total_profit = normal_pay_total + adjust_pay_total + debt_profit_total
+    # คำนวณกำไรสะสมทั้งหมดให้ตรงกับหน้าสรุปผลประกอบการรายเดือนเป๊ะๆ
+    monthly_calc_map = defaultdict(float)
+    for h in PaymentHistory.query.all():
+        if not h.transaction: continue
+        ym = h.payment_date.strftime('%Y-%m')
+        actual_received = h.pay_amount + h.fine_amount
+        if h.transaction.type == 'ยอดค้างเก่า':
+            monthly_calc_map[ym] += actual_received
+        else:
+            monthly_calc_map[ym] += h.interest_paid
+
+    for tx in all_txs_ever:
+        if tx.start_date:
+            ym = tx.start_date.strftime('%Y-%m')
+            if tx.type == 'ยอดค้างเก่า':
+                diff = tx.original_principal - tx.principal
+                if diff > 0 and not tx.histories:
+                    monthly_calc_map[ym] += diff
+
+    total_profit = sum(monthly_calc_map.values())
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -1694,7 +1706,6 @@ def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. คำนวณจากประวัติการจ่ายเงินจริง (PaymentHistory) แยกตามเดือนที่จ่าย
     histories_all = PaymentHistory.query.all()
     for h in histories_all:
         if not h.transaction: continue
@@ -1709,7 +1720,6 @@ def monthly_summary():
             monthly_data[ym]['new_paid'] += actual_received
             monthly_data[ym]['profit'] += h.interest_paid
 
-    # 2. นำส่วนต่างกำไรของยอดค้างเก่าที่ปิด/ลดแล้วมารวมตามเดือนที่เริ่ม
     all_txs_ever = Transaction.query.all()
     for tx in all_txs_ever:
         if tx.start_date:
