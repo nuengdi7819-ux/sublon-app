@@ -88,6 +88,10 @@ BASE_LAYOUT = """
         .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
 
+        /* ปุ่มจัดการยอดสีเขียวอ่อน */
+        .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
+        .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
+
         .table-responsive::-webkit-scrollbar { height: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
         .table-responsive::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 6px; }
@@ -410,7 +414,7 @@ def index():
             <td><span class="badge {badge_color}">{tx.status}</span></td>
             <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center;">
                 <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
-                    <button type="button" class="btn btn-sm btn-warning w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                    <button type="button" class="btn btn-sm btn-success-light w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger w-100" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </td>
@@ -441,7 +445,7 @@ def index():
                     <div class="col-12 text-danger fw-bold mt-1">🔥 ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท</div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-warning btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">⚙️ จัดการยอด</button>
+                    <button type="button" class="btn btn-success-light btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">⚙️ จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-outline-danger btn-sm" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </div>
@@ -481,7 +485,7 @@ def index():
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
                                 <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
                             </div>
-                            
+
                             <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
                                 <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                 <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
@@ -514,7 +518,7 @@ def index():
                             <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ดูประวัติการจ่าย</a>
                             <div>
                                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
+                                <button type="submit" class="btn btn-success-light btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
                             </div>
                         </div>
                     </form>
@@ -682,7 +686,7 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-warning fw-bold px-3" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                <button type="button" class="btn btn-sm btn-success-light fw-bold px-3" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
             </td>
         </tr>
         """
@@ -750,7 +754,7 @@ def customer_details(cust_name):
                             <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ดูประวัติการจ่าย</a>
                             <div>
                                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-warning btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
+                                <button type="submit" class="btn btn-success-light btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกการชำระ</button>
                             </div>
                         </div>
                     </form>
@@ -832,7 +836,7 @@ def monthly_details(ym):
             <td>{tx.daily_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <a href="/" class="btn btn-sm btn-warning">จัดการ</a>
+                <a href="/" class="btn btn-sm btn-success-light">จัดการ</a>
             </td>
         </tr>
         """
@@ -955,7 +959,7 @@ def members_scheduled_all():
                 <td class="text-danger fw-bold">{t.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{t.status}</span></td>
                 <td style="text-align: center;">
-                    <button type="button" class="btn btn-sm btn-warning fw-bold px-2 py-1" data-bs-toggle="modal" data-bs-target="#editScheduleModal{t.id}">⚙️ เปลี่ยนกลุ่ม</button>
+                    <button type="button" class="btn btn-sm btn-success-light fw-bold px-2 py-1" data-bs-toggle="modal" data-bs-target="#editScheduleModal{t.id}">⚙️ เปลี่ยนกลุ่ม</button>
                 </td>
             </tr>
             """
@@ -1158,7 +1162,7 @@ def all_transactions():
                 <td>{tx.daily_interest:,.2f}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
-                <td><a href="/" class="btn btn-sm btn-warning">จัดการ</a></td>
+                <td><a href="/" class="btn btn-sm btn-success-light">จัดการ</a></td>
             </tr>
             """
         return res
