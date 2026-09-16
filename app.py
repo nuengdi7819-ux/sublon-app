@@ -399,15 +399,12 @@ def index():
         """
 
     # --- ข้อมูลสำหรับ Modal เจาะลึกการ์ดหลัก 3 ใบ ---
-    # 1. ยอดค้างเก่าคงเหลือ (type == 'ยอดค้างเก่า' และ principal > 0)
     debt_card_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
     debt_card_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in debt_card_txs])
 
-    # 2. เงินต้นคงค้าง (type != 'ยอดค้างเก่า' และ principal > 0)
     new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
     new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-    # 3. กำไรสะสมทั้งหมด (รวมดอกเบี้ยที่เก็บได้จากทุกรายการ + ค่าปรับรวม)
     profit_card_rows = ""
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -518,9 +515,10 @@ def index():
                                 <div class="mb-2">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💳 เลือกประเภทการชำระ</label>
                                     <select name="payment_type" class="form-select form-select-sm border-primary shadow-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                        <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
-                                        <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
-                                        <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
+                                        <option value="" disabled selected>-- กรุณาเลือกประเภทการชำระ --</option>
+                                        <option value="partial">จ่ายบางส่วน</option>
+                                        <option value="full">คืนครบทั้งหมด</option>
+                                        <option value="adjust">ปรับปรุงยอด</option>
                                     </select>
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
@@ -584,7 +582,6 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
-    <!-- แถวการ์ดสี่ใบด้านบน (ลงทุนใหม่, ยอดค้างเก่า, ต้นคงค้าง, กำไรสะสม) - ทุกใบกดเช็กข้อมูลได้ -->
     <div class="row mb-4">
         <div class="col-md mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
@@ -678,7 +675,6 @@ def index():
         </div>
     </div>
 
-    <!-- การ์ดสรุปยอดประจำวันนี้ (คลิกเปิด Modal เช็กประวัติวันนี้ได้) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
@@ -704,7 +700,6 @@ def index():
         </div>
     </div>
 
-    <!-- Modal แสดงประวัติการอัพเดตยอดของวันนี้ -->
     <div class="modal fade" id="todayHistoryModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-success">
@@ -906,9 +901,10 @@ def customer_details(cust_name):
                                 <div class="mb-2">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💳 เลือกประเภทการชำระ</label>
                                     <select name="payment_type" class="form-select form-select-sm border-primary shadow-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                        <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
-                                        <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
-                                        <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
+                                        <option value="" disabled selected>-- กรุณาเลือกประเภทการชำระ --</option>
+                                        <option value="partial">จ่ายบางส่วน</option>
+                                        <option value="full">คืนครบทั้งหมด</option>
+                                        <option value="adjust">ปรับปรุงยอด</option>
                                     </select>
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
