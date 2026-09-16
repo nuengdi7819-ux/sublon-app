@@ -376,10 +376,46 @@ def index():
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_profit = base_profit + total_fine
 
-    # คำนวณยอดเก็บสดวันนี้ และจำนวนครั้งที่อัพเดตในวันนี้
+    # คำนวณยอดเก็บสดวันนี้ และรายการอัพเดตวันนี้สำหรับสร้างตาราง Modal
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
     today_update_count = len(today_histories)
+
+    today_history_rows = ""
+    for h in today_histories:
+        tx_ref = h.transaction
+        cust_display = tx_ref.customer_name if tx_ref else "ไม่พบชื่อบัญชี"
+        today_history_rows += f"""
+        <tr>
+            <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
+            <td class="text-primary fw-bold">{h.pay_amount:,.2f}</td>
+            <td class="text-danger">{h.fine_amount:,.2f}</td>
+            <td>{h.discount_amount:,.2f}</td>
+            <td>{h.interest_paid:,.2f}</td>
+            <td>{h.principal_reduced:,.2f}</td>
+            <td>{h.note or '-'}</td>
+            <td><span class="badge bg-secondary">{h.admin_name or '-'}</span></td>
+        </tr>
+        """
+
+    # --- ข้อมูลสำหรับ Modal เจาะลึกการ์ดหลัก 3 ใบ ---
+    # 1. ยอดค้างเก่าคงเหลือ (type == 'ยอดค้างเก่า' และ principal > 0)
+    debt_card_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
+    debt_card_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in debt_card_txs])
+
+    # 2. เงินต้นคงค้าง (type != 'ยอดค้างเก่า' และ principal > 0)
+    new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
+    new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
+
+    # 3. กำไรสะสมทั้งหมด (รวมดอกเบี้ยที่เก็บได้จากทุกรายการ + ค่าปรับรวม)
+    profit_card_rows = ""
+    for tx in all_txs_ever:
+        if tx.type == 'ยอดค้างเก่า':
+            earned = (tx.original_principal - tx.principal)
+        else:
+            earned = tx.paid_interest
+        if earned > 0:
+            profit_card_rows += f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td class='text-success fw-bold'>{earned:,.2f} บาท</td></tr>"
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -477,23 +513,26 @@ def index():
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
                             </div>
-                            <div class="mb-2">
-                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
-                                <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
-                                    <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
-                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
-                                </select>
-                            </div>
-                            <div class="mb-2" id="amountDiv{tx.id}">
-                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
-                            </div>
 
-                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
-                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
-                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
-                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                            <div class="p-2 mb-2 rounded border border-primary bg-primary bg-opacity-10">
+                                <div class="mb-2">
+                                    <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💳 เลือกประเภทการชำระ</label>
+                                    <select name="payment_type" class="form-select form-select-sm border-primary shadow-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                        <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
+                                        <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                        <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
+                                    </select>
+                                </div>
+                                <div class="mb-1" id="amountDiv{tx.id}">
+                                    <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                                </div>
+
+                                <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
+                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                    <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
+                                    <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                                </div>
                             </div>
 
                             <div class="row g-2 mb-2">
@@ -545,20 +584,107 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
+    <!-- แถวการ์ดสี่ใบด้านบน (ลงทุนใหม่, ยอดค้างเก่า, ต้นคงค้าง, กำไรสะสม) - ทุกใบกดเช็กข้อมูลได้ -->
     <div class="row mb-4">
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);"><h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b);"><h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d);"><h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3></div></div>
-        <div class="col-md mb-3"><div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c);"><h5>💰 กำไรสะสมทั้งหมด</h5><h3>{total_profit:,.2f} บาท</h3></div></div>
+        <div class="col-md mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
+                <h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3>
+            </div>
+        </div>
+        <div class="col-md mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>📂 ยอดค้างเก่าคงเหลือ (คลิกเช็ก)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
+            </div>
+        </div>
+        <div class="col-md mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>💼 เงินต้นคงค้าง (คลิกเช็ก)</h5><h3>{total_new_principal:,.2f} บาท</h3>
+            </div>
+        </div>
+        <div class="col-md mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{total_profit:,.2f} บาท</h3>
+            </div>
+        </div>
     </div>
 
-    <!-- การ์ดสรุปยอดประจำวันนี้ -->
+    <!-- Modal ยอดค้างเก่าคงเหลือ -->
+    <div class="modal fade" id="debtModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-warning">
+                <div class="modal-header bg-warning text-dark py-2">
+                    <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือ ({total_debt_principal:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่ตั้งต้น</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th></tr>
+                            </thead>
+                            <tbody>{debt_card_rows if debt_card_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายการยอดค้างเก่า</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal เงินต้นคงค้าง -->
+    <div class="modal fade" id="principalModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <div class="modal-header bg-danger text-white py-2">
+                    <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้าง ({total_new_principal:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th></tr>
+                            </thead>
+                            <tbody>{new_principal_rows if new_principal_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีรายการเงินต้นคงค้าง</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal กำไรสะสมทั้งหมด -->
+    <div class="modal fade" id="profitModal" tabindex="-1">
+        <div class="modal-dialog modal-md modal-dialog-centered">
+            <div class="modal-content border-success">
+                <div class="modal-header bg-success text-white py-2">
+                    <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2">* รวมค่าปรับสะสมทั้งหมดในระบบ: <b>{total_fine:,.2f} บาท</b></p>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไรที่ได้รับ</th></tr>
+                            </thead>
+                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='3' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- การ์ดสรุปยอดประจำวันนี้ (คลิกเปิด Modal เช็กประวัติวันนี้ได้) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
-            <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997);">
+            <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 text-white-50">💵 ยอดเก็บสดวันนี้</h6>
+                        <h6 class="mb-1 text-white-50">💵 ยอดเก็บสดวันนี้ (คลิกเพื่อดู)</h6>
                         <h3 class="fw-bold mb-0">{today_collected_cash:,.2f} บาท</h3>
                     </div>
                     <div class="fs-1 opacity-50">📥</div>
@@ -566,13 +692,49 @@ def index():
             </div>
         </div>
         <div class="col-md-6 mb-3">
-            <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2);">
+            <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 text-white-50">🔄 จำนวนครั้งที่อัพเดตยอดวันนี้</h6>
+                        <h6 class="mb-1 text-white-50">🔄 จำนวนครั้งที่อัพเดตยอดวันนี้ (คลิกเพื่อดู)</h6>
                         <h3 class="fw-bold mb-0">{today_update_count} ครั้ง</h3>
                     </div>
                     <div class="fs-1 opacity-50">⚡</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal แสดงประวัติการอัพเดตยอดของวันนี้ -->
+    <div class="modal fade" id="todayHistoryModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-success">
+                <div class="modal-header bg-success text-white py-2">
+                    <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการอัพเดต/เก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ชื่อลูกค้า</th>
+                                    <th>ยอดจ่ายจริง</th>
+                                    <th>ค่าปรับ</th>
+                                    <th>ส่วนลด</th>
+                                    <th>ตัดดอกเบี้ย</th>
+                                    <th>ตัดเงินต้น</th>
+                                    <th>หมายเหตุ</th>
+                                    <th>ผู้ทำรายการ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการอัพเดตยอดเงินในวันนี้</td></tr>"}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
                 </div>
             </div>
         </div>
@@ -739,23 +901,26 @@ def customer_details(cust_name):
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
                             </div>
-                            <div class="mb-2">
-                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">เลือกประเภทการชำระ</label>
-                                <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
-                                    <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
-                                    <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
-                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
-                                </select>
-                            </div>
-                            <div class="mb-2" id="amountDiv{tx.id}">
-                                <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
-                            </div>
 
-                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
-                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
-                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
-                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                            <div class="p-2 mb-2 rounded border border-primary bg-primary bg-opacity-10">
+                                <div class="mb-2">
+                                    <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💳 เลือกประเภทการชำระ</label>
+                                    <select name="payment_type" class="form-select form-select-sm border-primary shadow-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                        <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
+                                        <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                        <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
+                                    </select>
+                                </div>
+                                <div class="mb-1" id="amountDiv{tx.id}">
+                                    <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                                </div>
+
+                                <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
+                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                    <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
+                                    <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                                </div>
                             </div>
 
                             <div class="row g-2 mb-2">
