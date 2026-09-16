@@ -382,7 +382,7 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # คำนวณกำไรสะสมทั้งหมด (ให้เท่ากับผลรวมยอดรับจริง + ส่วนต่างค้างเก่า)
+    # คำนวณกำไรสะสมทั้งหมด
     histories_all = PaymentHistory.query.all()
     normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
     adjust_pay_total = sum(abs(h.principal_reduced) for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
@@ -732,7 +732,6 @@ def summary_breakdown(breakdown_type):
         table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'profit_breakdown':
-        # นำตารางสรุปแยกตามประเภทมาไว้ในหน้านี้ (เมื่อคลิกการ์ดกำไรสะสมทั้งหมด)
         histories_all = PaymentHistory.query.all()
         normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
         normal_pay_count = sum(1 for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
@@ -1693,25 +1692,41 @@ def customer_debt():
 @app.route('/monthly_summary')
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    monthly_data = defaultdict(lambda: {'count': 0, 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
-    for tx in Transaction.query.all():
+    monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
+    
+    # 1. คำนวณจากประวัติการจ่ายเงินจริง (PaymentHistory) แยกตามเดือนที่จ่าย
+    histories_all = PaymentHistory.query.all()
+    for h in histories_all:
+        if not h.transaction: continue
+        ym = h.payment_date.strftime('%Y-%m')
+        monthly_data[ym]['count'].add(h.transaction_id)
+        
+        actual_received = h.pay_amount + h.fine_amount
+        if h.transaction.type == 'ยอดค้างเก่า':
+            monthly_data[ym]['debt_paid'] += actual_received
+            monthly_data[ym]['profit'] += actual_received
+        else:
+            monthly_data[ym]['new_paid'] += actual_received
+            monthly_data[ym]['profit'] += h.interest_paid
+
+    # 2. นำส่วนต่างกำไรของยอดค้างเก่าที่ปิด/ลดแล้วมารวมตามเดือนที่เริ่ม
+    all_txs_ever = Transaction.query.all()
+    for tx in all_txs_ever:
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
-            monthly_data[ym]['count'] += 1
-            collected_amount = (tx.original_principal - tx.principal) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest
+            monthly_data[ym]['count'].add(tx.id)
             if tx.type == 'ยอดค้างเก่า':
                 monthly_data[ym]['debt_start'] += tx.original_principal
-                monthly_data[ym]['debt_paid'] += collected_amount
-                monthly_data[ym]['profit'] += collected_amount
+                diff = tx.original_principal - tx.principal
+                if diff > 0 and not tx.histories:
+                    monthly_data[ym]['profit'] += diff
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
-                monthly_data[ym]['new_paid'] += collected_amount
-                monthly_data[ym]['profit'] += tx.paid_interest
 
     monthly_rows = "".join([
         f"<tr>"
         f"<td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
-        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{d['count']} รายการ</a></td>"
+        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{len(d['count'])} รายการ</a></td>"
         f"<td>{d['new_investment']:,.2f}</td>"
         f"<td>{d['new_paid']:,.2f}</td>"
         f"<td>{d['debt_start']:,.2f}</td>"
