@@ -711,26 +711,27 @@ def summary_breakdown(breakdown_type):
     if breakdown_type == 'new_investment':
         title_text = "🔱 รายละเอียดที่มา: เงินลงทุนใหม่ทั้งหมด (เงินฉุกเฉิน และ ผ่อนทอง)"
         txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า']
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td><b>{tx.original_principal:,.2f}</b></td><td>{tx.principal:,.2f}</td><td><span class='badge {'bg-success' if tx.principal>0 else 'bg-danger'}'>{tx.status}</span></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุนตั้งต้น</th><th>ต้นคงค้าง</th><th>สถานะ</th>"
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td><b>{tx.original_principal:,.2f}</b></td><td>{tx.principal:,.2f}</td><td><span class='badge {'bg-success' if tx.principal>0 else 'bg-danger'}'>{tx.status}</span></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้? (ยอดลงทุนจะถูกตัดออกจากระบบ)')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุนตั้งต้น</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'debt_remaining':
         title_text = "📂 รายละเอียดที่มา: ยอดค้างเก่าคงเหลือ"
         txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-warning'>{tx.principal:,.2f}</b></td><td><strong class='text-primary'>{(tx.original_principal - tx.principal):,.2f}</strong></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่เริ่ม</th><th>ยอดค้างตั้งต้น</th><th>ยอดค้างคงเหลือ</th><th>ชำระลดแล้ว</th>"
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-warning'>{tx.principal:,.2f}</b></td><td><strong class='text-primary'>{(tx.original_principal - tx.principal):,.2f}</strong></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้?')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่เริ่ม</th><th>ยอดค้างตั้งต้น</th><th>ยอดค้างคงเหลือ</th><th>ชำระลดแล้ว</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'new_remaining':
         title_text = "💼 รายละเอียดที่มา: เงินต้นคงค้าง (เฉพาะบัญชีใหม่ที่ยังไม่ปิด)"
         txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
-        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-danger'>{tx.principal:,.2f}</b></td><td><span class='badge bg-success'>{tx.status}</span></td></tr>" for tx in txs])
-        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th>"
+        rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td><b class='text-danger'>{tx.principal:,.2f}</b></td><td><span class='badge bg-success'>{tx.status}</span></td><td class='text-center'><a href='/delete_tx/{tx.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบบัญชีนี้?')\">❌ ลบรายการ</a></td></tr>" for tx in txs])
+        table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'profit_breakdown':
-        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (รวมดอกเบี้ยรับและค่าปรับ)"
-        histories = PaymentHistory.query.order_by(PaymentHistory.payment_date.desc()).all()
-        rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td><td><span class='badge bg-secondary'>{h.transaction.type}</span></td><td class='text-success'><b>{h.interest_paid:,.2f}</b></td><td class='text-warning text-dark'><b>{h.fine_amount:,.2f}</b></td><td>{h.note or '-'}</td></tr>" for h in histories if h.interest_paid > 0 or h.fine_amount > 0])
-        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ดอกเบี้ยที่ได้รับ</th><th>ค่าปรับ</th><th>หมายเหตุ</th>"
+        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (รวมดอกเบี้ยรับและค่าปรับจากประวัติการชำระ)"
+        # ดึงประวัติการชำระเงินทั้งหมด พร้อมเรียงจากล่าสุด
+        histories = PaymentHistory.query.order_by(PaymentHistory.payment_date.desc(), PaymentHistory.id.desc()).all()
+        rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td><td><span class='badge bg-secondary'>{h.transaction.type}</span></td><td class='text-success'><b>{h.interest_paid:,.2f}</b></td><td class='text-warning text-dark'><b>{h.fine_amount:,.2f}</b></td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td class='text-center'><a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')\">❌ ลบ/ยกเลิก</a></td></tr>" for h in histories if h.interest_paid > 0 or h.fine_amount > 0 or h.pay_amount > 0])
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ดอกเบี้ยที่ได้รับ</th><th>ค่าปรับ</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ (ยกเลิกรายการ)</th>"
     else:
         return redirect(url_for('index'))
 
@@ -745,7 +746,7 @@ def summary_breakdown(breakdown_type):
                 <thead class="table-dark">
                     <tr>{table_headers}</tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='7' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='8' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1481,11 +1482,10 @@ def delete_history(history_id):
             tx.status = 'ปกติ'
             tx.closed_date = None
 
-    tx_id = tx.id
     db.session.delete(history)
     db.session.commit()
     db.session.remove()
-    return redirect(url_for('payment_history', tx_id=tx_id))
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/delete_tx/<int:tx_id>')
 def delete_tx(tx_id):
@@ -1493,7 +1493,7 @@ def delete_tx(tx_id):
     db.session.delete(Transaction.query.get_or_404(tx_id))
     db.session.commit()
     db.session.remove()
-    return redirect(url_for('index'))
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/history/<int:tx_id>')
 def payment_history(tx_id):
