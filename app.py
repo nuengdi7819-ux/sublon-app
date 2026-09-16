@@ -191,14 +191,21 @@ BASE_LAYOUT = """
 
     function togglePayInput(id) {
         let selectElem = document.getElementById('payType' + id);
-        let divElem = document.getElementById('amountDiv' + id);
+        let amountContainer = document.getElementById('amountDiv' + id);
+        let adjustContainer = document.getElementById('adjustContainer' + id);
         let statusElem = document.getElementById('newStatus' + id);
-        if (selectElem && divElem) {
+        
+        if (selectElem) {
             if (selectElem.value === 'full') {
-                divElem.style.display = 'none';
+                if(amountContainer) amountContainer.style.display = 'none';
+                if(adjustContainer) adjustContainer.style.display = 'none';
                 if (statusElem) { statusElem.value = 'คืนแล้ว'; }
+            } else if (selectElem.value === 'adjust') {
+                if(amountContainer) amountContainer.style.display = 'none';
+                if(adjustContainer) adjustContainer.style.display = 'block';
             } else {
-                divElem.style.display = 'block';
+                if(amountContainer) amountContainer.style.display = 'block';
+                if(adjustContainer) adjustContainer.style.display = 'none';
                 if (statusElem) { statusElem.value = 'ตัดยอดบางส่วน'; }
             }
         }
@@ -467,12 +474,20 @@ def index():
                                 <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
                                     <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
                                     <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
                                 </select>
                             </div>
                             <div class="mb-2" id="amountDiv{tx.id}">
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
                                 <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
                             </div>
+                            
+                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
+                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
+                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                            </div>
+
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
@@ -695,12 +710,20 @@ def customer_details(cust_name):
                                 <select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
                                     <option value="partial">จ่ายบางส่วน (ตัดดอกเบี้ย / ตัดต้น / หรือจ่ายค่าปรับ)</option>
                                     <option value="full">คืนครบทั้งหมด (ปิดบัญชี และนำออกจากรายการ)</option>
+                                    <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
                                 </select>
                             </div>
                             <div class="mb-2" id="amountDiv{tx.id}">
                                 <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินที่รับชำระจริง (บาท)</label>
                                 <input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
                             </div>
+
+                            <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
+                                <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
+                                <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                            </div>
+
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <label class="form-label text-danger small fw-bold mb-1" style="font-size: 0.75rem;">ส่วนลด (บาท)</label>
@@ -1260,7 +1283,15 @@ def update_payment(tx_id):
     tx.last_payment_date = thai_today
     actual_interest_paid, actual_principal_reduced = 0.0, 0.0
 
-    if payment_type == 'full':
+    if payment_type == 'adjust':
+        adjust_amount = float(request.form.get('adjust_amount', 0))
+        tx.principal += adjust_amount
+        if tx.principal < 0: tx.principal = 0.0
+        
+        actual_principal_reduced = -adjust_amount
+        if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
+
+    elif payment_type == 'full':
         if total_acc_interest > 0:
             tx.paid_interest += total_acc_interest
             actual_interest_paid = total_acc_interest
