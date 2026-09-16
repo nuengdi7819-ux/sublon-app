@@ -85,8 +85,9 @@ BASE_LAYOUT = """
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
         .sidebar-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1045; }
 
-        .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
-        .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
+        /* ปุ่มสีเขียวมะนาว (Lime Green) */
+        .btn-lime { background-color: #32CD32; border-color: #32CD32; color: #000; font-weight: 600; }
+        .btn-lime:hover { background-color: #28a428; border-color: #28a428; color: #fff; }
 
         .table-responsive::-webkit-scrollbar { height: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
@@ -410,7 +411,7 @@ def index():
             <td><span class="badge {badge_color}">{tx.status}</span></td>
             <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center;">
                 <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
-                    <button type="button" class="btn btn-sm btn-success w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
+                    <button type="button" class="btn btn-sm btn-lime w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger w-100" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </td>
@@ -441,7 +442,7 @@ def index():
                     <div class="col-12 text-danger fw-bold mt-1">🔥 ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท</div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-success btn-sm w-100 fw-bold" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">💰 อัพเดทยอด</button>
+                    <button type="button" class="btn btn-lime btn-sm w-100 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">💰 อัพเดทยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-outline-danger btn-sm" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                 </div>
             </div>
@@ -454,14 +455,13 @@ def index():
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-success">
+                <div class="modal-content" style="border: 2px solid #32CD32;">
                     <form action="/update_payment/{tx.id}" method="POST">
-                        <div class="modal-header bg-success text-white py-2">
+                        <div class="modal-header text-dark py-2" style="background-color: #32CD32;">
                             <h5 class="modal-title fs-6 fw-bold">💰 อัพเดทยอด: {tx.customer_name}</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
-                            <!-- สรุปยอดคงเหลือแบบกระชับ -->
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <div class="p-2 bg-light rounded border text-center">
@@ -476,18 +476,15 @@ def index():
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- เลือกประเภทการอัพเดท -->
                             <div class="mb-2">
                                 <label class="form-label fw-bold mb-1 text-dark" style="font-size: 0.85rem;">ประเภทการอัพเดท</label>
-                                <select name="payment_type" class="form-select form-select-sm border-success" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                <select name="payment_type" class="form-select form-select-sm" style="border-color: #32CD32;" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
                                     <option value="partial">💵 จ่ายบางส่วน (ตัดดอก/ตัดต้น/ค่าปรับ)</option>
                                     <option value="full">✅ ปิดบัญชี (คืนครบทั้งหมด)</option>
                                     <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
                                 </select>
                             </div>
-
-                            <!-- ฟอร์มรับเงินปกติ -->
+                            
                             <div id="amountContainer{tx.id}">
                                 <div class="mb-2">
                                     <label class="form-label fw-bold mb-1" style="font-size: 0.85rem;">จำนวนเงินรับจริง (บาท)</label>
@@ -505,14 +502,12 @@ def index():
                                 </div>
                             </div>
 
-                            <!-- ฟอร์มปรับปรุงยอดเงินต้น -->
                             <div class="mb-2 p-2 bg-info bg-opacity-10 rounded border border-info" id="adjustContainer{tx.id}" style="display: none;">
                                 <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                 <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
                                 <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
                             </div>
 
-                            <!-- ข้อมูลเพิ่มเติมแบบยุบรวม -->
                             <div class="row g-2 mb-1">
                                 <div class="col-6">
                                     <label class="form-label text-muted small mb-1" style="font-size: 0.75rem;">วันที่ทำรายการ</label>
@@ -536,7 +531,7 @@ def index():
                             <a href="/history/{tx.id}" class="btn btn-outline-secondary btn-sm" target="_blank">📜 ประวัติ</a>
                             <div>
                                 <button type="button" class="btn btn-outline-dark btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-success btn-sm fw-bold px-3" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
+                                <button type="submit" class="btn btn-lime btn-sm fw-bold px-3 shadow-sm" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
                             </div>
                         </div>
                     </form>
@@ -544,19 +539,6 @@ def index():
             </div>
         </div>
         """
-
-    if start_date_str and end_date_str:
-        table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
-        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
-    elif start_date_str:
-        table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
-        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
-    elif search_query:
-        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
-        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
-    else:
-        table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
-        view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
     <div class="row mb-4">
@@ -704,7 +686,7 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-success fw-bold px-3" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
+                <button type="button" class="btn btn-sm btn-lime fw-bold px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">อัพเดทยอด</button>
             </td>
         </tr>
         """
@@ -712,11 +694,11 @@ def customer_details(cust_name):
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-success">
+                <div class="modal-content" style="border: 2px solid #32CD32;">
                     <form action="/update_payment/{tx.id}" method="POST">
-                        <div class="modal-header bg-success text-white py-2">
+                        <div class="modal-header text-dark py-2" style="background-color: #32CD32;">
                             <h5 class="modal-title fs-6 fw-bold">💰 อัพเดทยอด: {tx.customer_name}</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
                             <div class="row g-2 mb-2">
@@ -735,7 +717,7 @@ def customer_details(cust_name):
                             </div>
                             <div class="mb-2">
                                 <label class="form-label fw-bold mb-1 text-dark" style="font-size: 0.85rem;">ประเภทการอัพเดท</label>
-                                <select name="payment_type" class="form-select form-select-sm border-success" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
+                                <select name="payment_type" class="form-select form-select-sm" style="border-color: #32CD32;" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required>
                                     <option value="partial">💵 จ่ายบางส่วน (ตัดดอก/ตัดต้น/ค่าปรับ)</option>
                                     <option value="full">✅ ปิดบัญชี (คืนครบทั้งหมด)</option>
                                     <option value="adjust">🔄 ปรับปรุงยอด (เพิ่ม/ลดเงินต้นโดยตรง)</option>
@@ -788,7 +770,7 @@ def customer_details(cust_name):
                             <a href="/history/{tx.id}" class="btn btn-outline-secondary btn-sm" target="_blank">📜 ประวัติ</a>
                             <div>
                                 <button type="button" class="btn btn-outline-dark btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                                <button type="submit" class="btn btn-success btn-sm fw-bold px-3" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
+                                <button type="submit" class="btn btn-lime btn-sm fw-bold px-3 shadow-sm" onclick="closeAllModals()">💾 บันทึกอัพเดท</button>
                             </div>
                         </div>
                     </form>
@@ -870,7 +852,7 @@ def monthly_details(ym):
             <td>{tx.daily_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <a href="/" class="btn btn-sm btn-warning">จัดการ</a>
+                <a href="/" class="btn btn-sm btn-lime fw-bold">อัพเดทยอด</a>
             </td>
         </tr>
         """
@@ -1196,7 +1178,7 @@ def all_transactions():
                 <td>{tx.daily_interest:,.2f}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
-                <td><a href="/" class="btn btn-sm btn-success fw-bold">อัพเดทยอด</a></td>
+                <td><a href="/" class="btn btn-sm btn-lime fw-bold shadow-sm">อัพเดทยอด</a></td>
             </tr>
             """
         return res
