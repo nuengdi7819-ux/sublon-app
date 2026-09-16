@@ -306,18 +306,30 @@ def index():
         search_pattern = f"%{search_query}%"
         query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
     
+    # กำหนดค่าเริ่มต้นให้กับตัวแปร table_title และ view_today_btn ป้องกัน Error
+    table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
+    view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
+
     if start_date_str and end_date_str:
         try:
             s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
             query = query.filter((Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) | (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date))
+            table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
+            view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         except Exception as e: print("Date error:", e)
     elif start_date_str:
         try:
             target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
             query = query.filter((Transaction.start_date == target_date) | (Transaction.last_payment_date == target_date))
+            table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
+            view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         except Exception as e: print("Date error:", e)
-    elif not search_query:
+    elif search_query:
+        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
+        view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
+        transactions = query.order_by(Transaction.customer_name.asc()).all()
+    else:
         current_match_codes = []
         if 4 <= today_day <= 6: current_match_codes.append("6")
         if 9 <= today_day <= 12: current_match_codes.append("12")
@@ -349,7 +361,9 @@ def index():
             if t.id not in seen_ids:
                 seen_ids.add(t.id)
                 transactions.append(t)
-    else:
+
+    # หากมีการกรองวันที่หรือค้นหา ให้ดึงข้อมูลจาก query มาใช้
+    if start_date_str or search_query:
         transactions = query.order_by(Transaction.customer_name.asc()).all()
 
     for tx in transactions:
