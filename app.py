@@ -1056,9 +1056,14 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
+    # ดึง ID ของรายการที่มีการจ่ายเงินจริงในเดือนนั้นๆ
+    tx_ids_from_history = [h.transaction_id for h in PaymentHistory.query.all() if h.payment_date and h.payment_date.strftime('%Y-%m'] == ym] if False else [h.transaction_id for h in PaymentHistory.query.all() if h.payment_date and h.payment_date.strftime('%Y-%m') == ym]
+
     txs = Transaction.query.filter(
-        db.extract('year', Transaction.start_date) == year_i,
-        db.extract('month', Transaction.start_date) == month_i
+        db.or_(
+            db.and_(db.extract('year', Transaction.start_date) == year_i, db.extract('month', Transaction.start_date) == month_i),
+            Transaction.id.in_(tx_ids_from_history) if tx_ids_from_history else False
+        )
     ).order_by(Transaction.start_date.desc()).all()
 
     rows = ""
