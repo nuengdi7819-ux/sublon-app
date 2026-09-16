@@ -382,7 +382,7 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # คำนวณกำไรสะสมย้อนหลังทั้งหมดตั้งแต่วันแรกที่สร้างระบบ
+    # คำนวณกำไรสะสมย้อนหลังทั้งหมด
     history_collected = db.session.query(db.func.sum(PaymentHistory.pay_amount + PaymentHistory.fine_amount)).scalar() or 0.0
     debt_profit_all = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.original_principal > tx.principal)
     new_interest_all = sum(tx.paid_interest for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า')
@@ -554,6 +554,65 @@ def index():
         </div>
         """
 
+    # คำนวณข้อมูลสำหรับตารางสรุปแยกตามประเภทเหมือนในรูปภาพตัวอย่าง
+    histories_all = PaymentHistory.query.all()
+    normal_pay_total = sum((h.pay_amount + h.fine_amount) for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
+    normal_pay_count = sum(1 for h in histories_all if h.pay_amount > 0 or h.fine_amount > 0)
+
+    adjust_pay_total = sum(abs(h.principal_reduced) for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
+    adjust_pay_count = sum(1 for h in histories_all if h.note and "ปรับปรุงยอดเงินต้น" in h.note)
+
+    debt_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
+    debt_profit_total = sum((tx.original_principal - tx.principal) for tx in debt_txs)
+    debt_profit_count = len(debt_txs)
+
+    grand_total_sum = normal_pay_total + adjust_pay_total + debt_profit_total
+    grand_total_count = normal_pay_count + adjust_pay_count + debt_profit_count
+
+    summary_table_html = f"""
+    <div class="card p-4 shadow-sm border-warning mb-4">
+        <h5 class="text-danger fw-bold mb-3">📊 สรุปยอดรวม (แยกตามประเภทรายการ)</h5>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ประเภทรายการ</th>
+                        <th>ยอดรวม (บาท)</th>
+                        <th>จำนวนรายการ</th>
+                        <th class="text-center">ตรวจสอบ / จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><b>รับชำระเงิน (ยอดปกติ)</b></td>
+                        <td class="text-success fw-bold">{normal_pay_total:,.2f}</td>
+                        <td>{normal_pay_count} รายการ</td>
+                        <td class="text-center"><a href="/summary_breakdown/normal_pay" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
+                    </tr>
+                    <tr>
+                        <td><b>ปรับ (ยอดชำระ/ปรับปรุง)</b></td>
+                        <td class="text-warning text-dark fw-bold">{adjust_pay_total:,.2f}</td>
+                        <td>{adjust_pay_count} รายการ</td>
+                        <td class="text-center"><a href="/summary_breakdown/adjust_pay" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
+                    </tr>
+                    <tr>
+                        <td><b>กำไรส่วนต่างยอดค้างเก่า (ส่วนต่างรวม)</b></td>
+                        <td class="text-primary fw-bold">{debt_profit_total:,.2f}</td>
+                        <td>{debt_profit_count} รายการ</td>
+                        <td class="text-center"><a href="/summary_breakdown/debt_profit" class="btn btn-sm btn-outline-primary fw-bold">🔍 ตรวจสอบ</a></td>
+                    </tr>
+                    <tr class="table-warning">
+                        <td><b>รวมทั้งสิ้น</b></td>
+                        <td class="text-danger fw-bold">{grand_total_sum:,.2f}</td>
+                        <td><b>{grand_total_count} รายการ</b></td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    """
+
     content = f"""
     <div class="row mb-4">
         <div class="col-md mb-3">
@@ -593,6 +652,8 @@ def index():
             </a>
         </div>
     </div>
+
+    {summary_table_html}
 
     <div class="card p-4 shadow-sm mb-4 border-warning">
         <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
@@ -776,6 +837,64 @@ def summary_breakdown(breakdown_type):
                     """
 
         table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดรับจริง (บาท)</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>ตรวจสอบ / จัดการ</th>"
+
+    elif breakdown_type == 'normal_pay':
+        title_text = "🟢 รายละเอียด: รับชำระเงิน (ยอดปกติ)"
+        histories = PaymentHistory.query.filter(db.or_(PaymentHistory.pay_amount > 0, PaymentHistory.fine_amount > 0)).order_by(PaymentHistory.payment_date.desc()).all()
+        for h in histories:
+            if not h.transaction: continue
+            actual_received = h.pay_amount + h.fine_amount
+            rows += f"""
+            <tr>
+                <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
+                <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
+                <td><span class='badge bg-secondary'>{h.transaction.type}</span></td>
+                <td class='text-success fw-bold'>{actual_received:,.2f}</td>
+                <td>{h.fine_amount:,.2f}</td>
+                <td>{h.note or 'รับชำระปกติ'}</td>
+                <td>{h.admin_name or '-'}</td>
+                <td class='text-center'><a href='/history/{h.transaction_id}' class='btn btn-sm btn-outline-primary' target='_blank'>🔍 เช็กบิล</a></td>
+            </tr>
+            """
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดรับจริง (บาท)</th><th>ค่าปรับ</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th>"
+
+    elif breakdown_type == 'adjust_pay':
+        title_text = "🟡 รายละเอียด: ปรับ (ยอดชำระ/ปรับปรุง)"
+        histories = PaymentHistory.query.filter(PaymentHistory.note.ilike('%ปรับปรุงยอดเงินต้น%')).order_by(PaymentHistory.payment_date.desc()).all()
+        for h in histories:
+            if not h.transaction: continue
+            adj_val = abs(h.principal_reduced)
+            rows += f"""
+            <tr>
+                <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
+                <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
+                <td><span class='badge bg-warning text-dark'>{h.transaction.type}</span></td>
+                <td class='text-warning text-dark fw-bold'>{adj_val:,.2f}</td>
+                <td>{h.note or '-'}</td>
+                <td>{h.admin_name or '-'}</td>
+                <td class='text-center'><a href='/history/{h.transaction_id}' class='btn btn-sm btn-outline-primary' target='_blank'>🔍 เช็กบิล</a></td>
+            </tr>
+            """
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดปรับ (บาท)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th>"
+
+    elif breakdown_type == 'debt_profit':
+        title_text = "🔵 รายละเอียด: กำไรส่วนต่างยอดค้างเก่า (ส่วนต่างรวม)"
+        txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and (tx.original_principal - tx.principal) != 0]
+        for tx in txs:
+            diff_val = tx.original_principal - tx.principal
+            rows += f"""
+            <tr>
+                <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
+                <td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td>
+                <td>{tx.original_principal:,.2f}</td>
+                <td>{tx.principal:,.2f}</td>
+                <td class='text-primary fw-bold'>{diff_val:,.2f}</td>
+                <td><span class='badge bg-success'>{tx.status}</span></td>
+                <td class='text-center'><a href='/customer_details/{tx.customer_name}' class='btn btn-sm btn-outline-dark fw-bold' target='_blank'>🔍 เช็กบัญชี</a></td>
+            </tr>
+            """
+        table_headers = "<th>วันที่เริ่ม</th><th>ชื่อลูกค้า</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ส่วนต่างกำไร (บาท)</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
+
     else:
         return redirect(url_for('index'))
 
