@@ -752,17 +752,16 @@ def summary_breakdown(breakdown_type):
         for tx in all_txs_ever:
             if tx.type == 'ยอดค้างเก่า':
                 debt_profit = tx.original_principal - tx.principal
-                has_history = any(h.transaction_id == tx.id for h in histories)
-                if debt_profit > 0 and not has_history:
+                if debt_profit != 0:
                     rows += f"""
                     <tr>
                         <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
                         <td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td>
-                        <td><span class='badge bg-warning text-dark'>ยอดค้างเก่า (ส่วนต่าง)</span></td>
+                        <td><span class='badge bg-warning text-dark'>ยอดค้างเก่า (ส่วนต่างรวม)</span></td>
                         <td class='text-success'><b>0.00</b></td>
                         <td class='text-primary'><b>{debt_profit:,.2f}</b></td>
                         <td class='text-warning text-dark'><b>0.00</b></td>
-                        <td>กำไรจากการลดลงของยอดค้างเก่า</td>
+                        <td>กำไรส่วนต่างยอดค้างเก่า (ตั้งต้น - คงเหลือ)</td>
                         <td><span class='badge bg-secondary'>{tx.sales_name}</span></td>
                         <td class='text-center'><span class="text-muted small">คำนวณอัตโนมัติ</span></td>
                     </tr>
