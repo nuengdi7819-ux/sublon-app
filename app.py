@@ -85,7 +85,6 @@ BASE_LAYOUT = """
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
         .sidebar-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1045; }
 
-        /* ปุ่มสีเขียวมะนาว (Lime Green) */
         .btn-lime { background-color: #32CD32; border-color: #32CD32; color: #000; font-weight: 600; }
         .btn-lime:hover { background-color: #28a428; border-color: #28a428; color: #fff; }
 
@@ -727,11 +726,49 @@ def summary_breakdown(breakdown_type):
         table_headers = "<th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่เริ่ม</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th><th class='text-center'>จัดการ</th>"
         
     elif breakdown_type == 'profit_breakdown':
-        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (รวมดอกเบี้ยรับและค่าปรับจากประวัติการชำระ)"
-        # ดึงประวัติการชำระเงินทั้งหมด พร้อมเรียงจากล่าสุด
+        title_text = "💰 รายละเอียดที่มา: กำไรสะสมทั้งหมด (แยกตามช่องยอดใหม่, ยอดค้าง และยอดปรับ)"
+        
         histories = PaymentHistory.query.order_by(PaymentHistory.payment_date.desc(), PaymentHistory.id.desc()).all()
-        rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td><td><span class='badge bg-secondary'>{h.transaction.type}</span></td><td class='text-success'><b>{h.interest_paid:,.2f}</b></td><td class='text-warning text-dark'><b>{h.fine_amount:,.2f}</b></td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td class='text-center'><a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick=\"return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')\">❌ ลบ/ยกเลิก</a></td></tr>" for h in histories if h.interest_paid > 0 or h.fine_amount > 0 or h.pay_amount > 0])
-        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ดอกเบี้ยที่ได้รับ</th><th>ค่าปรับ</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ (ยกเลิกรายการ)</th>"
+        for h in histories:
+            if h.interest_paid > 0 or h.fine_amount > 0 or h.pay_amount > 0 or h.discount_amount > 0:
+                new_val = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else 0.0
+                debt_val = h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else 0.0
+                fine_val = h.fine_amount
+                
+                rows += f"""
+                <tr>
+                    <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
+                    <td><a href='/customer_details/{h.transaction.customer_name}' class='text-dark fw-bold text-decoration-none'>{h.transaction.customer_name}</a></td>
+                    <td><span class='badge bg-secondary'>{h.transaction.type}</span></td>
+                    <td class='text-success'><b>{new_val:,.2f}</b></td>
+                    <td class='text-primary'><b>{debt_val:,.2f}</b></td>
+                    <td class='text-warning text-dark'><b>{fine_val:,.2f}</b></td>
+                    <td>{h.note or 'รับชำระปกติ'}</td>
+                    <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
+                    <td class='text-center'><a href='/delete_history/{h.id}' class='btn btn-sm btn-danger' onclick="return confirm('ยืนยันการลบประวัติรายการนี้? (ระบบจะคืนยอดเงินต้นและดอกเบี้ยกลับให้อัตโนมัติ)')">❌ ลบ/ยกเลิก</a></td>
+                </tr>
+                """
+
+        for tx in all_txs_ever:
+            if tx.type == 'ยอดค้างเก่า':
+                debt_profit = tx.original_principal - tx.principal
+                has_history = any(h.transaction_id == tx.id for h in histories)
+                if debt_profit > 0 and not has_history:
+                    rows += f"""
+                    <tr>
+                        <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
+                        <td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td>
+                        <td><span class='badge bg-warning text-dark'>ยอดค้างเก่า (ส่วนต่าง)</span></td>
+                        <td class='text-success'><b>0.00</b></td>
+                        <td class='text-primary'><b>{debt_profit:,.2f}</b></td>
+                        <td class='text-warning text-dark'><b>0.00</b></td>
+                        <td>กำไรจากการลดลงของยอดค้างเก่า</td>
+                        <td><span class='badge bg-secondary'>{tx.sales_name}</span></td>
+                        <td class='text-center'><span class="text-muted small">คำนวณอัตโนมัติ</span></td>
+                    </tr>
+                    """
+
+        table_headers = "<th>วันที่ทำรายการ</th><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ยอดใหม่ (ดอกเบี้ย)</th><th>ยอดค้าง (ส่วนต่างเก่า)</th><th>ยอดปรับ (ค่าปรับ)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ (ยกเลิกรายการ)</th>"
     else:
         return redirect(url_for('index'))
 
@@ -746,7 +783,7 @@ def summary_breakdown(breakdown_type):
                 <thead class="table-dark">
                     <tr>{table_headers}</tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='8' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ไม่พบข้อมูลรายการ</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1511,7 +1548,7 @@ def payment_history(tx_id):
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class="text-center">จัดการ</th></tr></thead>
+                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th class='text-center'>จัดการ</th></tr></thead>
                 <tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"}</tbody>
             </table>
         </div>
