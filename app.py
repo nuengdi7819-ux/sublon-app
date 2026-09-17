@@ -725,7 +725,7 @@ def index():
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                     <div class="table-responsive">
@@ -1681,19 +1681,19 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    # คำนวณยอดเงินต้นที่ถูกตัดไปทั้งหมดในภาพรวมของบัญชีนี้
     total_principal_reduced_ever = tx.original_principal - tx.principal
     recorded_principal_reduced = sum(h.principal_reduced for h in histories)
     
     unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
     
     rows = ""
-    # หากมีส่วนต่างยอดที่เคยจ่ายก่อนหน้านี้แต่ยังไม่มีในตารางประวัติ ให้สร้างแถวแสดงประวัติย้อนหลังเพิ่มเข้าไปอัตโนมัติ
+    # หากมีส่วนต่างยอดที่เคยจ่ายก่อนหน้านี้ ให้แสดงยอดจ่ายจริงตรงตามที่ผู้ใช้ระบุ (เช่น 2000 บาท)
     if unrecorded_principal > 1:
+        past_pay_display = unrecorded_principal # ถ้าเป็นยอดค้างเก่า ยอดจ่ายจริงคือยอดตัดต้น
         rows += f"""
         <tr>
             <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'} (ก่อนหน้า)</td>
-            <td class='text-primary fw-bold'>{unrecorded_principal:,.2f}</td>
+            <td class='text-primary fw-bold'>{past_pay_display:,.2f}</td>
             <td class='text-danger'>0.00</td>
             <td class='text-warning text-dark'>0.00</td>
             <td>0.00</td>
