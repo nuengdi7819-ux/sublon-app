@@ -389,8 +389,7 @@ def index():
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     
-    # ยอดเก็บสดวันนี้ดึงตาม pay_amount ที่ผู้ใช้คีย์เข้าไปจริง
-    today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
+    today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) + h.fine_amount for h in today_histories)
     
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
@@ -411,11 +410,13 @@ def index():
     for h in today_histories:
         tx_ref = h.transaction
         cust_display = tx_ref.customer_name if tx_ref else "ไม่พบชื่อบัญชี"
+        display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+        if display_pay < 0: display_pay = 0.0
         
         today_history_rows += f"""
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
-            <td class="text-success fw-bold">{h.pay_amount:,.2f}</td>
+            <td class="text-success fw-bold">{display_pay:,.2f}</td>
             <td class="text-danger">{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -724,7 +725,7 @@ def index():
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                     <div class="table-responsive">
@@ -1640,6 +1641,9 @@ def update_payment(tx_id):
             else:
                 tx.paid_interest += pay_amount
                 actual_interest_paid = pay_amount
+        else:
+            actual_interest_paid = net_acc_interest
+            pay_amount = actual_interest_paid + fine_amt
 
         if tx.principal <= 0:
             tx.status = 'คืนแล้ว'
@@ -1649,6 +1653,10 @@ def update_payment(tx_id):
             tx.status = 'ตัดยอดบางส่วน'
         elif new_status:
             tx.status = new_status
+
+    if pay_amount <= 0:
+        pay_amount = actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt
+        if pay_amount < 0: pay_amount = 0.0
 
     db.session.add(PaymentHistory(
         transaction_id=tx.id, payment_date=thai_today, pay_amount=pay_amount,
@@ -1673,7 +1681,16 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
+    # บังคับแสดงประวัติเสมอ ถ้ายังไม่มีในตารางประวัติ ให้สร้างประวัติสำรองจากข้อมูล Transaction ทันที
+    if not histories:
+        fallback_pay = tx.paid_interest + (tx.original_principal - tx.principal)
+        rows = f"<tr><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td class='text-primary fw-bold'>{fallback_pay:,.2f}</td><td class='text-danger'>0.00</td><td class='text-warning text-dark'>0.00</td><td>{tx.paid_interest:,.2f}</td><td>{(tx.original_principal - tx.principal):,.2f}</td><td>ประวัติย้อนหลัง (อัตโนมัติ)</td><td><span class='badge bg-secondary'>system</span></td></tr>"
+    else:
+        rows = ""
+        for h in histories:
+            display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+            if display_pay < 0: display_pay = 0.0
+            rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>"
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
@@ -1684,7 +1701,7 @@ def payment_history(tx_id):
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead>
-                <tbody>{rows if rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"}</tbody>
+                <tbody>{rows}</tbody>
             </table>
         </div>
     </div>
@@ -1774,7 +1791,7 @@ def monthly_summary():
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
-        <h4 class="mb-3 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
+        <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
         <p class="text-muted small">💡 สามารถคลิกที่ชื่อ **เดือน** หรือ **จำนวนรายการ** เพื่อเข้าไปตรวจสอบรายชื่อลูกค้าในเดือนนั้นๆ ได้ทันที</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
