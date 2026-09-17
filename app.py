@@ -376,11 +376,33 @@ def index():
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_profit = base_profit + total_fine
 
-    # คำนวณยอดเก็บสดวันนี้ และรายการอัพเดตวันนี้สำหรับสร้างตาราง Modal
+    # --- ข้อมูลสรุปกิจกรรมวันนี้ ---
+    # 1. รายการลงทุนใหม่วันนี้ (Transaction ที่มี start_date = วันนี้)
+    today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
+    today_new_count = len(today_new_txs)
+
+    # 2. รายการชำระ/เก็บยอด/ปรับปรุงยอดวันนี้ (PaymentHistory ที่มี payment_date = วันนี้)
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
-    today_update_count = len(today_histories)
+    today_payment_count = len(today_histories)
 
+    # รวมจำนวนธุรกรรมทั้งหมดวันนี้สำหรับแสดงบนกล่องสีฟ้า
+    total_today_actions = today_new_count + today_payment_count
+
+    # ตารางหมวดที่ 1: รายการลงทุนใหม่วันนี้
+    today_new_rows = ""
+    for tx in today_new_txs:
+        today_new_rows += f"""
+        <tr>
+            <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
+            <td><span class="badge bg-secondary">{tx.type}</span></td>
+            <td>{tx.phone or '-'}</td>
+            <td class="text-primary fw-bold">{tx.original_principal:,.2f}</td>
+            <td><span class="badge bg-danger">{tx.sales_name}</span></td>
+        </tr>
+        """
+
+    # ตารางหมวดที่ 2: รายการรับชำระ/เก็บยอด/ปรับปรุงยอดวันนี้
     today_history_rows = ""
     for h in today_histories:
         tx_ref = h.transaction
@@ -388,7 +410,7 @@ def index():
         today_history_rows += f"""
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
-            <td class="text-primary fw-bold">{h.pay_amount:,.2f}</td>
+            <td class="text-success fw-bold">{h.pay_amount:,.2f}</td>
             <td class="text-danger">{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -688,11 +710,11 @@ def index():
             </div>
         </div>
         <div class="col-md-6 mb-3">
-            <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
+            <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayActionsModal" title="คลิกเพื่อดูรายละเอียด">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 text-white-50">🔄 จำนวนครั้งที่อัพเดตยอดวันนี้ (คลิกเพื่อดู)</h6>
-                        <h3 class="fw-bold mb-0">{today_update_count} ครั้ง</h3>
+                        <h6 class="mb-1 text-white-50">⚡ ธุรกรรมทั้งหมดวันนี้ (คลิกเพื่อดู)</h6>
+                        <h3 class="fw-bold mb-0">{total_today_actions} รายการ</h3>
                     </div>
                     <div class="fs-1 opacity-50">⚡</div>
                 </div>
@@ -700,11 +722,12 @@ def index():
         </div>
     </div>
 
+    <!-- Modal ยอดเก็บสดวันนี้ (สีเขียว) -->
     <div class="modal fade" id="todayHistoryModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการอัพเดต/เก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
+                    <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการเก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -723,9 +746,64 @@ def index():
                                 </tr>
                             </thead>
                             <tbody>
-                                {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการอัพเดตยอดเงินในวันนี้</td></tr>"}
+                                {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการเก็บเงินในวันนี้</td></tr>"}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ธุรกรรมทั้งหมดวันนี้ (สีฟ้า - จัดหมวดหมู่แยกชัดเจน) -->
+    <div class="modal fade" id="todayActionsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-info">
+                <div class="modal-header bg-info text-dark py-2">
+                    <h5 class="modal-title fs-6 fw-bold">⚡ สรุปธุรกรรมและความเคลื่อนไหวทั้งหมด ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- หมวดที่ 1: รายการลงทุนใหม่วันนี้ -->
+                    <div class="mb-4">
+                        <h6 class="text-primary fw-bold border-bottom pb-2">➕ หมวดที่ 1: รายการเพิ่มเงินลงทุนใหม่วันนี้ ({today_new_count} รายการ)</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle text-nowrap">
+                                <thead class="table-dark">
+                                    <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>ยอดลงทุน</th><th>เซลล์ผู้ดูแล</th></tr>
+                                </thead>
+                                <tbody>
+                                    {today_new_rows if today_new_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีการเพิ่มเงินลงทุนใหม่ในวันนี้</td></tr>"}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- หมวดที่ 2: รายการรับชำระ / เก็บยอด / ปรับปรุงยอดวันนี้ -->
+                    <div>
+                        <h6 class="text-success fw-bold border-bottom pb-2">💵 หมวดที่ 2: รายการรับชำระ / เก็บยอด / ปรับปรุงยอดวันนี้ ({today_payment_count} รายการ)</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle text-nowrap">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>ชื่อลูกค้า</th>
+                                        <th>ยอดจ่ายจริง</th>
+                                        <th>ค่าปรับ</th>
+                                        <th>ส่วนลด</th>
+                                        <th>ตัดดอกเบี้ย</th>
+                                        <th>ตัดเงินต้น</th>
+                                        <th>หมายเหตุ</th>
+                                        <th>ผู้ทำรายการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการทำธุรกรรมรับชำระในวันนี้</td></tr>"}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer py-2">
