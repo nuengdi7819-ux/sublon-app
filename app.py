@@ -257,15 +257,6 @@ def calculate_tx_values(tx):
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
     total_history_pay = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)) for h in tx.histories) if tx.histories else 0.0
-    
-    total_principal_reduced_ever = tx.original_principal - tx.principal
-    recorded_principal_reduced = sum(h.principal_reduced for h in tx.histories) if tx.histories else 0.0
-    unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
-    
-    if unrecorded_principal > 1:
-        past_pay_val = 2000.0 if tx.customer_name == "J Kwan Nhp (ปรับ)" else unrecorded_principal
-        total_history_pay += past_pay_val
-
     tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
 
 @app.route('/', methods=['GET', 'POST'])
@@ -392,7 +383,6 @@ def index():
     today_new_count = len(today_new_txs)
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
-    
     today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) + h.fine_amount for h in today_histories)
     
     today_payment_count = len(today_histories)
@@ -1688,29 +1678,7 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    total_principal_reduced_ever = tx.original_principal - tx.principal
-    recorded_principal_reduced = sum(h.principal_reduced for h in histories)
-    
-    unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
-    
     rows = ""
-    if unrecorded_principal > 1:
-        past_pay_display = 2000.0 if tx.customer_name == "J Kwan Nhp (ปรับ)" else unrecorded_principal
-        past_interest_display = max(0.0, past_pay_display - unrecorded_principal)
-        
-        rows += f"""
-        <tr>
-            <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'} (ก่อนหน้า)</td>
-            <td class='text-primary fw-bold'>{past_pay_display:,.2f}</td>
-            <td class='text-danger'>0.00</td>
-            <td class='text-warning text-dark'>0.00</td>
-            <td>{past_interest_display:,.2f}</td>
-            <td>{unrecorded_principal:,.2f}</td>
-            <td>ประวัติชำระยอดก่อนหน้า</td>
-            <td><span class='badge bg-secondary'>system</span></td>
-        </tr>
-        """
-
     for h in histories:
         display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
         if display_pay < 0: display_pay = 0.0
@@ -1802,7 +1770,6 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. บันทึกข้อมูลตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่สร้างสัญญา (start_date)
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1812,7 +1779,6 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. จัดสรรยอดเก็บและกำไรตาม "เดือนที่มีการชำระจริง (Payment Date)" ให้เชื่อมโยงตรงกับการ์ดภาพรวม
     all_txs = Transaction.query.all()
     for tx in all_txs:
         if tx.histories:
