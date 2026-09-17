@@ -256,13 +256,18 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    total_history_pay = sum(h.pay_amount + h.fine_amount for h in tx.histories) if tx.histories else 0.0
+    # มาตรฐานสากลสำหรับทุกรายการ: รวมยอดจ่ายจริง (pay_amount) จากประวัติการชำระทุกรายการ
+    total_history_pay = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in tx.histories) if tx.histories else 0.0
     
-    if tx.type == 'ยอดค้างเก่า':
-        debt_reduction = (tx.original_principal - tx.principal)
-        tx.total_paid = debt_reduction if debt_reduction > 0 else total_history_pay
-    else:
-        tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
+    # หากมีส่วนต่างยอดต้นที่ลดลงแต่ยังไม่ได้บันทึกเป็นประวัติ (กรณีข้อมูลเก่า) ให้คำนวณรวมอัตโนมัติเป็นมาตรฐานเดียวกัน
+    total_principal_reduced_ever = tx.original_principal - tx.principal
+    recorded_principal_reduced = sum(h.principal_reduced for h in tx.histories) if tx.histories else 0.0
+    unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
+    
+    if unrecorded_principal > 1:
+        total_history_pay += unrecorded_principal
+
+    tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -1687,9 +1692,8 @@ def payment_history(tx_id):
     unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
     
     rows = ""
-    # หากมีส่วนต่างยอดที่เคยจ่ายก่อนหน้านี้ ให้แสดงยอดจ่ายจริงตรงตามที่ผู้ใช้ระบุ (เช่น 2000 บาท)
     if unrecorded_principal > 1:
-        past_pay_display = unrecorded_principal # ถ้าเป็นยอดค้างเก่า ยอดจ่ายจริงคือยอดตัดต้น
+        past_pay_display = unrecorded_principal
         rows += f"""
         <tr>
             <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'} (ก่อนหน้า)</td>
