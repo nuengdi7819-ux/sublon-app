@@ -372,9 +372,12 @@ def index():
     total_new_investment = sum(tx.original_principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า')
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
-    base_profit = sum(((tx.original_principal - tx.principal)) if tx.type == 'ยอดค้างเก่า' else tx.paid_interest for tx in all_txs_ever)
+    
+    # คำนวณกำไรสะสมโดยหักส่วนลดจริงจากประวัติการชำระ
+    total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
+    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
-    total_profit = base_profit + total_fine
+    total_profit = total_history_interest + total_debt_earned + total_fine
 
     # --- ข้อมูลสรุปกิจกรรมวันนี้ ---
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
@@ -427,7 +430,7 @@ def index():
             earned = (tx.original_principal - tx.principal)
         else:
             earned = tx.paid_interest
-        if earned > 0:
+        if earned != 0:
             profit_card_rows += f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td class='text-success fw-bold'>{earned:,.2f} บาท</td></tr>"
 
     rows, cards, modals_html = "", "", ""
@@ -1559,19 +1562,26 @@ def update_payment(tx_id):
         if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
 
     elif payment_type == 'full':
-        if total_acc_interest > 0:
-            tx.paid_interest += total_acc_interest
-            actual_interest_paid = total_acc_interest
+        # คืนครบทั้งหมด: ดอกเบี้ยที่ได้จริงคือดอกเบี้ยสะสมลบด้วยส่วนลด
+        net_interest_earned = total_acc_interest - discount_amt
+        if net_interest_earned < 0: net_interest_earned = 0.0
+        
+        tx.paid_interest += net_interest_earned
+        actual_interest_paid = net_interest_earned
         actual_principal_reduced = tx.principal
         tx.principal = 0.0
         tx.status = 'คืนแล้ว'
         if not tx.closed_date: tx.closed_date = thai_today
     else:
-        total_reduction = pay_amount + discount_amt
-        if pay_amount >= total_acc_interest:
-            actual_interest_paid = total_acc_interest
-            remainder = total_reduction - total_acc_interest
-            tx.paid_interest += total_acc_interest
+        # จ่ายบางส่วน / ตัดยอด
+        # หักส่วนลดออกจากดอกเบี้ยสะสมที่ควรจะตัด
+        net_acc_interest = total_acc_interest - discount_amt
+        if net_acc_interest < 0: net_acc_interest = 0.0
+
+        if pay_amount >= net_acc_interest:
+            actual_interest_paid = net_acc_interest
+            remainder = pay_amount - net_acc_interest
+            tx.paid_interest += net_acc_interest
             if remainder > 0:
                 tx.principal -= remainder
                 actual_principal_reduced = remainder
@@ -1579,11 +1589,7 @@ def update_payment(tx_id):
         else:
             tx.paid_interest += pay_amount
             actual_interest_paid = pay_amount
-            if discount_amt > 0:
-                tx.principal -= discount_amt
-                actual_principal_reduced = discount_amt
-                if tx.principal < 0: tx.principal = 0.0
-            
+
         if tx.principal <= 0:
             tx.status = 'คืนแล้ว'
             tx.principal = 0.0
@@ -1616,7 +1622,6 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    # ถ้าไม่มีประวัติในตาราง แต่มีการลดลงของเงินต้นหรือมีการจ่ายดอกเบี้ยไปแล้ว ให้สร้างประวัติย้อนหลังอัตโนมัติ
     if not histories and (tx.original_principal > tx.principal or tx.paid_interest > 0):
         reduced_amt = tx.original_principal - tx.principal if tx.type == 'ยอดค้างเก่า' else 0.0
         interest_amt = tx.paid_interest if tx.type != 'ยอดค้างเก่า' else 0.0
@@ -1633,7 +1638,7 @@ def payment_history(tx_id):
             admin_name=tx.sales_name
         )]
 
-    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-muted'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
+    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
