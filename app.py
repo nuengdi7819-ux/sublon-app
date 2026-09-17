@@ -389,8 +389,8 @@ def index():
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     
-    # คำนวณยอดเก็บสดวันนี้จากยอดชำระจริงและค่าปรับที่เกิดขึ้นในวันนี้แบบตรงตัว
-    today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
+    # คำนวณยอดเก็บสดวันนี้แบบครอบคลุม (หาก pay_amount เป็น 0 จะคำนวณจากตัดดอก + ตัดต้น + ค่าปรับ - ส่วนลด อัตโนมัติ)
+    today_collected_cash = sum((h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount) if h.pay_amount == 0 else (h.pay_amount + h.fine_amount) for h in today_histories)
     
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
@@ -411,10 +411,14 @@ def index():
     for h in today_histories:
         tx_ref = h.transaction
         cust_display = tx_ref.customer_name if tx_ref else "ไม่พบชื่อบัญชี"
+        
+        # แสดงยอดจ่ายจริงแบบคำนวณสำรองหากใน DB เป็น 0
+        effective_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+        
         today_history_rows += f"""
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
-            <td class="text-success fw-bold">{h.pay_amount:,.2f}</td>
+            <td class="text-success fw-bold">{effective_pay:,.2f}</td>
             <td class="text-danger">{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -589,7 +593,7 @@ def index():
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="หากเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
