@@ -377,6 +377,7 @@ def index():
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
+    total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
     total_profit = total_history_interest + total_debt_earned + total_fine
 
     # --- ข้อมูลสรุปกิจกรรมวันนี้ ---
@@ -428,10 +429,21 @@ def index():
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
             earned = (tx.original_principal - tx.principal)
+            total_disc = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+            net_earned = earned - total_disc
         else:
-            earned = tx.paid_interest
-        if earned != 0:
-            profit_card_rows += f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td class='text-success fw-bold'>{earned:,.2f} บาท</td></tr>"
+            net_earned = tx.paid_interest
+            total_disc = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+            
+        if net_earned != 0 or total_disc != 0:
+            profit_card_rows += f"""
+            <tr>
+                <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
+                <td><span class="badge bg-secondary">{tx.type}</span></td>
+                <td class="text-danger">{total_disc:,.2f} บาท</td>
+                <td class="text-success fw-bold">{net_earned:,.2f} บาท</td>
+            </tr>
+            """
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -672,20 +684,20 @@ def index():
 
     <!-- Modal กำไรสะสมทั้งหมด -->
     <div class="modal fade" id="profitModal" tabindex="-1">
-        <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small mb-2">* รวมค่าปรับสะสมทั้งหมดในระบบ: <b>{total_fine:,.2f} บาท</b></p>
+                    <p class="text-muted small mb-2">* ส่วนลดรวมทั้งหมดในระบบ: <b>{total_discount:,.2f} บาท</b> | ค่าปรับสะสมรวม: <b>{total_fine:,.2f} บาท</b></p>
                     <div class="table-responsive">
                         <table class="table table-striped align-middle text-nowrap">
                             <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไรที่ได้รับ</th></tr>
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ส่วนลดรวม</th><th>กำไรสุทธิที่ได้รับ</th></tr>
                             </thead>
-                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='3' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
                         </table>
                     </div>
                 </div>
@@ -1574,7 +1586,6 @@ def update_payment(tx_id):
         if not tx.closed_date: tx.closed_date = thai_today
     else:
         # จ่ายบางส่วน / ตัดยอด
-        # หักส่วนลดออกจากดอกเบี้ยสะสมที่ควรจะตัด
         net_acc_interest = total_acc_interest - discount_amt
         if net_acc_interest < 0: net_acc_interest = 0.0
 
