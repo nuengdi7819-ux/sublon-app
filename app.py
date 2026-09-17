@@ -377,19 +377,14 @@ def index():
     total_profit = base_profit + total_fine
 
     # --- ข้อมูลสรุปกิจกรรมวันนี้ ---
-    # 1. รายการลงทุนใหม่วันนี้ (Transaction ที่มี start_date = วันนี้)
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
     today_new_count = len(today_new_txs)
 
-    # 2. รายการชำระ/เก็บยอด/ปรับปรุงยอดวันนี้ (PaymentHistory ที่มี payment_date = วันนี้)
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
     today_payment_count = len(today_histories)
-
-    # รวมจำนวนธุรกรรมทั้งหมดวันนี้สำหรับแสดงบนกล่องสีฟ้า
     total_today_actions = today_new_count + today_payment_count
 
-    # ตารางหมวดที่ 1: รายการลงทุนใหม่วันนี้
     today_new_rows = ""
     for tx in today_new_txs:
         today_new_rows += f"""
@@ -402,7 +397,6 @@ def index():
         </tr>
         """
 
-    # ตารางหมวดที่ 2: รายการรับชำระ/เก็บยอด/ปรับปรุงยอดวันนี้
     today_history_rows = ""
     for h in today_histories:
         tx_ref = h.transaction
@@ -1620,7 +1614,26 @@ def delete_tx(tx_id):
 def payment_history(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
-    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-muted'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()])
+    histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
+    
+    # ถ้าไม่มีประวัติในตาราง แต่มีการลดลงของเงินต้นหรือมีการจ่ายดอกเบี้ยไปแล้ว ให้สร้างประวัติย้อนหลังอัตโนมัติ
+    if not histories and (tx.original_principal > tx.principal or tx.paid_interest > 0):
+        reduced_amt = tx.original_principal - tx.principal if tx.type == 'ยอดค้างเก่า' else 0.0
+        interest_amt = tx.paid_interest if tx.type != 'ยอดค้างเก่า' else 0.0
+        pay_fallback = reduced_amt + interest_amt
+        
+        histories = [PaymentHistory(
+            payment_date=tx.last_payment_date if tx.last_payment_date else tx.start_date,
+            pay_amount=pay_fallback if pay_fallback > 0 else 0.0,
+            fine_amount=0.0,
+            discount_amount=0.0,
+            interest_paid=interest_amt,
+            principal_reduced=reduced_amt if reduced_amt > 0 else 0.0,
+            note="รายการชำระ (สร้างประวัติย้อนหลังอัตโนมัติ)",
+            admin_name=tx.sales_name
+        )]
+
+    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-muted'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
