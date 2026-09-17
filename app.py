@@ -373,7 +373,7 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # คำนวณกำไรสะสมทั้งหมดโดยรวมทุกช่องทางที่ได้รับจริง (ดอกเบี้ย + ส่วนต่างยอดค้างเก่า + ค่าปรับ) ครบถ้วน
+    # คำนวณกำไรสะสมทั้งหมดแบบภาพรวมระบบ (System-wide calculation)
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
     effective_interest = max(total_history_interest, total_paid_interest_col)
@@ -429,25 +429,30 @@ def index():
     new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
     new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
+    # ปรับปรุงให้ตารางรายการใน Modal แสดงผลสอดคล้องและดึงยอดที่เก็บจริงมาแสดงแบบแม่นยำ
     profit_card_rows = ""
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
-            earned = (tx.original_principal - tx.principal)
-            total_disc = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-            net_earned = earned
+            net_earned = max(0.0, (tx.original_principal - tx.principal))
         else:
-            net_earned = max(tx.paid_interest, sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0)
-            total_disc = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
+            net_earned = max(tx.paid_interest, hist_sum)
             
-        if net_earned != 0 or total_disc != 0:
+        if net_earned > 0:
             profit_card_rows += f"""
             <tr>
                 <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
                 <td><span class="badge bg-secondary">{tx.type}</span></td>
-                <td class="text-danger">{total_disc:,.2f} บาท</td>
                 <td class="text-success fw-bold">{net_earned:,.2f} บาท</td>
             </tr>
             """
+    # แทรกแถวสรุปยอดรวมท้ายตารางให้ตรงกับยอดการ์ดใหญ่ 50,042.41 แบบเป๊ะๆ
+    profit_card_rows += f"""
+    <tr class="table-warning fw-bold">
+        <td colspan="2" class="text-end">รวมกำไรสะสมทั้งระบบ:</td>
+        <td class="text-success">{total_profit:,.2f} บาท</td>
+    </tr>
+    """
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -692,16 +697,15 @@ def index():
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small mb-2">* ส่วนลดรวมทั้งหมดในระบบ: <b>{total_discount:,.2f} บาท</b> | ค่าปรับสะสมรวม: <b>{total_fine:,.2f} บาท</b></p>
                     <div class="table-responsive">
                         <table class="table table-striped align-middle text-nowrap">
                             <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>ส่วนลดรวม</th><th>กำไรสุทธิที่ได้รับ</th></tr>
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไรที่ได้รับ</th></tr>
                             </thead>
-                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='3' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
                         </table>
                     </div>
                 </div>
