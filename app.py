@@ -725,7 +725,7 @@ def index():
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                     <div class="table-responsive">
@@ -1681,16 +1681,46 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    # บังคับแสดงประวัติเสมอ ถ้ายังไม่มีในตารางประวัติ ให้สร้างประวัติสำรองจากข้อมูล Transaction ทันที
-    if not histories:
-        fallback_pay = tx.paid_interest + (tx.original_principal - tx.principal)
-        rows = f"<tr><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td class='text-primary fw-bold'>{fallback_pay:,.2f}</td><td class='text-danger'>0.00</td><td class='text-warning text-dark'>0.00</td><td>{tx.paid_interest:,.2f}</td><td>{(tx.original_principal - tx.principal):,.2f}</td><td>ประวัติย้อนหลัง (อัตโนมัติ)</td><td><span class='badge bg-secondary'>system</span></td></tr>"
-    else:
-        rows = ""
-        for h in histories:
-            display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-            if display_pay < 0: display_pay = 0.0
-            rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>"
+    # คำนวณยอดเงินต้นที่ถูกตัดไปทั้งหมดในภาพรวมของบัญชีนี้
+    total_principal_reduced_ever = tx.original_principal - tx.principal
+    recorded_principal_reduced = sum(h.principal_reduced for h in histories)
+    
+    unrecorded_principal = total_principal_reduced_ever - recorded_principal_reduced
+    
+    rows = ""
+    # หากมีส่วนต่างยอดที่เคยจ่ายก่อนหน้านี้แต่ยังไม่มีในตารางประวัติ ให้สร้างแถวแสดงประวัติย้อนหลังเพิ่มเข้าไปอัตโนมัติ
+    if unrecorded_principal > 1:
+        rows += f"""
+        <tr>
+            <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'} (ก่อนหน้า)</td>
+            <td class='text-primary fw-bold'>{unrecorded_principal:,.2f}</td>
+            <td class='text-danger'>0.00</td>
+            <td class='text-warning text-dark'>0.00</td>
+            <td>0.00</td>
+            <td>{unrecorded_principal:,.2f}</td>
+            <td>ประวัติชำระยอดก่อนหน้า (อัตโนมัติ)</td>
+            <td><span class='badge bg-secondary'>system</span></td>
+        </tr>
+        """
+
+    for h in histories:
+        display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+        if display_pay < 0: display_pay = 0.0
+        rows += f"""
+        <tr>
+            <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
+            <td class='text-primary fw-bold'>{display_pay:,.2f}</td>
+            <td class='text-danger'>{h.fine_amount:,.2f}</td>
+            <td class='text-warning text-dark'>{h.discount_amount:,.2f}</td>
+            <td>{h.interest_paid:,.2f}</td>
+            <td>{h.principal_reduced:,.2f}</td>
+            <td>{h.note or '-'}</td>
+            <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
+        </tr>
+        """
+
+    if not rows:
+        rows = "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
