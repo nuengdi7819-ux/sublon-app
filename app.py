@@ -1802,7 +1802,7 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. จัดกลุ่มทุนใหม่และยอดค้างเก่าตั้งต้นตามเดือนที่สร้างสัญญา (start_date)
+    # 1. บันทึกข้อมูลตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่สร้างสัญญา (start_date)
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1812,35 +1812,29 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. กระจายกำไรและยอดเก็บเงินจริงอย่างแม่นยำตาม PaymentHistory ถ้ามี, หรือ fallback ตาม start_date ของบัญชีนั้นๆ
+    # 2. จัดสรรยอดเก็บและกำไรตาม "เดือนที่มีการชำระจริง (Payment Date)" ให้เชื่อมโยงตรงกับการ์ดภาพรวม
     all_txs = Transaction.query.all()
     for tx in all_txs:
-        # คำนวณกำไรสุทธิของบัญชีนี้ตามสูตรเดียวกับการ์ดภาพรวม
-        if tx.type == 'ยอดค้างเก่า':
-            tx_profit = max(0.0, (tx.original_principal - tx.principal))
-        else:
-            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-            tx_profit = max(tx.paid_interest, hist_sum)
-        
-        tx_fine = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-        tx_disc = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        total_tx_p = tx_profit + tx_fine - tx_disc
-
-        # ถ้ามีประวัติการจ่าย ให้ลงตามเดือนที่มีการจ่ายจริง (PaymentHistory)
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
                     h_profit = h.interest_paid + h.fine_amount - h.discount_amount
                     monthly_data[ym_h]['profit'] += h_profit
+                    
+                    pay_val = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
                     if tx.type == 'ยอดค้างเก่า':
-                        monthly_data[ym_h]['debt_paid'] += (h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced))
+                        monthly_data[ym_h]['debt_paid'] += pay_val
                     else:
-                        monthly_data[ym_h]['new_paid'] += (h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced))
-        elif total_tx_p != 0 and tx.start_date:
-            # ถ้าไม่มี PaymentHistory แต่มีกำไรค้างอยู่ ให้ลงตามเดือน start_date
-            ym_s = tx.start_date.strftime('%Y-%m')
-            monthly_data[ym_s]['profit'] += total_tx_p
+                        monthly_data[ym_h]['new_paid'] += pay_val
+        else:
+            if tx.start_date:
+                ym_s = tx.start_date.strftime('%Y-%m')
+                if tx.type == 'ยอดค้างเก่า':
+                    tx_profit = max(0.0, (tx.original_principal - tx.principal))
+                else:
+                    tx_profit = max(tx.paid_interest, 0.0)
+                monthly_data[ym_s]['profit'] += tx_profit
 
     monthly_rows = "".join([
         f"<tr>"
