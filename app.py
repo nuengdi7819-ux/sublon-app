@@ -589,7 +589,7 @@ def index():
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะคำนวณจากยอดตัดจริงอัตโนมัติ">
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1028,7 +1028,7 @@ def customer_details(cust_name):
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="เว้นว่างได้ถ้าจ่ายแค่ค่าปรับ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะคำนวณจากยอดตัดจริงอัตโนมัติ">
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1578,7 +1578,7 @@ def update_payment(tx_id):
     payment_type = request.form.get('payment_type')
     thai_today = get_thai_today()
     
-    pay_amount = float(request.form.get('pay_amount')) if request.form.get('pay_amount', '') != '' else 0.0
+    pay_amount_input = request.form.get('pay_amount', '')
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
     new_status = request.form.get('new_status')
@@ -1603,6 +1603,7 @@ def update_payment(tx_id):
         if tx.principal < 0: tx.principal = 0.0
         
         actual_principal_reduced = -adjust_amount
+        pay_amount = abs(adjust_amount) if pay_amount_input == '' else float(pay_amount_input)
         if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
 
     elif payment_type == 'full':
@@ -1615,21 +1616,34 @@ def update_payment(tx_id):
         tx.principal = 0.0
         tx.status = 'คืนแล้ว'
         if not tx.closed_date: tx.closed_date = thai_today
+        
+        # คำนวณยอดจ่ายจริงอัตโนมัติหากไม่ได้กรอก
+        if pay_amount_input == '':
+            pay_amount = actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt
+        else:
+            pay_amount = float(pay_amount_input)
     else:
         net_acc_interest = total_acc_interest - discount_amt
         if net_acc_interest < 0: net_acc_interest = 0.0
 
-        if pay_amount >= net_acc_interest:
-            actual_interest_paid = net_acc_interest
-            remainder = pay_amount - net_acc_interest
-            tx.paid_interest += net_acc_interest
-            if remainder > 0:
-                tx.principal -= remainder
-                actual_principal_reduced = remainder
-                if tx.principal < 0: tx.principal = 0.0
+        if pay_amount_input != '':
+            pay_amount = float(pay_amount_input)
+            if pay_amount >= net_acc_interest:
+                actual_interest_paid = net_acc_interest
+                remainder = pay_amount - net_acc_interest
+                tx.paid_interest += net_acc_interest
+                if remainder > 0:
+                    tx.principal -= remainder
+                    actual_principal_reduced = remainder
+                    if tx.principal < 0: tx.principal = 0.0
+            else:
+                tx.paid_interest += pay_amount
+                actual_interest_paid = pay_amount
         else:
-            tx.paid_interest += pay_amount
-            actual_interest_paid = pay_amount
+            # ถ้าไม่กรอกช่องจ่ายจริง แต่เลือกจ่ายบางส่วนหรือตัดยอด ให้ดึงยอดจากดอกเบี้ยที่ตัดหรือค่าปรับมาใส่
+            actual_interest_paid = net_acc_interest
+            tx.paid_interest += net_acc_interest
+            pay_amount = actual_interest_paid + fine_amt
 
         if tx.principal <= 0:
             tx.status = 'คืนแล้ว'
