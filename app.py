@@ -388,7 +388,10 @@ def index():
     today_new_count = len(today_new_txs)
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
+    
+    # คำนวณยอดเก็บสดวันนี้จากยอดชำระจริงและค่าปรับที่เกิดขึ้นในวันนี้แบบตรงตัว
     today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
+    
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
@@ -427,7 +430,6 @@ def index():
     new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
     new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-    # --- ปรับปรุงตารางกำไรสะสม: จัดเรียงตามวันที่จ่ายล่าสุดขึ้นก่อน (Newest first) ---
     profit_items = []
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -436,8 +438,10 @@ def index():
             hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
             net_earned = max(tx.paid_interest, hist_sum)
             
-        if net_earned > 0:
-            # หาวันที่เคลื่อนไหวล่าสุด (จาก history ล่าสุด หรือ last_payment_date หรือ start_date)
+        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
+        total_item_profit = net_earned + tx_fine_sum
+
+        if total_item_profit > 0:
             latest_date = tx.start_date
             if tx.histories:
                 max_h_date = max(h.payment_date for h in tx.histories)
@@ -449,10 +453,11 @@ def index():
                 'customer_name': tx.customer_name,
                 'type': tx.type,
                 'net_earned': net_earned,
+                'fine_amount': tx_fine_sum,
+                'total_item_profit': total_item_profit,
                 'latest_date': latest_date
             })
 
-    # เรียงลำดับจากวันที่ล่าสุดไปเก่าสุด (ยอดล่าสุดอยู่บนสุด)
     profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
 
     profit_card_rows = ""
@@ -462,14 +467,16 @@ def index():
             <td><a href="/customer_details/{item['customer_name']}" class="text-dark fw-bold text-decoration-none">{item['customer_name']}</a></td>
             <td><span class="badge bg-secondary">{item['type']}</span></td>
             <td class="text-success fw-bold">{item['net_earned']:,.2f} บาท</td>
+            <td class="text-warning text-dark fw-bold">{item['fine_amount']:,.2f} บาท</td>
+            <td class="text-primary fw-bold">{item['total_item_profit']:,.2f} บาท</td>
             <td><small class="text-muted">{item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-'}</small></td>
         </tr>
         """
     
     profit_card_rows += f"""
     <tr class="table-warning fw-bold">
-        <td colspan="3" class="text-end">รวมกำไรสะสมทั้งระบบ:</td>
-        <td class="text-success">{total_profit:,.2f} บาท</td>
+        <td colspan="4" class="text-end">รวมกำไรสะสมทั้งระบบ (รวมค่าปรับจริง):</td>
+        <td colspan="2" class="text-success">{total_profit:,.2f} บาท</td>
     </tr>
     """
 
@@ -710,21 +717,21 @@ def index():
         </div>
     </div>
 
-    <!-- Modal กำไรสะสมทั้งหมด (ใส่ Scrollbar และเรียงลำดับใหม่แล้ว) -->
+    <!-- Modal กำไรสะสมทั้งหมด -->
     <div class="modal fade" id="profitModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด ({total_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                     <div class="table-responsive">
                         <table class="table table-striped align-middle text-nowrap">
                             <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไรที่ได้รับ</th><th>วันที่ชำระล่าสุด</th></tr>
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไร/ดอกเบี้ย</th><th>ค่าปรับจริง</th><th>รวมสุทธิ</th><th>วันที่ชำระล่าสุด</th></tr>
                             </thead>
-                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='6' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
                         </table>
                     </div>
                 </div>
@@ -794,7 +801,7 @@ def index():
         </div>
     </div>
 
-    <!-- Modal ธุรกรรมทั้งหมดวันนี้ (สีฟ้า - จัดหมวดหมู่แยกชัดเจน) -->
+    <!-- Modal ธุรกรรมทั้งหมดวันนี้ (สีฟ้า) -->
     <div class="modal fade" id="todayActionsModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-info">
@@ -803,7 +810,6 @@ def index():
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                    <!-- หมวดที่ 1: รายการลงทุนใหม่วันนี้ -->
                     <div class="mb-4">
                         <h6 class="text-primary fw-bold border-bottom pb-2">➕ หมวดที่ 1: รายการเพิ่มเงินลงทุนใหม่วันนี้ ({today_new_count} รายการ)</h6>
                         <div class="table-responsive">
@@ -818,7 +824,6 @@ def index():
                         </div>
                     </div>
 
-                    <!-- หมวดที่ 2: รายการรับชำระ / เก็บยอด / ปรับปรุงยอดวันนี้ -->
                     <div>
                         <h6 class="text-success fw-bold border-bottom pb-2">💵 หมวดที่ 2: รายการรับชำระ / เก็บยอด / ปรับปรุงยอดวันนี้ ({today_payment_count} รายการ)</h6>
                         <div class="table-responsive">
