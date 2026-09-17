@@ -589,7 +589,7 @@ def index():
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะคำนวณจากยอดตัดจริงอัตโนมัติ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1028,7 +1028,7 @@ def customer_details(cust_name):
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="ถ้าเว้นว่าง ระบบจะคำนวณจากยอดตัดจริงอัตโนมัติ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="หากเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1578,7 +1578,7 @@ def update_payment(tx_id):
     payment_type = request.form.get('payment_type')
     thai_today = get_thai_today()
     
-    pay_amount_input = request.form.get('pay_amount', '')
+    pay_amount_input = request.form.get('pay_amount', '').strip()
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
     new_status = request.form.get('new_status')
@@ -1617,7 +1617,6 @@ def update_payment(tx_id):
         tx.status = 'คืนแล้ว'
         if not tx.closed_date: tx.closed_date = thai_today
         
-        # คำนวณยอดจ่ายจริงอัตโนมัติหากไม่ได้กรอก
         if pay_amount_input == '':
             pay_amount = actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt
         else:
@@ -1640,7 +1639,6 @@ def update_payment(tx_id):
                 tx.paid_interest += pay_amount
                 actual_interest_paid = pay_amount
         else:
-            # ถ้าไม่กรอกช่องจ่ายจริง แต่เลือกจ่ายบางส่วนหรือตัดยอด ให้ดึงยอดจากดอกเบี้ยที่ตัดหรือค่าปรับมาใส่
             actual_interest_paid = net_acc_interest
             tx.paid_interest += net_acc_interest
             pay_amount = actual_interest_paid + fine_amt
