@@ -256,8 +256,18 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    total_history_pay = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)) for h in tx.histories) if tx.histories else 0.0
-    tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
+    # รวมยอดชำระจริงทั้งหมดจากประวัติ (PaymentHistory) ทุกรายการตั้งแต่สร้างบัญชี
+    total_history_pay = 0.0
+    if tx.histories:
+        for h in tx.histories:
+            p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
+            total_history_pay += p_item
+
+    if tx.type == 'ยอดค้างเก่า':
+        principal_paid_calc = max(0.0, tx.original_principal - tx.principal)
+        tx.total_paid = max(total_history_pay, principal_paid_calc)
+    else:
+        tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
