@@ -1800,34 +1800,38 @@ def customer_debt():
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    # รวบรวมข้อมูลตามเดือนที่เกิดรายการชำระจริง (Payment Date) หรือตามเดือนที่ปล่อยกู้
-    # เพื่อให้สอดคล้องกับกำไรสะสมภาพรวมที่หักส่วนลดและรวมค่าปรับแล้ว
-    monthly_data = defaultdict(lambda: {'count': 0, 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
+    monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # นับจำนวนรายการและทุนตาม start_date ของ Transaction
+    # 1. จัดกลุ่มทุนใหม่และยอดค้างเก่าตั้งต้นตามเดือนที่สร้างสัญญา (start_date)
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
-            monthly_data[ym]['count'] += 1
+            monthly_data[ym]['count'].add(tx.id)
             if tx.type == 'ยอดค้างเก่า':
                 monthly_data[ym]['debt_start'] += tx.original_principal
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # คำนวณกำไรและยอดเก็บจริงตามเดือนที่ชำระจริงจาก PaymentHistory เพื่อความแม่นยำสูงสุด
+    # 2. จัดกลุ่มยอดเก็บเงินจริงและกำไร (รวมค่าปรับ หักส่วนลด) ตามเดือนที่มีการทำรายการชำระจริง (payment_date)
     all_histories = PaymentHistory.query.all()
     for h in all_histories:
         if h.payment_date:
             ym = h.payment_date.strftime('%Y-%m')
+            if h.transaction:
+                monthly_data[ym]['count'].add(h.transaction.id)
+            
             net_hist_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym]['profit'] += net_hist_profit
-            monthly_data[ym]['new_paid'] += (h.pay_amount if h.transaction and h.transaction.type != 'ยอดค้างเก่า' else 0.0)
-            monthly_data[ym]['debt_paid'] += (h.pay_amount if h.transaction and h.transaction.type == 'ยอดค้างเก่า' else 0.0)
+            
+            if h.transaction and h.transaction.type == 'ยอดค้างเก่า':
+                monthly_data[ym]['debt_paid'] += (h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced))
+            else:
+                monthly_data[ym]['new_paid'] += (h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced))
 
     monthly_rows = "".join([
         f"<tr>"
         f"<td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
-        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{d['count']} รายการ</a></td>"
+        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{len(d['count'])} รายการ</a></td>"
         f"<td>{d['new_investment']:,.2f}</td>"
         f"<td>{d['new_paid']:,.2f}</td>"
         f"<td>{d['debt_start']:,.2f}</td>"
