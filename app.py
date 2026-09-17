@@ -389,8 +389,8 @@ def index():
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     
-    # คำนวณยอดเก็บสดวันนี้แบบครอบคลุม (หาก pay_amount เป็น 0 จะคำนวณจากตัดดอก + ตัดต้น + ค่าปรับ - ส่วนลด อัตโนมัติ)
-    today_collected_cash = sum((h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount) if h.pay_amount == 0 else (h.pay_amount + h.fine_amount) for h in today_histories)
+    # ยอดเก็บสดวันนี้ดึงตาม pay_amount ที่ผู้ใช้คีย์เข้าไปจริง
+    today_collected_cash = sum(h.pay_amount + h.fine_amount for h in today_histories)
     
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
@@ -412,13 +412,10 @@ def index():
         tx_ref = h.transaction
         cust_display = tx_ref.customer_name if tx_ref else "ไม่พบชื่อบัญชี"
         
-        # แสดงยอดจ่ายจริงแบบคำนวณสำรองหากใน DB เป็น 0
-        effective_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-        
         today_history_rows += f"""
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
-            <td class="text-success fw-bold">{effective_pay:,.2f}</td>
+            <td class="text-success fw-bold">{h.pay_amount:,.2f}</td>
             <td class="text-danger">{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -593,7 +590,7 @@ def index():
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="หากเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="กรอกจำนวนเงินสดที่รับจริง" required>
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1032,7 +1029,7 @@ def customer_details(cust_name):
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
                                     <label class="form-label fw-bold text-primary mb-1" style="font-size: 0.85rem;">💵 จำนวนเงินที่รับชำระจริง (บาท)</label>
-                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="หากเว้นว่าง ระบบจะรวมยอดตัดจริงให้อัตโนมัติ">
+                                    <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="กรอกจำนวนเงินสดที่รับจริง" required>
                                 </div>
 
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
@@ -1583,6 +1580,8 @@ def update_payment(tx_id):
     thai_today = get_thai_today()
     
     pay_amount_input = request.form.get('pay_amount', '').strip()
+    pay_amount = float(pay_amount_input) if pay_amount_input != '' else 0.0
+    
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
     new_status = request.form.get('new_status')
@@ -1607,7 +1606,6 @@ def update_payment(tx_id):
         if tx.principal < 0: tx.principal = 0.0
         
         actual_principal_reduced = -adjust_amount
-        pay_amount = abs(adjust_amount) if pay_amount_input == '' else float(pay_amount_input)
         if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
 
     elif payment_type == 'full':
@@ -1620,17 +1618,11 @@ def update_payment(tx_id):
         tx.principal = 0.0
         tx.status = 'คืนแล้ว'
         if not tx.closed_date: tx.closed_date = thai_today
-        
-        if pay_amount_input == '':
-            pay_amount = actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt
-        else:
-            pay_amount = float(pay_amount_input)
     else:
         net_acc_interest = total_acc_interest - discount_amt
         if net_acc_interest < 0: net_acc_interest = 0.0
 
-        if pay_amount_input != '':
-            pay_amount = float(pay_amount_input)
+        if pay_amount > 0:
             if pay_amount >= net_acc_interest:
                 actual_interest_paid = net_acc_interest
                 remainder = pay_amount - net_acc_interest
@@ -1642,10 +1634,6 @@ def update_payment(tx_id):
             else:
                 tx.paid_interest += pay_amount
                 actual_interest_paid = pay_amount
-        else:
-            actual_interest_paid = net_acc_interest
-            tx.paid_interest += net_acc_interest
-            pay_amount = actual_interest_paid + fine_amt
 
         if tx.principal <= 0:
             tx.status = 'คืนแล้ว'
@@ -1679,22 +1667,6 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    if not histories and (tx.original_principal > tx.principal or tx.paid_interest > 0):
-        reduced_amt = tx.original_principal - tx.principal if tx.type == 'ยอดค้างเก่า' else 0.0
-        interest_amt = tx.paid_interest if tx.type != 'ยอดค้างเก่า' else 0.0
-        pay_fallback = reduced_amt + interest_amt
-        
-        histories = [PaymentHistory(
-            payment_date=tx.last_payment_date if tx.last_payment_date else tx.start_date,
-            pay_amount=pay_fallback if pay_fallback > 0 else 0.0,
-            fine_amount=0.0,
-            discount_amount=0.0,
-            interest_paid=interest_amt,
-            principal_reduced=reduced_amt if reduced_amt > 0 else 0.0,
-            note="รายการชำระ (สร้างประวัติย้อนหลังอัตโนมัติ)",
-            admin_name=tx.sales_name
-        )]
-
     rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{h.pay_amount:,.2f}</td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
     
     content = f"""
