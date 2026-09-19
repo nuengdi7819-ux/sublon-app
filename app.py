@@ -1790,8 +1790,6 @@ def monthly_details(ym, category):
         title_str = f"รายการ{'ค่าปรับ' if category == 'fine' else 'ส่วนลด'} ประจำเดือน {ym}"
 
     rows = ""
-    total_actual_paid_sum, total_inv_sum, total_prin_sum = 0.0, 0.0, 0.0
-
     for tx in txs:
         calculate_tx_values(tx)
         badge_color = 'bg-success' if tx.principal <= 0 else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-success')
@@ -1806,10 +1804,6 @@ def monthly_details(ym, category):
                 actual_paid_total += (h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount))
         else:
             actual_paid_total = tx.total_paid
-
-        total_actual_paid_sum += actual_paid_total
-        total_inv_sum += tx.original_principal
-        total_prin_sum += tx.principal
 
         rows += f"""
         <tr>
