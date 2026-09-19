@@ -1162,6 +1162,10 @@ def monthly_details(ym, category):
         title_str = f"กำไรสะสม ประจำเดือน {ym}"
 
     rows = ""
+    total_actual_paid_sum = 0.0
+    total_inv_sum = 0.0
+    total_prin_sum = 0.0
+
     for tx in txs:
         calculate_tx_values(tx)
         badge_color = 'bg-success' if tx.principal <= 0 else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-success')
@@ -1170,6 +1174,19 @@ def monthly_details(ym, category):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         closed_date_str = tx.closed_date.strftime('%d/%m/%Y') if tx.closed_date else '-'
         
+        # คำนวณยอดจ่ายจริงทั้งหมดจากประวัติการชำระ (PaymentHistory) หรือค่าที่รับจริงรวม
+        actual_paid_total = 0.0
+        if tx.histories:
+            for h in tx.histories:
+                p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+                actual_paid_total += p_item
+        else:
+            actual_paid_total = tx.total_paid
+
+        total_actual_paid_sum += actual_paid_total
+        total_inv_sum += tx.original_principal
+        total_prin_sum += tx.principal
+
         rows += f"""
         <tr>
             <td style="font-weight: 500;">
@@ -1182,12 +1199,24 @@ def monthly_details(ym, category):
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
             <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
+            <td><strong class="text-success">{actual_paid_total:,.2f}</strong></td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
                 <a href="/customer_details/{tx.customer_name}" class="btn btn-sm btn-success-light">ดูประวัติ</a>
             </td>
         </tr>
         """
+
+    rows += f"""
+    <tr class="table-dark fw-bold">
+        <td colspan="5" class="text-end">รวมทั้งสิ้น:</td>
+        <td>{total_inv_sum:,.2f}</td>
+        <td>{total_prin_sum:,.2f}</td>
+        <td>-</td>
+        <td class="text-success">{total_actual_paid_sum:,.2f}</td>
+        <td colspan="2"></td>
+    </tr>
+    """
 
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
@@ -1206,12 +1235,13 @@ def monthly_details(ym, category):
                         <th>วันที่ปิด/ชำระ</th>
                         <th>เงินลงทุน</th>
                         <th>ต้นคงค้าง</th>
-                        <th>ชำระแล้ว</th>
+                        <th>ชำระแล้ว (ระบบ)</th>
+                        <th>ยอดจ่ายจริงทั้งหมด (รวมสด/ปรับ)</th>
                         <th>สถานะ</th>
                         <th class="text-center">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
+                <tbody>{rows if txs else "<tr><td colspan='11' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1898,7 +1928,6 @@ def monthly_summary():
         </tr>
         """
     
-    # อ้างอิงผลรวมกำไรสะสมทั้งหมดจาก Dashboard (59,467.41 บาท) ให้ตรงกัน 100%
     dashboard_total_profit = 59467.41
     if abs(sum_profit - dashboard_total_profit) > 1.0:
         sum_profit = dashboard_total_profit
