@@ -426,6 +426,7 @@ def index():
                     'note': f"ทุนกู้ {tx.type}"
                 })
 
+    # กำหนดรายชื่อข้อยกเว้นที่จะให้อยู่ในกรุงศรีอยุธยา (ตามภาพที่ 2) ส่วนที่เหลือจะไปออมสินทั้งหมด
     krungsri_exceptions = {"เชิฟ", "กุลธิดา อานับ", "Anongnad Petchanoo", "ชั้นไม่ใช่ นางเอก", "แอนนา บริสุทธิ์", "วันดี ประสานสงฆ์"}
 
     profit_items = []
@@ -462,6 +463,7 @@ def index():
 
     for item in profit_items:
         if item['total_item_profit'] > 0:
+            # เงื่อนไข: ถ้าอยู่ในรายชื่อข้อยกเว้น ไปกรุงศรีฯ นอกนั้นไปออมสินทั้งหมด
             target_acc = 'กรุงศรีอยุธยา' if item['customer_name'] in krungsri_exceptions else 'ออมสิน'
             bank_details_data[target_acc]['inflows'].append({
                 'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
@@ -1465,7 +1467,11 @@ def delete_expense(exp_id):
 def customer_details(cust_name):
     if 'admin' not in session: return redirect(url_for('login'))
     
-    txs = Transaction.query.filter_by(customer_name=cust_name).order_by(Transaction.start_date.desc()).all()
+    clean_name = cust_name
+    if clean_name.startswith("กำไรสะสม: "):
+        clean_name = clean_name.replace("กำไรสะสม: ", "").strip()
+    
+    txs = Transaction.query.filter(Transaction.customer_name.ilike(f"%{clean_name}%")).order_by(Transaction.start_date.desc()).all()
     for tx in txs:
         calculate_tx_values(tx)
 
