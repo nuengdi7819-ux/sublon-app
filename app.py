@@ -416,7 +416,7 @@ def index():
                 })
 
     for tx in all_txs_ever:
-        if tx.type != 'ยอดค้างเก่า' and tx.original_principal > 0:
+        if tx.type != 'ยอดค้างเก่า' and tx.principal > 0:
             acc = tx.funding_source or 'ออมสิน'
             if acc in bank_details_data:
                 bank_details_data[acc]['outflows'].append({
@@ -425,6 +425,48 @@ def index():
                     'amount': tx.original_principal,
                     'note': f"ทุนกู้ {tx.type}"
                 })
+
+    # ดึงรายชื่อจากช่องกำไรสะสมมาแสดงในช่องเงินออกของออมสิน
+    profit_items = []
+    for tx in all_txs_ever:
+        if tx.type == 'ยอดค้างเก่า':
+            net_earned = max(0.0, (tx.original_principal - tx.principal))
+        else:
+            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
+            net_earned = max(tx.paid_interest, hist_sum)
+            
+        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
+        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
+
+        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+            latest_date = tx.start_date
+            if tx.histories:
+                max_h_date = max(h.payment_date for h in tx.histories)
+                if max_h_date > latest_date: latest_date = max_h_date
+            if tx.last_payment_date and tx.last_payment_date > latest_date:
+                latest_date = tx.last_payment_date
+
+            profit_items.append({
+                'customer_name': tx.customer_name,
+                'type': tx.type,
+                'net_earned': net_earned,
+                'fine_amount': tx_fine_sum,
+                'discount_amount': tx_discount_sum,
+                'total_item_profit': total_item_profit,
+                'latest_date': latest_date
+            })
+
+    profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
+
+    for item in profit_items:
+        if item['total_item_profit'] > 0:
+            bank_details_data['ออมสิน']['outflows'].append({
+                'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
+                'target': f"กำไรสะสม / ดอกเบี้ย: {item['customer_name']}",
+                'amount': item['total_item_profit'],
+                'note': f"ประเภท: {item['type']}"
+            })
 
     expense_logs = BankExpenseLog.query.order_by(BankExpenseLog.expense_date.desc(), BankExpenseLog.id.desc()).all()
     for e in expense_logs:
@@ -460,9 +502,8 @@ def index():
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                        <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded border">
-                            <span class="fw-bold text-dark small">ต้องการปล่อยกู้ใหม่จากบัญชีนี้?</span>
-                            <button type="button" class="btn btn-success btn-sm fw-bold px-3" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่จากบัญชีนี้</button>
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-warning btn-sm fw-bold w-100 text-dark py-2" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่จากบัญชีนี้</button>
                         </div>
                         <div class="mb-4">
                             <h6 class="text-success fw-bold border-bottom pb-2">📥 เงินเข้า (มาจากลูกค้าโอนชำระยอด)</h6>
@@ -474,7 +515,7 @@ def index():
                             </div>
                         </div>
                         <div>
-                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก (ใช้ปล่อยกู้ใหม่ หรือ ถอนออกไปจ่ายค่าใช้จ่าย)</h6>
+                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก (เงินต้นคงค้าง + กำไรสะสม)</h6>
                             <div class="table-responsive">
                                 <table class="table table-sm table-striped align-middle text-nowrap">
                                     <thead class="table-dark"><tr><th>วันที่</th><th>รายการ / ผู้รับ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
@@ -535,39 +576,7 @@ def index():
     new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
     new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-    profit_items = []
-    for tx in all_txs_ever:
-        if tx.type == 'ยอดค้างเก่า':
-            net_earned = max(0.0, (tx.original_principal - tx.principal))
-        else:
-            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-            net_earned = max(tx.paid_interest, hist_sum)
-            
-        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
-
-        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
-            latest_date = tx.start_date
-            if tx.histories:
-                max_h_date = max(h.payment_date for h in tx.histories)
-                if max_h_date > latest_date: latest_date = max_h_date
-            if tx.last_payment_date and tx.last_payment_date > latest_date:
-                latest_date = tx.last_payment_date
-
-            profit_items.append({
-                'customer_name': tx.customer_name,
-                'type': tx.type,
-                'net_earned': net_earned,
-                'fine_amount': tx_fine_sum,
-                'discount_amount': tx_discount_sum,
-                'total_item_profit': total_item_profit,
-                'latest_date': latest_date
-            })
-
-    profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
     sum_modal_actual_profit = sum(item['total_item_profit'] for item in profit_items)
-    
     profit_card_rows = "".join([f"<tr><td><a href='/customer_details/{item['customer_name']}' class='text-dark fw-bold text-decoration-none'>{item['customer_name']}</a></td><td><span class='badge bg-secondary'>{item['type']}</span></td><td>{item['net_earned']:,.2f}</td><td>{item['fine_amount']:,.2f}</td><td class='text-danger'>-{item['discount_amount']:,.2f}</td><td class='text-success fw-bold'>{item['total_item_profit']:,.2f}</td><td>{item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-'}</td></tr>" for item in profit_items])
 
     rows, cards, modals_html = "", "", ""
