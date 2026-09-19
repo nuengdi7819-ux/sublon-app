@@ -377,7 +377,6 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # อัปเดตสูตรคำนวณกำไรสะสมกลางทั้งระบบให้ตรงกับหน้าชีตดึงข้อมูล 100%
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
     effective_interest = max(total_history_interest, total_paid_interest_col)
@@ -1129,7 +1128,6 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
-    # ดึงรายการที่มีการชำระเงินหรือเพิ่มทุนในเดือนนั้นๆ
     h_tx_ids = [h.transaction_id for h in PaymentHistory.query.filter(
         db.extract('year', PaymentHistory.payment_date) == year_i,
         db.extract('month', PaymentHistory.payment_date) == month_i
@@ -1819,6 +1817,7 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
+    # 1. รวบรวมข้อมูลเงินลงทุนและยอดตั้งต้นตามเดือนที่เริ่มเปิดบัญชี
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1828,37 +1827,32 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
+    # 2. กระจายกำไรตามประวัติการชำระจริง (PaymentHistory) เพื่อให้ผลรวมทุกเดือนเท่ากับกำไรสะสมทั้งระบบ 100%
     all_txs = Transaction.query.all()
     for tx in all_txs:
-        if tx.type == 'ยอดค้างเก่า':
-            tx_net_profit = max(0.0, (tx.original_principal - tx.principal))
-        else:
-            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-            tx_net_profit = max(tx.paid_interest, hist_sum)
-            
-        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        total_tx_profit = tx_net_profit + tx_fine_sum - tx_discount_sum
-
-        # ใช้เดือนจากประวัติการชำระหรือวันที่สร้างรายการล่าสุดเพื่อให้ผลรวมสอดคล้องกับทั้งระบบ
-        target_ym = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
-        if tx.histories:
-            max_h_date = max(h.payment_date for h in tx.histories if h.payment_date)
-            if max_h_date: target_ym = max_h_date.strftime('%Y-%m')
-        elif tx.last_payment_date:
-            target_ym = tx.last_payment_date.strftime('%Y-%m')
-
-        monthly_data[target_ym]['profit'] += total_tx_profit
-
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
-                    revenue_collected = h.interest_paid + h.fine_amount
+                    revenue_collected = h.interest_paid + h.fine_amount - h.discount_amount
+                    monthly_data[ym_h]['profit'] += revenue_collected
+                    
+                    revenue_cash = h.interest_paid + h.fine_amount
                     if tx.type == 'ยอดค้างเก่า':
-                        monthly_data[ym_h]['debt_paid'] += revenue_collected
+                        monthly_data[ym_h]['debt_paid'] += revenue_cash
                     else:
-                        monthly_data[ym_h]['new_paid'] += revenue_collected
+                        monthly_data[ym_h]['new_paid'] += revenue_cash
+        else:
+            if tx.start_date:
+                ym_s = tx.start_date.strftime('%Y-%m')
+                if tx.type == 'ยอดค้างเก่า':
+                    tx_net_profit = max(0.0, (tx.original_principal - tx.principal))
+                    monthly_data[ym_s]['profit'] += tx_net_profit
+                else:
+                    tx_net_profit = tx.paid_interest
+                    monthly_data[ym_s]['profit'] += tx_net_profit
+
+    grand_total_profit = sum(d['profit'] for d in monthly_data.values())
 
     monthly_rows = "".join([
         f"<tr>"
@@ -1875,7 +1869,10 @@ def monthly_summary():
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
-        <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
+            <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
+        </div>
         <p class="text-muted small">💡 สามารถคลิกที่ชื่อ **เดือน** หรือ **จำนวนรายการ** เพื่อเข้าไปตรวจสอบรายชื่อลูกค้าในเดือนนั้นๆ ได้ทันที</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
