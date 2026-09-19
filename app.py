@@ -376,7 +376,6 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    # --- สูตรคำนวณกำไรสะสมกลางระบบ (เทียบเท่าชีต Reconcile ตรงเป๊ะ) ---
     total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
@@ -386,7 +385,6 @@ def index():
     
     total_profit = effective_interest + total_debt_earned + total_fine - total_discount
 
-    # --- ข้อมูลสรุปกิจกรรมวันนี้ ---
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
     today_new_count = len(today_new_txs)
 
@@ -1127,17 +1125,14 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
-    h_tx_ids = [h.transaction_id for h in PaymentHistory.query.filter(
+    # ดึงเฉพาะรายการที่มีประวัติการจ่ายเงินในเดือน ym นั้นจริงๆ
+    histories_in_month = PaymentHistory.query.filter(
         db.extract('year', PaymentHistory.payment_date) == year_i,
         db.extract('month', PaymentHistory.payment_date) == month_i
-    ).all()]
-
-    txs = Transaction.query.filter(
-        db.or_(
-            (db.extract('year', Transaction.start_date) == year_i) & (db.extract('month', Transaction.start_date) == month_i),
-            Transaction.id.in_(h_tx_ids) if h_tx_ids else False
-        )
-    ).order_by(Transaction.start_date.desc()).all()
+    ).all()
+    
+    tx_ids_in_month = list(set(h.transaction_id for h in histories_in_month))
+    txs = Transaction.query.filter(Transaction.id.in_(tx_ids_in_month)).all() if tx_ids_in_month else []
 
     rows = ""
     for tx in txs:
@@ -1171,7 +1166,7 @@ def monthly_details(ym):
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการลูกค้าประจำเดือน: {ym}</h4>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการลูกค้าที่มีการชำระในเดือน: {ym}</h4>
             <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับไปหน้าสรุปรายเดือน</a>
         </div>
         <div class="table-responsive">
@@ -1191,7 +1186,7 @@ def monthly_details(ym):
                         <th class="text-center">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ไม่มีรายการลูกค้าในเดือนนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ไม่มีประวัติการชำระในเดือนนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1814,36 +1809,35 @@ def customer_debt():
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
+    monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    for tx in Transaction.query.all():
-        if tx.start_date:
-            ym = tx.start_date.strftime('%Y-%m')
-            monthly_data[ym]['count'].add(tx.id)
-            if tx.type == 'ยอดค้างเก่า':
-                monthly_data[ym]['debt_start'] += tx.original_principal
-            else:
-                monthly_data[ym]['new_investment'] += tx.original_principal
-
-    for h in PaymentHistory.query.all():
+    # 1. ดึงข้อมูลจาก PaymentHistory ทั้งหมด มาจัดกลุ่มตาม "เดือนที่มีการชำระจริง" เท่านั้น
+    all_histories = PaymentHistory.query.all()
+    for h in all_histories:
         if h.payment_date and h.transaction:
             ym_h = h.payment_date.strftime('%Y-%m')
+            tx = h.transaction
+            monthly_data[ym_h]['count_tx'].add(tx.id)
+            
             net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym_h]['profit'] += net_h_profit
             
             cash_collected = h.interest_paid + h.fine_amount
-            if h.transaction.type == 'ยอดค้างเก่า':
+            if tx.type == 'ยอดค้างเก่า':
                 monthly_data[ym_h]['debt_paid'] += cash_collected
             else:
                 monthly_data[ym_h]['new_paid'] += cash_collected
 
-    for tx in Transaction.query.filter_by(type='ยอดค้างเก่า').all():
-        if not tx.histories and tx.start_date:
+    # 2. นำข้อมูลเงินลงทุนใหม่และยอดค้างเก่าตั้งต้นมาลงตามเดือนที่เริ่มเปิดบิล
+    for tx in Transaction.query.all():
+        if tx.start_date:
             ym_s = tx.start_date.strftime('%Y-%m')
-            net_earned = max(0.0, (tx.original_principal - tx.principal))
-            monthly_data[ym_s]['profit'] += net_earned
+            if tx.type == 'ยอดค้างเก่า':
+                monthly_data[ym_s]['debt_start'] += tx.original_principal
+            else:
+                monthly_data[ym_s]['new_investment'] += tx.original_principal
 
-    # ดึงสูตรกลางตัวเดียวกับ Dashboard เพื่อให้ยอดตรงกัน 55,767.41 บาท
+    # 3. ดึงสูตรคำนวณกำไรสะสมรวมทั้งระบบ (Reconcile Total) ให้ตรงกับหน้า Dashboard เป๊ะๆ
     all_txs_ever = Transaction.query.all()
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
@@ -1858,7 +1852,7 @@ def monthly_summary():
     monthly_rows = "".join([
         f"<tr>"
         f"<td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
-        f"<td><a href='/monthly_details/{ym}' class='badge bg-secondary text-decoration-none px-2 py-1'>{len(d['count'])} รายการ</a></td>"
+        f"<td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>"
         f"<td>{d['new_investment']:,.2f}</td>"
         f"<td>{d['new_paid']:,.2f}</td>"
         f"<td>{d['debt_start']:,.2f}</td>"
@@ -1871,16 +1865,16 @@ def monthly_summary():
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน</h4>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน (อิงตามเดือนที่จ่ายจริง)</h4>
             <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
         </div>
-        <p class="text-muted small">💡 สามารถคลิกที่ชื่อ **เดือน** หรือ **จำนวนรายการ** เพื่อเข้าไปตรวจสอบรายชื่อลูกค้าในเดือนนั้นๆ ได้ทันที</p>
+        <p class="text-muted small">💡 ตารางนี้แสดงผลยอดการเก็บเงินและกำไรสุทธิแยกตามเดือนที่มีการทำรายการชำระจริงในระบบ</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th>เดือน</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บดอก/ปรับ (ใหม่)</th><th>ค้างเก่าตั้งต้น</th><th>เก็บดอก/ปรับ (ค้างเก่า)</th><th>กำไรสะสม (หักส่วนลดแล้ว)</th></tr>
+                    <tr><th>เดือน (ที่ชำระ)</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บดอก/ปรับ (ใหม่)</th><th>ค้างเก่าตั้งต้น</th><th>เก็บดอก/ปรับ (ค้างเก่า)</th><th>กำไรสะสม (หักส่วนลดแล้ว)</th></tr>
                 </thead>
-                <tbody>{monthly_rows if monthly_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีข้อมูลผลประกอบการรายเดือน</td></tr>"}</tbody>
+                <tbody>{monthly_rows if monthly_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงินรายเดือน</td></tr>"}</tbody>
             </table>
         </div>
     </div>
