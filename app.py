@@ -46,7 +46,7 @@ class Transaction(db.Model):
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
-    funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
+    funding_source = db.Column(db.String(50), default='ออมสิน')
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -60,7 +60,7 @@ class PaymentHistory(db.Model):
     principal_reduced = db.Column(db.Float, default=0.0)
     note = db.Column(db.String(255), nullable=True)
     admin_name = db.Column(db.String(100), nullable=True)
-    receiving_account = db.Column(db.String(50), default='กรุงศรีอยุธยา')
+    receiving_account = db.Column(db.String(50), default='ออมสิน')
 
     transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
 
@@ -208,6 +208,15 @@ BASE_LAYOUT = """
         backdrop.classList.toggle('show');
     }
 
+    function openTransferModal(accountName) {
+        let selectFrom = document.getElementById('transferFromSelect');
+        if (selectFrom) {
+            selectFrom.value = accountName;
+        }
+        let myModal = new bootstrap.Modal(document.getElementById('transferModal'));
+        myModal.show();
+    }
+
     function togglePayInput(id) {
         let selectElem = document.getElementById('payType' + id);
         let amountContainer = document.getElementById('amountDiv' + id);
@@ -296,7 +305,7 @@ def index():
             current_sales = session.get('admin', 'unknown')
             d_interest = float(request.form.get('daily_interest', 0))
             tx_type = request.form.get('type')
-            funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
+            funding_source = request.form.get('funding_source', 'ออมสิน')
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
@@ -411,7 +420,7 @@ def index():
     for tx in all_txs_ever:
         if tx.type != 'ยอดค้างเก่า':
             total_new_investment += tx.original_principal
-            source = tx.funding_source or 'กรุงศรีอยุธยา'
+            source = tx.funding_source or 'ออมสิน'
             inv_by_source[source] += tx.original_principal
 
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
@@ -442,7 +451,7 @@ def index():
 
     all_histories = PaymentHistory.query.all()
     for h in all_histories:
-        acc = h.receiving_account or 'กรุงศรีอยุธยา'
+        acc = h.receiving_account or 'ออมสิน'
         if acc in bank_details_data:
             tx_ref = h.transaction
             cust_name = tx_ref.customer_name if tx_ref else "ไม่ระบุชื่อ"
@@ -457,7 +466,7 @@ def index():
 
     for tx in all_txs_ever:
         if tx.type != 'ยอดค้างเก่า' and tx.original_principal > 0:
-            acc = tx.funding_source or 'กรุงศรีอยุธยา'
+            acc = tx.funding_source or 'ออมสิน'
             if acc in bank_details_data:
                 bank_details_data[acc]['outflows'].append({
                     'date': tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-',
@@ -520,7 +529,10 @@ def index():
                         </div>
                     </div>
                     <div class="modal-footer py-2">
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary btn-sm fw-bold" data-bs-dismiss="modal" onclick="openTransferModal('{acc_key}')">🔄 โยกเงินจากบัญชีนี้ไปพักที่อื่น</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -537,7 +549,7 @@ def index():
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td>{tx.phone or '-'}</td>
             <td class="text-primary fw-bold">{tx.original_principal:,.2f}</td>
-            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
+            <td><span class="badge bg-danger">{tx.funding_source or 'ออมสิน'}</span></td>
             <td><span class="badge bg-danger">{tx.sales_name}</span></td>
         </tr>
         """
@@ -553,7 +565,7 @@ def index():
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
             <td class="text-success fw-bold">{display_pay:,.2f}</td>
-            <td><span class="badge bg-info text-dark">{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td>
+            <td><span class="badge bg-info text-dark">{h.receiving_account or 'ออมสิน'}</span></td>
             <td>{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -630,7 +642,7 @@ def index():
             </td>
             <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}</td>
-            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
+            <td><span class="badge bg-danger">{tx.funding_source or 'ออมสิน'}</span></td>
             <td>{start_date_str_fmt}</td>
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -658,7 +670,7 @@ def index():
                             👤 <a href="/customer_details/{tx.customer_name}" class="text-danger text-decoration-none">{tx.customer_name}</a>{count_badge}
                         </h6>
                         <span class="badge bg-secondary">{tx.type}</span> {schedule_badge}
-                        <span class="badge bg-warning text-dark">บัญชีปล่อย: {tx.funding_source or 'กรุงศรีอยุธยา'}</span>
+                        <span class="badge bg-danger">บัญชีปล่อย: {tx.funding_source or 'ออมสิน'}</span>
                         <span class="badge {badge_color}">{tx.status}</span>
                     </div>
                     <div class="text-end"><small class="text-muted">โทร: {tx.phone or '-'}</small></div>
@@ -706,8 +718,8 @@ def index():
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
                                 <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
+                                    <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
                                 </select>
                             </div>
@@ -786,18 +798,19 @@ def index():
     <!-- 1. สถานะกระเป๋าเงินจริงในมือถือ -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
-            <div class="d-flex gap-2">
+            <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (คลิกที่กล่องบัญชีเพื่อโยกเงิน)</h5>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferModal">🔄 โยกเงินระหว่างบัญชี</button>
                 <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้น</button>
                 <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก (จ่ายพนักงาน/ค่าใช้จ่าย)</button>
             </div>
         </div>
         <div class="row g-3">
             <div class="col-md-4">
-                <div class="p-3 rounded border border-warning bg-warning bg-opacity-15 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalKrungsri" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                <div class="p-3 rounded border border-warning bg-warning bg-opacity-15 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalKrungsri" title="คลิกเพื่อดูรายละเอียดและโยกเงิน">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา</h6>
+                            <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา (คลิกเพื่อจัดการ)</h6>
                             <small class="text-muted d-block mb-1">เลข: 803-931-9819</small>
                             <h3 class="text-dark fw-bold mb-0">{account_balances['กรุงศรีอยุธยา']:,.2f} บาท</h3>
                         </div>
@@ -805,10 +818,10 @@ def index():
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-3 rounded border border-danger bg-danger bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalGSB" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                <div class="p-3 rounded border border-danger bg-danger bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalGSB" title="คลิกเพื่อดูรายละเอียดและโยกเงิน">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน</h6>
+                            <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน (คลิกเพื่อจัดการ)</h6>
                             <small class="text-muted d-block mb-1">เลข: 020-409-437-819</small>
                             <h3 class="text-danger fw-bold mb-0">{account_balances['ออมสิน']:,.2f} บาท</h3>
                         </div>
@@ -816,10 +829,10 @@ def index():
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-3 rounded border border-info bg-info bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalWallet" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                <div class="p-3 rounded border border-info bg-info bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalWallet" title="คลิกเพื่อดูรายละเอียดและโยกเงิน">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet</h6>
+                            <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet (คลิกเพื่อจัดการ)</h6>
                             <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
                             <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
                         </div>
@@ -849,6 +862,51 @@ def index():
     </div>
 
     {bank_modals_html}
+
+    <!-- Modal โยกเงินระหว่างบัญชีเพื่อพักเงิน -->
+    <div class="modal fade" id="transferModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-primary">
+                <form action="/transfer_bank_money" method="POST">
+                    <div class="modal-header bg-primary text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">🔄 โยกเงินระหว่างบัญชี (เพื่อพักเงิน)</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">เลือกบัญชีต้นทางที่ต้องการย้ายเงินออก และบัญชีปลายทางที่ต้องการพักเงิน</p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-danger">📤 โยกเงินออกจากบัญชี (ต้นทาง)</label>
+                            <select name="from_account" id="transferFromSelect" class="form-select border-danger" required>
+                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">📥 โยกไปเข้าบัญชี (ปลายทาง / ที่พักเงิน)</label>
+                            <select name="to_account" class="form-select border-success" required>
+                                <option value="กรุงศรีอยุธยา" selected>🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">💵 จำนวนเงินที่ต้องการโยก (บาท)</label>
+                            <input type="number" step="any" name="transfer_amount" class="form-control" placeholder="เช่น 2500" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">📝 หมายเหตุการโยกเงิน</label>
+                            <input type="text" name="note" class="form-control" placeholder="เช่น โยกกำไรจากออมสินมาพักไว้กรุงศรี">
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary btn-sm fw-bold px-3">ยืนยันโยกเงิน</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า -->
     <div class="modal fade" id="adjustBankModal" tabindex="-1">
@@ -897,8 +955,8 @@ def index():
                         <div class="mb-3">
                             <label class="form-label fw-bold text-success">💳 เลือกบัญชีที่ต้องการถอนออก</label>
                             <select name="account_name" class="form-select border-success" required>
+                                <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                                 <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
                                 <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
                             </select>
                         </div>
@@ -949,8 +1007,8 @@ def index():
             <div class="col-md-4">
                 <label class="form-label text-success fw-bold">💳 แหล่งทุนที่ใช้ปล่อย (หักเงินจากกระเป๋าอัตโนมัติ):</label>
                 <select name="funding_source" class="form-select border-success" required>
+                    <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                     <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
                     <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
                 </select>
                 <small class="text-muted d-block" style="font-size: 0.75rem;">* ระบบจะตัดเงินสดออกจากบัญชีที่เลือกให้อัตโนมัติทันที</small>
@@ -1238,12 +1296,12 @@ def index():
                     <p class="text-muted small">ยอดเงินลงทุนทั้งหมดในระบบแบ่งออกตามแหล่งทุนและบัญชีที่ใช้ปล่อยกู้:</p>
                     <ul class="list-group mb-3">
                         <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span>🟡 กรุงศรีอยุธยา</span>
-                            <span class="badge bg-warning text-dark fs-6">{inv_by_source.get('กรุงศรีอยุธยา', 0.0):,.2f} บาท</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>🩷 ออมสิน</span>
                             <span class="badge bg-danger fs-6">{inv_by_source.get('ออมสิน', 0.0):,.2f} บาท</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>🟡 กรุงศรีอยุธยา</span>
+                            <span class="badge bg-warning text-dark fs-6">{inv_by_source.get('กรุงศรีอยุธยา', 0.0):,.2f} บาท</span>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <span>🟠 TrueMoney Wallet</span>
@@ -1285,6 +1343,42 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
+@app.route('/transfer_bank_money', methods=['POST'])
+def transfer_bank_money():
+    if 'admin' not in session: return redirect(url_for('login'))
+    try:
+        from_acc = request.form.get('from_account')
+        to_acc = request.form.get('to_account')
+        amount = float(request.form.get('transfer_amount', 0))
+        note_text = request.form.get('note', '').strip()
+
+        if from_acc != to_acc and amount > 0:
+            adj_from = BankAdjustment.query.filter_by(account_name=from_acc).first()
+            if adj_from:
+                adj_from.adjustment_amount = max(0.0, adj_from.adjustment_amount - amount)
+            else:
+                db.session.add(BankAdjustment(account_name=from_acc, adjustment_amount=0.0))
+
+            adj_to = BankAdjustment.query.filter_by(account_name=to_acc).first()
+            if adj_to:
+                adj_to.adjustment_amount += amount
+            else:
+                db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=amount))
+
+            db.session.add(BankExpenseLog(
+                expense_date=get_thai_today(),
+                account_name=from_acc,
+                amount=amount,
+                note=f"โยกเงินไปพักที่ {to_acc}: {note_text}",
+                admin_name=session.get('admin')
+            ))
+
+            db.session.commit()
+    except Exception as e:
+        print("Transfer error:", e)
+    db.session.remove()
+    return redirect(url_for('index'))
+
 @app.route('/update_bank_adjustment', methods=['POST'])
 def update_bank_adjustment():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -1309,7 +1403,7 @@ def update_bank_adjustment():
 def withdraw_bank_money():
     if 'admin' not in session: return redirect(url_for('login'))
     try:
-        acc_name = request.form.get('account_name', 'กรุงศรีอยุธยา')
+        acc_name = request.form.get('account_name', 'ออมสิน')
         withdraw_amt = float(request.form.get('withdraw_amount', 0))
         note_text = request.form.get('note', '').strip()
 
@@ -1370,7 +1464,7 @@ def customer_details(cust_name):
         rows += f"""
         <tr>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
-            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
+            <td><span class="badge bg-danger">{tx.funding_source or 'ออมสิน'}</span></td>
             <td>{start_date_str}</td>
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -1410,8 +1504,8 @@ def customer_details(cust_name):
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
                                 <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
+                                    <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
                                 </select>
                             </div>
@@ -1681,7 +1775,7 @@ def monthly_details(ym, category):
             <td><a href="/customer_details/{tx.customer_name}" class="text-dark text-decoration-none fw-bold">{tx.customer_name}</a></td>
             <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
-            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
+            <td><span class="badge bg-danger">{tx.funding_source or 'ออมสิน'}</span></td>
             <td>{start_date_str}</td>
             <td>{closed_date_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -1763,7 +1857,7 @@ def members_scheduled_all():
             calculate_tx_values(t)
             start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
             badge_color = 'bg-success' if t.status == 'ปกติ' else ('bg-info text-dark' if t.status == 'ตัดยอดบางส่วน' else 'bg-danger')
-            rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark fw-bold text-decoration-none'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {badge_color}'>{t.status}</span></td></tr>"
+            rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark fw-bold text-decoration-none'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {badge_color}'>{t.status}</span></td></tr>"
 
         all_sections_html += f"""
         <div class="card p-3 mb-4 shadow-sm border-warning">
@@ -1810,7 +1904,7 @@ def quick_assign_schedule_multi():
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.schedule_type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.schedule_type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูล</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สมาชิกทั้งหมด", page="members")
@@ -1819,7 +1913,7 @@ def members():
 def members_daily():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'จ่ายทุกวัน').order_by(Transaction.customer_name.asc()).all()
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     html = BASE_LAYOUT.replace('{% block header %}1.1 จ่ายทุกวัน{% endblock %}', 'จ่ายทุกวัน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="จ่ายทุกวัน", page="members_daily")
 
@@ -1827,7 +1921,7 @@ def members_daily():
 def members_unscheduled():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'ยังไม่มีกำหนดจ่าย').order_by(Transaction.customer_name.asc()).all()
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', 'ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
 
@@ -1854,7 +1948,7 @@ def all_transactions():
                 <td><a href="/customer_details/{tx.customer_name}" class="text-dark text-decoration-none fw-bold">{tx.customer_name}</a></td>
                 <td>{tx.phone or '-'}</td>
                 <td><span class="badge bg-secondary">{tx.type}</span></td>
-                <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
+                <td><span class="badge bg-danger">{tx.funding_source or 'ออมสิน'}</span></td>
                 <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
                 <td>{tx.original_principal:,.2f}</td>
                 <td>{tx.principal:,.2f}</td>
@@ -1908,7 +2002,7 @@ def import_data():
                     principal=float(row.get('Principal', 0)), daily_interest=float(row.get('DailyInterest', 0)),
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'),
-                    funding_source=row.get('FundingSource', 'กรุงศรีอยุธยา')
+                    funding_source=row.get('FundingSource', 'ออมสิน')
                 ))
             db.session.commit()
             db.session.remove()
@@ -1920,7 +2014,7 @@ def update_payment(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     payment_type = request.form.get('payment_type')
-    receiving_account = request.form.get('receiving_account', 'กรุงศรีอยุธยา')
+    receiving_account = request.form.get('receiving_account', 'ออมสิน')
     thai_today = get_thai_today()
     
     pay_amount = float(request.form.get('pay_amount', 0) or 0)
@@ -2004,7 +2098,7 @@ def payment_history(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
-    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{h.pay_amount:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td>{h.fine_amount:,.2f}</td><td>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
+    rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{h.pay_amount:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'ออมสิน'}</span></td><td>{h.fine_amount:,.2f}</td><td>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>" for h in histories])
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name}</h4><table class="table table-striped align-middle text-nowrap"><thead><tr><th>วันที่</th><th>ยอดจ่าย</th><th>ช่องทาง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ดอกเบี้ย</th><th>เงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ไม่มีประวัติ</td></tr>"}</tbody></table></div>"""
     html = BASE_LAYOUT.replace('{% block header %}ประวัติการชำระเงิน{% endblock %}', 'ประวัติการชำระเงิน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ประวัติการชำระเงิน", page="dashboard")
@@ -2030,7 +2124,7 @@ def sales_members():
 @app.route('/customer_summary')
 def customer_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.type}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td></tr>" for t in Transaction.query.all() if calculate_tx_values(t) or True])
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.type}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td></tr>" for t in Transaction.query.all() if calculate_tx_values(t) or True])
     html = BASE_LAYOUT.replace('{% block header %}3. สรุปลูกค้า{% endblock %}', 'สรุปลูกค้า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="สรุปลูกค้า", page="customer")
 
