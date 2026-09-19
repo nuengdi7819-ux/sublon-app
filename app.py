@@ -1125,49 +1125,40 @@ def monthly_details(ym, category):
     except:
         return redirect(url_for('monthly_summary'))
 
-    # กรองรายการตามประเภทช่องที่คลิกเข้ามา
+    # ดึงข้อมูลจากฐานข้อมูลโดยตรงตามเดือนที่เริ่มต้น (start_date) หรือเดือนที่มีประวัติชำระ/ปิดยอด
     if category == 'new_inv':
         txs = Transaction.query.filter(
             db.extract('year', Transaction.start_date) == year_i,
-            db.extract('month', Transaction.start_date) == month_i,
+            db.extract('month', Transaction.start_date) == month_i
+        ).all()
+        title_str = f"ทุนที่ลูกค้ากู้ ประจำเดือน {ym}"
+    elif category == 'new_col':
+        txs = Transaction.query.filter(
+            db.extract('year', Transaction.closed_date) == year_i,
+            db.extract('month', Transaction.closed_date) == month_i,
             Transaction.type != 'ยอดค้างเก่า'
         ).all()
-        title_str = f"ทุนที่ลูกค้าใหม่กู้ ประจำเดือน {ym}"
-    elif category == 'new_col':
-        histories = PaymentHistory.query.filter(
-            db.extract('year', PaymentHistory.payment_date) == year_i,
-            db.extract('month', PaymentHistory.payment_date) == month_i
-        ).all()
-        tx_ids = [h.transaction_id for h in histories if h.transaction and h.transaction.type != 'ยอดค้างเก่า']
-        txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
         title_str = f"ยอดเก็บจากลูกค้าใหม่ ประจำเดือน {ym}"
     elif category == 'debt_col':
-        histories = PaymentHistory.query.filter(
-            db.extract('year', PaymentHistory.payment_date) == year_i,
-            db.extract('month', PaymentHistory.payment_date) == month_i
+        txs = Transaction.query.filter(
+            db.extract('year', Transaction.closed_date) == year_i,
+            db.extract('month', Transaction.closed_date) == month_i,
+            Transaction.type == 'ยอดค้างเก่า'
         ).all()
-        tx_ids = [h.transaction_id for h in histories if h.transaction and h.transaction.type == 'ยอดค้างเก่า']
-        txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
         title_str = f"ยอดเก็บจากลูกค้าเก่า (ยอดค้างเก่า) ประจำเดือน {ym}"
     elif category == 'fine' or category == 'discount':
         histories = PaymentHistory.query.filter(
             db.extract('year', PaymentHistory.payment_date) == year_i,
             db.extract('month', PaymentHistory.payment_date) == month_i
         ).all()
-        if category == 'fine':
-            tx_ids = [h.transaction_id for h in histories if h.fine_amount > 0]
-            title_str = f"รายการค่าปรับ ประจำเดือน {ym}"
-        else:
-            tx_ids = [h.transaction_id for h in histories if h.discount_amount > 0]
-            title_str = f"รายการส่วนลด ประจำเดือน {ym}"
+        tx_ids = [h.transaction_id for h in histories if (h.fine_amount > 0 if category == 'fine' else h.discount_amount > 0)]
         txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
+        title_str = f"รายการ{'ค่าปรับ' if category == 'fine' else 'ส่วนลด'} ประจำเดือน {ym}"
     else: # profit
-        histories = PaymentHistory.query.filter(
-            db.extract('year', PaymentHistory.payment_date) == year_i,
-            db.extract('month', PaymentHistory.payment_date) == month_i
+        txs = Transaction.query.filter(
+            db.extract('year', Transaction.closed_date) == year_i,
+            db.extract('month', Transaction.closed_date) == month_i
         ).all()
-        tx_ids = list(set(h.transaction_id for h in histories))
-        txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
         title_str = f"กำไรสะสม ประจำเดือน {ym}"
 
     rows = ""
@@ -1853,32 +1844,36 @@ def monthly_summary():
         'month_profit': 0.0
     })
     
-    # 1. ดึงข้อมูลจากประวัติการชำระเงินจริง (PaymentHistory) ตามเดือนที่ชำระจริง
-    all_histories = PaymentHistory.query.all()
-    for h in all_histories:
-        if h.payment_date and h.transaction:
-            ym_h = h.payment_date.strftime('%Y-%m')
-            tx = h.transaction
-            monthly_data[ym_h]['count_tx'].add(tx.id)
-            
-            monthly_data[ym_h]['total_fine'] += h.fine_amount
-            monthly_data[ym_h]['total_discount'] += h.discount_amount
-            
-            cash_collected = h.interest_paid + h.fine_amount
-            if tx.type == 'ยอดค้างเก่า':
-                monthly_data[ym_h]['debt_collected'] += cash_collected
-            else:
-                monthly_data[ym_h]['new_collected'] += cash_collected
-
-            net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
-            monthly_data[ym_h]['month_profit'] += net_h_profit
-
-    # 2. ดึงยอดเงินลงทุนของลูกค้าใหม่แยกตามเดือนที่เริ่มกู้
     all_txs = Transaction.query.all()
     for tx in all_txs:
-        if tx.start_date and tx.type != 'ยอดค้างเก่า':
+        # 1. จัดกลุ่มทุนที่ลูกค้ากู้ตามเดือนที่เริ่มต้น (start_date)
+        if tx.start_date:
             ym_start = tx.start_date.strftime('%Y-%m')
             monthly_data[ym_start]['new_investment'] += tx.original_principal
+
+        # 2. จัดกลุ่มยอดเก็บ/กำไรตามเดือนที่ปิดยอดหรือชำระ (closed_date หรือ last_payment_date)
+        pay_month_date = tx.closed_date if tx.closed_date else tx.last_payment_date
+        if pay_month_date:
+            ym_pay = pay_month_date.strftime('%Y-%m')
+            monthly_data[ym_pay]['count_tx'].add(tx.id)
+
+            # คำนวณยอดเก็บและกำไรจริงจากข้อมูลบิล
+            collected = tx.original_principal - tx.principal if tx.type == 'ยอดค้างเก่า' else tx.original_principal
+            if tx.type == 'ยอดค้างเก่า':
+                monthly_data[ym_pay]['debt_collected'] += max(0.0, collected)
+                monthly_data[ym_pay]['month_profit'] += max(0.0, collected)
+            else:
+                monthly_data[ym_pay]['new_collected'] += tx.original_principal
+                profit_val = (tx.original_principal - tx.principal) + tx.paid_interest
+                monthly_data[ym_pay]['month_profit'] += max(0.0, profit_val)
+
+        # ดึงค่าปรับและส่วนลดจากประวัติหรือค่ารวม
+        if tx.histories:
+            for h in tx.histories:
+                if h.payment_date:
+                    ym_h = h.payment_date.strftime('%Y-%m')
+                    monthly_data[ym_h]['total_fine'] += h.fine_amount
+                    monthly_data[ym_h]['total_discount'] += h.discount_amount
 
     monthly_rows = ""
     sum_new_inv = 0.0
