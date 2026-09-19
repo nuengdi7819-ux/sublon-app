@@ -64,7 +64,6 @@ class PaymentHistory(db.Model):
 
     transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
 
-# ตารางเก็บยอดปรับตั้งต้นบัญชี (Balance Adjustment)
 class BankAdjustment(db.Model):
     __tablename__ = 'bank_adjustment'
     id = db.Column(db.Integer, primary_key=True)
@@ -396,7 +395,7 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
-    # คำนวณยอดเงินในกระเป๋าจริง (รวมค่าปรับแต่งตั้งต้น Balance Adjustment)
+    # ปรับปรุงใหม่: ใช้ยอดเงินตั้งต้นจริงที่คุณกรอกเป็นตัวตั้งหลักเดี่ยวๆ โดยไม่หักลบเงินลงทุน
     account_balances = {
         'กรุงศรีอยุธยา': 0.0,
         'ออมสิน': 0.0,
@@ -404,25 +403,11 @@ def index():
         'กำไรสะสม (Reinvest)': 0.0
     }
 
-    # บวกยอดปรับตั้งต้นจากฐานข้อมูล
     adjustments = BankAdjustment.query.all()
     adj_dict = {adj.account_name: adj.adjustment_amount for adj in adjustments}
 
     for acc_name in account_balances.keys():
-        account_balances[acc_name] += adj_dict.get(acc_name, 0.0)
-
-    for tx in all_txs_ever:
-        src = tx.funding_source if tx.funding_source else 'กรุงศรีอยุธยา'
-        if src in account_balances:
-            account_balances[src] -= tx.original_principal
-        elif src == 'กำไรสะสม':
-            account_balances['กำไรสะสม (Reinvest)'] += tx.original_principal
-
-    for h in PaymentHistory.query.all():
-        acc = h.receiving_account if h.receiving_account else 'กรุงศรีอยุธยา'
-        p_amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-        if acc in account_balances:
-            account_balances[acc] += p_amt
+        account_balances[acc_name] = adj_dict.get(acc_name, 0.0)
 
     today_new_rows = ""
     for tx in today_new_txs:
@@ -698,7 +683,7 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
-    <!-- แผงแสดงยอดเงินคงเหลือแยกตามบัญชีจริงและวอลเล็ท พร้อมปุ่มตั้งค่าปรับยอด -->
+    <!-- โซนที่ 1: สถานะกระเป๋าเงินจริงในมือถือ (ไว้เช็กอันดับแรก) -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
@@ -739,8 +724,7 @@ def index():
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <p class="text-muted small">กรอกยอดเงินสดที่มีอยู่จริงในแอปธนาคารหรือวอลเล็ทของคุณตอนนี้ เพื่อให้ระบบนำไปคำนวณปรับยอดตั้งต้นให้ตรงกับความเป็นจริง</p>
-                        
+                        <p class="text-muted small">กรอกยอดเงินสดที่มีอยู่จริงในแอปธนาคารหรือวอลเล็ทของคุณตอนนี้ ระบบจะแสดงผลตรงตามที่คุณกรอกทันทีโดยไม่มีการหักลบเงินลงทุน</p>
                         <div class="mb-3">
                             <label class="form-label fw-bold text-dark">🟡 กรุงศรีอยุธยา (ยอดเงินจริงในแอป)</label>
                             <input type="number" step="any" name="krungsri" class="form-control" value="{adj_dict.get('กรุงศรีอยุธยา', 0.0)}" required>
@@ -763,98 +747,7 @@ def index():
         </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md mb-3">
-            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
-                <h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3>
-            </div>
-        </div>
-        <div class="col-md mb-3">
-            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>📂 ยอดค้างเก่าคงเหลือ (คลิกเช็ก)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
-            </div>
-        </div>
-        <div class="col-md mb-3">
-            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>💼 เงินต้นคงค้าง (คลิกเช็ก)</h5><h3>{total_new_principal:,.2f} บาท</h3>
-            </div>
-        </div>
-        <div class="col-md mb-3">
-            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal ยอดค้างเก่าคงเหลือ -->
-    <div class="modal fade" id="debtModal" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-warning">
-                <div class="modal-header bg-warning text-dark py-2">
-                    <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือ ({total_debt_principal:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                    <div class="table-responsive">
-                        <table class="table table-striped align-middle text-nowrap">
-                            <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่ตั้งต้น</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th></tr>
-                            </thead>
-                            <tbody>{debt_card_rows if debt_card_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายการยอดค้างเก่า</td></tr>"}</tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal เงินต้นคงค้าง -->
-    <div class="modal fade" id="principalModal" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-danger">
-                <div class="modal-header bg-danger text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้าง ({total_new_principal:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                    <div class="table-responsive">
-                        <table class="table table-striped align-middle text-nowrap">
-                            <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th></tr>
-                            </thead>
-                            <tbody>{new_principal_rows if new_principal_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีรายการเงินต้นคงค้าง</td></tr>"}</tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal กำไรสะสมทั้งหมด -->
-    <div class="modal fade" id="profitModal" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-success">
-                <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {sum_modal_actual_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                    <div class="table-responsive">
-                        <table class="table table-striped align-middle text-nowrap">
-                            <thead class="table-dark">
-                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไร/ดอกเบี้ย</th><th>ค่าปรับจริง</th><th>ส่วนลด</th><th>รวมสุทธิ</th><th>วันที่ชำระล่าสุด</th></tr>
-                            </thead>
-                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
-            </div>
-        </div>
-    </div>
-
+    <!-- โซนที่ 2: สรุปผลงานวันนี้ (ยอดเก็บสด & ธุรกรรมวันนี้) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
@@ -971,6 +864,145 @@ def index():
         </div>
     </div>
 
+    <!-- โซนที่ 3: ตารางรายการที่ต้องจัดการวันนี้ (Action Table - หัวใจหลักในการทำงาน) -->
+    <div class="card p-4 shadow-sm border-warning mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
+                {view_today_btn}
+            </div>
+            <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="d-flex align-items-center gap-1"><small class="text-muted">จาก:</small><input type="date" name="start_date" class="form-control form-control-sm" value="{start_date_str}"></div>
+                <div class="d-flex align-items-center gap-1"><small class="text-muted">ถึง:</small><input type="date" name="end_date" class="form-control form-control-sm" value="{end_date_str}"></div>
+                <div class="d-flex align-items-center gap-1"><input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}"></div>
+                <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา / เช็กยอด</button>
+            </form>
+        </div>
+        
+        <div class="table-responsive desktop-table-view">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
+                        <th>เบอร์โทร</th>
+                        <th>ประเภทการชำระ</th>
+                        <th>บัญชีปล่อยกู้</th>
+                        <th>วันที่กู้</th>
+                        <th>ชำระล่าสุด</th>
+                        <th>เงินลงทุน</th>
+                        <th>ต้นคงค้าง</th>
+                        <th>ยอดที่ชำระมาแล้ว</th>
+                        <th>ดอกเบี้ย/วัน</th>
+                        <th>เวลาผ่านไป</th>
+                        <th>ดอกเบี้ยสะสม</th>
+                        <th>สถานะ</th>
+                        <th style="position: sticky; right: 0; background-color: #212529; z-index: 3; text-align: center;">จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
+            </table>
+        </div>
+
+        <div class="mobile-card-view">{cards if cards else "<p class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</p>"}</div>
+    </div>
+
+    <!-- โซนที่ 4: สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>📂 ยอดค้างเก่าคงเหลือ (คลิกเช็ก)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>💼 เงินต้นคงค้าง (คลิกเช็ก)</h5><h3>{total_new_principal:,.2f} บาท</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ยอดค้างเก่าคงเหลือ -->
+    <div class="modal fade" id="debtModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-warning">
+                <div class="modal-header bg-warning text-dark py-2">
+                    <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือ ({total_debt_principal:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่ตั้งต้น</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th></tr>
+                            </thead>
+                            <tbody>{debt_card_rows if debt_card_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายการยอดค้างเก่า</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal เงินต้นคงค้าง -->
+    <div class="modal fade" id="principalModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <div class="modal-header bg-danger text-white py-2">
+                    <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้าง ({total_new_principal:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th></tr>
+                            </thead>
+                            <tbody>{new_principal_rows if new_principal_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีรายการเงินต้นคงค้าง</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- โซนที่ 5: สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่ - ไว้ล่างสุด) -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
+                <h5>🔱 เงินลงทุนใหม่ (รวมทั้งหมด)</h5><h3>{total_new_investment:,.2f} บาท</h3>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
+                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal กำไรสะสมทั้งหมด -->
+    <div class="modal fade" id="profitModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-success">
+                <div class="modal-header bg-success text-white py-2">
+                    <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {sum_modal_actual_profit:,.2f} บาท)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle text-nowrap">
+                            <thead class="table-dark">
+                                <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไร/ดอกเบี้ย</th><th>ค่าปรับจริง</th><th>ส่วนลด</th><th>รวมสุทธิ</th><th>วันที่ชำระล่าสุด</th></tr>
+                            </thead>
+                            <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
+            </div>
+        </div>
+    </div>
+
     <div class="card p-4 shadow-sm mb-4 border-warning">
         <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
         <form method="POST" class="row g-3">
@@ -1042,47 +1074,6 @@ def index():
             </div>
         </form>
     </div>
-
-    <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3 flex-wrap">
-                <h4 class="mb-0 fs-5 text-danger fw-bold">{table_title}</h4>
-                {view_today_btn}
-            </div>
-            <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
-                <div class="d-flex align-items-center gap-1"><small class="text-muted">จาก:</small><input type="date" name="start_date" class="form-control form-control-sm" value="{start_date_str}"></div>
-                <div class="d-flex align-items-center gap-1"><small class="text-muted">ถึง:</small><input type="date" name="end_date" class="form-control form-control-sm" value="{end_date_str}"></div>
-                <div class="d-flex align-items-center gap-1"><input type="text" name="search" class="form-control form-control-sm" placeholder="ค้นหาชื่อ หรือเบอร์โทร..." value="{search_query}"></div>
-                <button type="submit" class="btn btn-sm btn-outline-danger">ค้นหา / เช็กยอด</button>
-            </form>
-        </div>
-        
-        <div class="table-responsive desktop-table-view">
-            <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
-                        <th>เบอร์โทร</th>
-                        <th>ประเภทการชำระ</th>
-                        <th>บัญชีปล่อยกู้</th>
-                        <th>วันที่กู้</th>
-                        <th>ชำระล่าสุด</th>
-                        <th>เงินลงทุน</th>
-                        <th>ต้นคงค้าง</th>
-                        <th>ยอดที่ชำระมาแล้ว</th>
-                        <th>ดอกเบี้ย/วัน</th>
-                        <th>เวลาผ่านไป</th>
-                        <th>ดอกเบี้ยสะสม</th>
-                        <th>สถานะ</th>
-                        <th style="position: sticky; right: 0; background-color: #212529; z-index: 3; text-align: center;">จัดการ</th>
-                    </tr>
-                </thead>
-                <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
-            </table>
-        </div>
-
-        <div class="mobile-card-view">{cards if cards else "<p class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</p>"}</div>
-    </div>
     {modals_html}
     """
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
@@ -1096,7 +1087,6 @@ def update_bank_adjustment():
         gsb_val = float(request.form.get('gsb', 0))
         wallet_val = float(request.form.get('wallet', 0))
 
-        # บันทึกหรืออัปเดตลงฐานข้อมูล
         for acc_name, val in [('กรุงศรีอยุธยา', krungsri_val), ('ออมสิน', gsb_val), ('วอลเล็ท', wallet_val)]:
             adj = BankAdjustment.query.filter_by(account_name=acc_name).first()
             if adj:
