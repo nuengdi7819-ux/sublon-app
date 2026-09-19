@@ -51,7 +51,7 @@ class Transaction(db.Model):
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
     id = db.Column(db.Integer, primary_key=True)
-    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=False)
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=True)
     payment_date = db.Column(db.Date, nullable=False, default=get_thai_today)
     pay_amount = db.Column(db.Float, default=0.0)
     fine_amount = db.Column(db.Float, default=0.0)
@@ -69,6 +69,15 @@ class BankAdjustment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     account_name = db.Column(db.String(50), unique=True, nullable=False)
     adjustment_amount = db.Column(db.Float, default=0.0)
+
+class BankExpenseLog(db.Model):
+    __tablename__ = 'bank_expense_log'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_date = db.Column(db.Date, nullable=False, default=get_thai_today)
+    account_name = db.Column(db.String(50), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    note = db.Column(db.String(255), nullable=True)
+    admin_name = db.Column(db.String(100), nullable=True)
 
 with app.app_context():
     db.create_all()
@@ -395,7 +404,6 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
-    # ปรับปรุงใหม่: ใช้ยอดเงินตั้งต้นจริงที่คุณกรอกเป็นตัวตั้งหลักเดี่ยวๆ โดยไม่หักลบเงินลงทุน
     account_balances = {
         'กรุงศรีอยุธยา': 0.0,
         'ออมสิน': 0.0,
@@ -408,6 +416,9 @@ def index():
 
     for acc_name in account_balances.keys():
         account_balances[acc_name] = adj_dict.get(acc_name, 0.0)
+
+    expense_logs = BankExpenseLog.query.order_by(BankExpenseLog.expense_date.desc(), BankExpenseLog.id.desc()).all()
+    expense_rows = "".join([f"<tr><td>{e.expense_date.strftime('%d/%m/%Y')}</td><td><span class='badge bg-warning text-dark'>{e.account_name}</span></td><td class='text-danger fw-bold'>-{e.amount:,.2f}</td><td>{e.note or '-'}</td><td><span class='badge bg-secondary'>{e.admin_name or '-'}</span></td><td><a href='/delete_expense/{e.id}' class='btn btn-sm btn-danger py-0 px-2' onclick=\"return confirm('ยืนยันลบประวัติการถอนนี้?')\">ลบ</a></td></tr>" for e in expense_logs])
 
     today_new_rows = ""
     for tx in today_new_txs:
@@ -683,11 +694,14 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
-    <!-- โซนที่ 1: สถานะกระเป๋าเงินจริงในมือถือ (ไว้เช็กอันดับแรก) -->
+    <!-- 1. สถานะกระเป๋าเงินจริงในมือถือ -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
-            <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า</button>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้น</button>
+                <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก (จ่ายพนักงาน/ค่าใช้จ่าย)</button>
+            </div>
         </div>
         <div class="row g-3">
             <div class="col-md-4">
@@ -712,6 +726,25 @@ def index():
                 </div>
             </div>
         </div>
+        
+        <!-- ประวัติการถอนเงินออกไปใช้จ่าย -->
+        <div class="mt-3 pt-3 border-top">
+            <button class="btn btn-outline-secondary btn-sm mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#expenseLogCollapse">
+                📜 ดูประวัติการถอนเงินออกไปจ่ายพนักงาน / ค่าใช้จ่าย (คลิกเพื่อเปิด/ปิด)
+            </button>
+            <div class="collapse" id="expenseLogCollapse">
+                <div class="table-responsive bg-light p-2 rounded">
+                    <table class="table table-sm table-striped align-middle text-nowrap mb-0">
+                        <thead>
+                            <tr><th>วันที่</th><th>บัญชี</th><th>จำนวนเงิน</th><th>หมายเหตุ</th><th>ผู้ทำรายการ</th><th>จัดการ</th></tr>
+                        </thead>
+                        <tbody>
+                            {expense_rows if expense_rows else "<tr><td colspan='6' class='text-center text-muted'>ยังไม่มีประวัติการถอนเงินออก</td></tr>"}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Modal ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า -->
@@ -724,7 +757,7 @@ def index():
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <p class="text-muted small">กรอกยอดเงินสดที่มีอยู่จริงในแอปธนาคารหรือวอลเล็ทของคุณตอนนี้ ระบบจะแสดงผลตรงตามที่คุณกรอกทันทีโดยไม่มีการหักลบเงินลงทุน</p>
+                        <p class="text-muted small">กรอกยอดเงินสดที่มีอยู่จริงในแอปธนาคารหรือวอลเล็ทของคุณตอนนี้ ระบบจะแสดงผลตรงตามที่คุณกรอกทันที</p>
                         <div class="mb-3">
                             <label class="form-label fw-bold text-dark">🟡 กรุงศรีอยุธยา (ยอดเงินจริงในแอป)</label>
                             <input type="number" step="any" name="krungsri" class="form-control" value="{adj_dict.get('กรุงศรีอยุธยา', 0.0)}" required>
@@ -747,7 +780,117 @@ def index():
         </div>
     </div>
 
-    <!-- โซนที่ 2: สรุปผลงานวันนี้ (ยอดเก็บสด & ธุรกรรมวันนี้) -->
+    <!-- Modal ถอนเงินออก (พร้อมหมายเหตุ) -->
+    <div class="modal fade" id="withdrawModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <form action="/withdraw_bank_money" method="POST">
+                    <div class="modal-header bg-danger text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">💸 ถอนเงินออกจากบัญชี (เพื่อจ่ายพนักงาน/ค่าใช้จ่าย)</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">การบันทึกนี้จะหักยอดออกจากกระเป๋าธนาคารจริงทันที พร้อมบันทึกประวัติและหมายเหตุไว้ตรวจสอบ</p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">💳 เลือกบัญชีที่ต้องการถอนออก</label>
+                            <select name="account_name" class="form-select border-success" required>
+                                <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-danger">💵 จำนวนเงินที่ถอนออก (บาท)</label>
+                            <input type="number" step="any" name="withdraw_amount" class="form-control" placeholder="เช่น 5000" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">📝 หมายเหตุการถอน (สำคัญมาก)</label>
+                            <input type="text" name="note" class="form-control" placeholder="เช่น จ่ายเงินเดือนพนักงาน (คุณ...)" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-danger btn-sm fw-bold px-3">ยืนยันการถอนเงิน</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ฟอร์มเพิ่มรายการใหม่ -->
+    <div class="card p-4 shadow-sm mb-4 border-warning">
+        <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
+        <form method="POST" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">ประเภทรายการ</label>
+                <select name="type" class="form-select" id="txTypeSelect" onchange="handleTypeChange()" required>
+                    <option value="เงินฉุกเฉิน">เงินฉุกเฉิน (ลูกค้าใหม่)</option>
+                    <option value="ผ่อนทอง">ผ่อนทอง (ลูกค้าใหม่)</option>
+                    <option value="ยอดค้างเก่า">ยอดค้างเก่า (ลูกค้าเก่า)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">ชื่อลูกค้า</label>
+                <input type="text" name="customer_name" class="form-control" list="customerList" autocomplete="off" required>
+                <datalist id="customerList">{datalist_options}</datalist>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">เบอร์โทร</label>
+                <input type="text" name="phone" class="form-control" autocomplete="tel">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">วันที่กู้/วันที่เริ่ม</label>
+                <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
+            </div>
+            
+            <div class="col-md-4">
+                <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี / แหล่งทุน:</label>
+                <select name="funding_source" class="form-select border-success" required>
+                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                    <option value="กำไรสะสม">🔄 ดึงจากกำไรสะสมมาหมุนซ้ำ (Reinvestment)</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
+                <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
+                    <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
+                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
+                    <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
+                </select>
+            </div>
+            <div class="col-md-5" id="dueDayDiv" style="display: none;">
+                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
+                <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
+                <input type="number" step="any" name="principal" class="form-control" required>
+            </div>
+            <div class="col-md-3" id="installmentDiv" style="display: none;">
+                <label class="form-label text-danger fw-bold">ยอดชำระต่องวด (บาท)</label>
+                <input type="number" step="any" name="installment_amount" class="form-control" value="0" placeholder="เช่น 150">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
+                <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-success w-100 fw-bold" onclick="closeAllModals()">บันทึกข้อมูล</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 2. สรุปผลงานวันนี้ (ยอดเก็บสด & ธุรกรรมวันนี้) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
@@ -864,7 +1007,7 @@ def index():
         </div>
     </div>
 
-    <!-- โซนที่ 3: ตารางรายการที่ต้องจัดการวันนี้ (Action Table - หัวใจหลักในการทำงาน) -->
+    <!-- 3. ตารางรายการที่ต้องจัดการวันนี้ (Action Table) -->
     <div class="card p-4 shadow-sm border-warning mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -906,7 +1049,7 @@ def index():
         <div class="mobile-card-view">{cards if cards else "<p class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</p>"}</div>
     </div>
 
-    <!-- โซนที่ 4: สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) -->
+    <!-- 4. สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
@@ -966,7 +1109,7 @@ def index():
         </div>
     </div>
 
-    <!-- โซนที่ 5: สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่ - ไว้ล่างสุด) -->
+    <!-- 5. สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่) -->
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
@@ -1002,78 +1145,6 @@ def index():
             </div>
         </div>
     </div>
-
-    <div class="card p-4 shadow-sm mb-4 border-warning">
-        <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
-        <form method="POST" class="row g-3">
-            <div class="col-md-3">
-                <label class="form-label">ประเภทรายการ</label>
-                <select name="type" class="form-select" id="txTypeSelect" onchange="handleTypeChange()" required>
-                    <option value="เงินฉุกเฉิน">เงินฉุกเฉิน (ลูกค้าใหม่)</option>
-                    <option value="ผ่อนทอง">ผ่อนทอง (ลูกค้าใหม่)</option>
-                    <option value="ยอดค้างเก่า">ยอดค้างเก่า (ลูกค้าเก่า)</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">ชื่อลูกค้า</label>
-                <input type="text" name="customer_name" class="form-control" list="customerList" autocomplete="off" required>
-                <datalist id="customerList">{datalist_options}</datalist>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">เบอร์โทร</label>
-                <input type="text" name="phone" class="form-control" autocomplete="tel">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">วันที่กู้/วันที่เริ่ม</label>
-                <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
-            </div>
-            
-            <div class="col-md-4">
-                <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี / แหล่งทุน:</label>
-                <select name="funding_source" class="form-select border-success" required>
-                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
-                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
-                    <option value="กำไรสะสม">🔄 ดึงจากกำไรสะสมมาหมุนซ้ำ (Reinvestment)</option>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
-                <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
-                    <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
-                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
-                    <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
-                </select>
-            </div>
-            <div class="col-md-5" id="dueDayDiv" style="display: none;">
-                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
-                <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
-                <input type="number" step="any" name="principal" class="form-control" required>
-            </div>
-            <div class="col-md-3" id="installmentDiv" style="display: none;">
-                <label class="form-label text-danger fw-bold">ยอดชำระต่องวด (บาท)</label>
-                <input type="number" step="any" name="installment_amount" class="form-control" value="0" placeholder="เช่น 150">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
-                <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-success w-100 fw-bold" onclick="closeAllModals()">บันทึกข้อมูล</button>
-            </div>
-        </form>
-    </div>
     {modals_html}
     """
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
@@ -1096,6 +1167,51 @@ def update_bank_adjustment():
         db.session.commit()
     except Exception as e:
         print("Adjustment error:", e)
+    db.session.remove()
+    return redirect(url_for('index'))
+
+@app.route('/withdraw_bank_money', methods=['POST'])
+def withdraw_bank_money():
+    if 'admin' not in session: return redirect(url_for('login'))
+    try:
+        acc_name = request.form.get('account_name', 'กรุงศรีอยุธยา')
+        withdraw_amt = float(request.form.get('withdraw_amount', 0))
+        note_text = request.form.get('note', '').strip()
+
+        if withdraw_amt > 0:
+            # 1. บันทึกประวัติการถอนออกพร้อมหมายเหตุ
+            db.session.add(BankExpenseLog(
+                expense_date=get_thai_today(),
+                account_name=acc_name,
+                amount=withdraw_amt,
+                note=note_text,
+                admin_name=session.get('admin')
+            ))
+
+            # 2. หักยอดออกจาก BankAdjustment อัตโนมัติทันที
+            adj = BankAdjustment.query.filter_by(account_name=acc_name).first()
+            if adj:
+                adj.adjustment_amount = max(0.0, adj.adjustment_amount - withdraw_amt)
+            else:
+                # ถ้ายังไม่เคยตั้งค่า ให้สร้างใหม่เป็น 0
+                db.session.add(BankAdjustment(account_name=acc_name, adjustment_amount=0.0))
+            
+            db.session.commit()
+    except Exception as e:
+        print("Withdraw error:", e)
+    db.session.remove()
+    return redirect(url_for('index'))
+
+@app.route('/delete_expense/<int:exp_id>')
+def delete_expense(exp_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    exp = BankExpenseLog.query.get_or_404(exp_id)
+    # คืนยอดเงินกลับเข้ากระเป๋าเมื่อลบประวัติการถอนออก
+    adj = BankAdjustment.query.filter_by(account_name=exp.account_name).first()
+    if adj:
+        adj.adjustment_amount += exp.amount
+    db.session.delete(exp)
+    db.session.commit()
     db.session.remove()
     return redirect(url_for('index'))
 
