@@ -1782,6 +1782,7 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
+    # 1. จัดหมวดหมู่บัญชีตามเดือนที่เริ่มต้น (สำหรับแสดงจำนวนรายการและยอดตั้งต้น)
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1791,13 +1792,15 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
+    # 2. ประมวลผลยอดเก็บและกำไร โดยอิงตาม "วันที่ที่มีการชำระจริง (Payment Date)" เป็นหลัก
     all_txs = Transaction.query.all()
     for tx in all_txs:
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
-                    # นำค่าปรับมารวมคำนวณในกำไรให้ตรงกับ Dashboard 100%
+                    
+                    # คำนวณกำไรสุทธิ (ดอกเบี้ย + ค่าปรับ - ส่วนลด) ลงในเดือนที่จ่ายจริง
                     h_profit = h.interest_paid + h.fine_amount - h.discount_amount
                     monthly_data[ym_h]['profit'] += h_profit
                     
@@ -1807,6 +1810,7 @@ def monthly_summary():
                     else:
                         monthly_data[ym_h]['new_paid'] += pay_val
         else:
+            # กรณีบัญชีไหนยังไม่มีประวัติการจ่ายเงิน ให้ลงกำไรตามเดือนที่เริ่มต้นสัญญา (start_date)
             if tx.start_date:
                 ym_s = tx.start_date.strftime('%Y-%m')
                 if tx.type == 'ยอดค้างเก่า':
