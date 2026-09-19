@@ -472,6 +472,7 @@ def index():
     for item in profit_items:
         if item['total_item_profit'] > 0:
             is_exception = any(kw.lower() in item['customer_name'].lower() for kw in krungsri_keywords)
+            # เฉพาะรายชื่อที่สั่งไปอยู่กรุงศรีฯ นอกเหนือจากนั้นวิ่งไปรวมที่ "ออมสิน" ทั้งหมดตามคำสั่งใหม่
             target_acc = 'กรุงศรีอยุธยา' if is_exception else 'ออมสิน'
             
             bank_details_data[target_acc]['inflows'].append({
@@ -1510,8 +1511,8 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <div class="d-flex justify-content-center gap-2">
-                    <a href="/history/{tx.id}" class="btn btn-sm btn-outline-info fw-bold px-2" target="_blank" title="ดูประวัติการจ่าย">📜 ประวัติ</a>
+                <div class="d-flex justify-content-center gap-1 align-items-center">
+                    <a href="/history/{tx.id}" class="btn btn-sm btn-outline-info fw-bold px-2 py-0" target="_blank" title="ดูประวัติการจ่าย" style="font-size: 1.1rem;">📜</a>
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
