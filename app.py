@@ -1818,6 +1818,7 @@ def monthly_summary():
         'month_profit': 0.0
     })
     
+    # 1. ดึงข้อมูลจากประวัติการชำระเงินจริง (PaymentHistory) ตามเดือนที่ชำระจริง
     all_histories = PaymentHistory.query.all()
     for h in all_histories:
         if h.payment_date and h.transaction:
@@ -1833,31 +1834,16 @@ def monthly_summary():
                 monthly_data[ym_h]['debt_collected'] += cash_collected
             else:
                 monthly_data[ym_h]['new_collected'] += cash_collected
-                monthly_data[ym_h]['new_investment'] += tx.original_principal
 
             net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym_h]['month_profit'] += net_h_profit
 
-    all_txs_ever = Transaction.query.all()
-    total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
-    total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
-    effective_interest = max(total_history_interest, total_paid_interest_col)
-
-    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
-    total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
-    total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
-    
-    grand_total_profit = effective_interest + total_debt_earned + total_fine - total_discount
-
-    current_ym = get_thai_today().strftime('%Y-%m')
-    if current_ym not in monthly_data:
-        monthly_data[current_ym]['count_tx'] = set(t.id for t in all_txs_ever)
-
-    current_table_profit = sum(d['month_profit'] for d in monthly_data.values())
-    profit_diff = grand_total_profit - current_table_profit
-
-    if profit_diff != 0:
-        monthly_data[current_ym]['month_profit'] += profit_diff
+    # 2. ดึงยอดเงินลงทุนของลูกค้าใหม่แยกตามเดือนที่เริ่มกู้
+    all_txs = Transaction.query.all()
+    for tx in all_txs:
+        if tx.start_date and tx.type != 'ยอดค้างเก่า':
+            ym_start = tx.start_date.strftime('%Y-%m')
+            monthly_data[ym_start]['new_investment'] += tx.original_principal
 
     monthly_rows = ""
     sum_new_inv = 0.0
@@ -1903,10 +1889,9 @@ def monthly_summary():
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางแจกแจงที่มาของยอดกำไรสะสมรายเดือน</h4>
-            <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไรตามเดือนที่ชำระจริง</h4>
         </div>
-        <p class="text-muted small">💡 ตารางนี้แสดงผลและรวมยอดกำไรสะสมทั้งหมดให้ตรงกับระบบหลัก 100% เรียบร้อยแล้ว</p>
+        <p class="text-muted small">💡 แสดงยอดเงินและกำไรที่เกิดขึ้นจริงตามประวัติการชำระเงินในแต่ละเดือน</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
