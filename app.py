@@ -377,6 +377,7 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
+    # อัปเดตสูตรคำนวณกำไรสะสมกลางทั้งระบบให้ตรงกับหน้าชีตดึงข้อมูล 100%
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
     effective_interest = max(total_history_interest, total_paid_interest_col)
@@ -1128,9 +1129,17 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
+    # ดึงรายการที่มีการชำระเงินหรือเพิ่มทุนในเดือนนั้นๆ
+    h_tx_ids = [h.transaction_id for h in PaymentHistory.query.filter(
+        db.extract('year', PaymentHistory.payment_date) == year_i,
+        db.extract('month', PaymentHistory.payment_date) == month_i
+    ).all()]
+
     txs = Transaction.query.filter(
-        db.extract('year', Transaction.start_date) == year_i,
-        db.extract('month', Transaction.start_date) == month_i
+        db.or_(
+            (db.extract('year', Transaction.start_date) == year_i) & (db.extract('month', Transaction.start_date) == month_i),
+            Transaction.id.in_(h_tx_ids) if h_tx_ids else False
+        )
     ).order_by(Transaction.start_date.desc()).all()
 
     rows = ""
@@ -1536,13 +1545,10 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    # เพิ่มคอลัมน์ TotalFine และ TotalDiscount ในหัวตาราง CSV
     cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
-        
-        # คำนวณผลรวมค่าปรับและส่วนลดจากประวัติการชำระของบิลนี้
         tx_fine_sum = sum(h.fine_amount for h in t.histories) if t.histories else 0.0
         tx_discount_sum = sum(h.discount_amount for h in t.histories) if t.histories else 0.0
         
@@ -1593,7 +1599,6 @@ def import_data():
                 db.session.add(new_t)
                 db.session.flush()
 
-                # นำเข้าค่าปรับและส่วนลดสะสมย้อนหลังลงตาราง payment_history ถ้ามีข้อมูล
                 total_fine_val = float(row.get('TotalFine', 0) or 0)
                 total_discount_val = float(row.get('TotalDiscount', 0) or 0)
                 if total_fine_val > 0 or total_discount_val > 0:
@@ -1835,16 +1840,15 @@ def monthly_summary():
         tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
         total_tx_profit = tx_net_profit + tx_fine_sum - tx_discount_sum
 
-        latest_date = tx.start_date
+        # ใช้เดือนจากประวัติการชำระหรือวันที่สร้างรายการล่าสุดเพื่อให้ผลรวมสอดคล้องกับทั้งระบบ
+        target_ym = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
         if tx.histories:
-            max_h_date = max(h.payment_date for h in tx.histories)
-            if max_h_date > latest_date: latest_date = max_h_date
-        if tx.last_payment_date and tx.last_payment_date > latest_date:
-            latest_date = tx.last_payment_date
-            
-        if latest_date:
-            ym_p = latest_date.strftime('%Y-%m')
-            monthly_data[ym_p]['profit'] += total_tx_profit
+            max_h_date = max(h.payment_date for h in tx.histories if h.payment_date)
+            if max_h_date: target_ym = max_h_date.strftime('%Y-%m')
+        elif tx.last_payment_date:
+            target_ym = tx.last_payment_date.strftime('%Y-%m')
+
+        monthly_data[target_ym]['profit'] += total_tx_profit
 
         if tx.histories:
             for h in tx.histories:
