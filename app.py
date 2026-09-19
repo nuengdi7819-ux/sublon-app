@@ -46,7 +46,7 @@ class Transaction(db.Model):
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
-    funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา') # กรุงศรีอยุธยา, ออมสิน, วอลเล็ท, กำไรสะสม
+    funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -63,6 +63,13 @@ class PaymentHistory(db.Model):
     receiving_account = db.Column(db.String(50), default='กรุงศรีอยุธยา')
 
     transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
+
+# ตารางเก็บยอดปรับตั้งต้นบัญชี (Balance Adjustment)
+class BankAdjustment(db.Model):
+    __tablename__ = 'bank_adjustment'
+    id = db.Column(db.Integer, primary_key=True)
+    account_name = db.Column(db.String(50), unique=True, nullable=False)
+    adjustment_amount = db.Column(db.Float, default=0.0)
 
 with app.app_context():
     db.create_all()
@@ -389,12 +396,20 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
+    # คำนวณยอดเงินในกระเป๋าจริง (รวมค่าปรับแต่งตั้งต้น Balance Adjustment)
     account_balances = {
         'กรุงศรีอยุธยา': 0.0,
         'ออมสิน': 0.0,
         'วอลเล็ท': 0.0,
         'กำไรสะสม (Reinvest)': 0.0
     }
+
+    # บวกยอดปรับตั้งต้นจากฐานข้อมูล
+    adjustments = BankAdjustment.query.all()
+    adj_dict = {adj.account_name: adj.adjustment_amount for adj in adjustments}
+
+    for acc_name in account_balances.keys():
+        account_balances[acc_name] += adj_dict.get(acc_name, 0.0)
 
     for tx in all_txs_ever:
         src = tx.funding_source if tx.funding_source else 'กรุงศรีอยุธยา'
@@ -683,9 +698,12 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
-    <!-- แผงแสดงยอดเงินคงเหลือแยกตามบัญชีจริงและวอลเล็ท -->
+    <!-- แผงแสดงยอดเงินคงเหลือแยกตามบัญชีจริงและวอลเล็ท พร้อมปุ่มตั้งค่าปรับยอด -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
-        <h5 class="text-danger fw-bold mb-3">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
+            <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า</button>
+        </div>
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="p-3 rounded border border-warning bg-warning bg-opacity-15">
@@ -707,6 +725,40 @@ def index():
                     <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
                     <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า -->
+    <div class="modal fade" id="adjustBankModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-danger">
+                <form action="/update_bank_adjustment" method="POST">
+                    <div class="modal-header bg-danger text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">⚙️ ตั้งค่าปรับยอดเงินตั้งต้นกระเป๋าจริง</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">กรอกยอดเงินสดที่มีอยู่จริงในแอปธนาคารหรือวอลเล็ทของคุณตอนนี้ เพื่อให้ระบบนำไปคำนวณปรับยอดตั้งต้นให้ตรงกับความเป็นจริง</p>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">🟡 กรุงศรีอยุธยา (ยอดเงินจริงในแอป)</label>
+                            <input type="number" step="any" name="krungsri" class="form-control" value="{adj_dict.get('กรุงศรีอยุธยา', 0.0)}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-danger">🩷 ออมสิน (ยอดเงินจริงในแอป)</label>
+                            <input type="number" step="any" name="gsb" class="form-control" value="{adj_dict.get('ออมสิน', 0.0)}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-primary">🟠 TrueMoney Wallet (ยอดเงินจริงในแอป)</label>
+                            <input type="number" step="any" name="wallet" class="form-control" value="{adj_dict.get('วอลเล็ท', 0.0)}" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-danger btn-sm fw-bold px-3">บันทึกยอดตั้งต้น</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1035,6 +1087,27 @@ def index():
     """
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
+
+@app.route('/update_bank_adjustment', methods=['POST'])
+def update_bank_adjustment():
+    if 'admin' not in session: return redirect(url_for('login'))
+    try:
+        krungsri_val = float(request.form.get('krungsri', 0))
+        gsb_val = float(request.form.get('gsb', 0))
+        wallet_val = float(request.form.get('wallet', 0))
+
+        # บันทึกหรืออัปเดตลงฐานข้อมูล
+        for acc_name, val in [('กรุงศรีอยุธยา', krungsri_val), ('ออมสิน', gsb_val), ('วอลเล็ท', wallet_val)]:
+            adj = BankAdjustment.query.filter_by(account_name=acc_name).first()
+            if adj:
+                adj.adjustment_amount = val
+            else:
+                db.session.add(BankAdjustment(account_name=acc_name, adjustment_amount=val))
+        db.session.commit()
+    except Exception as e:
+        print("Adjustment error:", e)
+    db.session.remove()
+    return redirect(url_for('index'))
 
 @app.route('/customer_details/<path:cust_name>')
 def customer_details(cust_name):
