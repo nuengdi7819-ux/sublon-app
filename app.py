@@ -1808,9 +1808,16 @@ def customer_debt():
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
-    monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
+    monthly_data = defaultdict(lambda: {
+        'count_tx': set(), 
+        'new_investment': 0.0, 
+        'new_collected': 0.0, 
+        'debt_collected': 0.0, 
+        'total_fine': 0.0, 
+        'total_discount': 0.0, 
+        'month_profit': 0.0
+    })
     
-    # วิ่งผ่านประวัติการชำระเงินทั้งหมด (PaymentHistory) เพื่อดึงและจัดกลุ่มตามเดือนที่มีการจ่ายจริง 100%
     all_histories = PaymentHistory.query.all()
     for h in all_histories:
         if h.payment_date and h.transaction:
@@ -1818,19 +1825,19 @@ def monthly_summary():
             tx = h.transaction
             monthly_data[ym_h]['count_tx'].add(tx.id)
             
-            # คำนวณกำไรสุทธิ (ดอกเบี้ยที่จ่าย + ค่าปรับ - ส่วนลด)
-            net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
-            monthly_data[ym_h]['profit'] += net_h_profit
+            monthly_data[ym_h]['total_fine'] += h.fine_amount
+            monthly_data[ym_h]['total_discount'] += h.discount_amount
             
             cash_collected = h.interest_paid + h.fine_amount
             if tx.type == 'ยอดค้างเก่า':
-                monthly_data[ym_h]['debt_paid'] += cash_collected
-                monthly_data[ym_h]['debt_start'] += tx.original_principal
+                monthly_data[ym_h]['debt_collected'] += cash_collected
             else:
-                monthly_data[ym_h]['new_paid'] += cash_collected
+                monthly_data[ym_h]['new_collected'] += cash_collected
                 monthly_data[ym_h]['new_investment'] += tx.original_principal
 
-    # คำนวณกำไรสะสมรวมทั้งระบบให้ตรงกับหน้า Dashboard เป๊ะๆ
+            net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            monthly_data[ym_h]['month_profit'] += net_h_profit
+
     all_txs_ever = Transaction.query.all()
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
@@ -1842,32 +1849,59 @@ def monthly_summary():
     
     grand_total_profit = effective_interest + total_debt_earned + total_fine - total_discount
 
-    monthly_rows = "".join([
-        f"<tr>"
-        f"<td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>"
-        f"<td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>"
-        f"<td>{d['new_investment']:,.2f}</td>"
-        f"<td>{d['new_paid']:,.2f}</td>"
-        f"<td>{d['debt_start']:,.2f}</td>"
-        f"<td>{d['debt_paid']:,.2f}</td>"
-        f"<td class='text-warning fw-bold'>{d['profit']:,.2f}</td>"
-        f"</tr>" 
-        for ym, d in sorted(monthly_data.items(), reverse=True)
-    ])
+    monthly_rows = ""
+    sum_new_inv = 0.0
+    sum_new_col = 0.0
+    sum_debt_col = 0.0
+    sum_fine = 0.0
+    sum_disc = 0.0
+    sum_profit = 0.0
+
+    for ym, d in sorted(monthly_data.items(), reverse=True):
+        sum_new_inv += d['new_investment']
+        sum_new_col += d['new_collected']
+        sum_debt_col += d['debt_collected']
+        sum_fine += d['total_fine']
+        sum_disc += d['total_discount']
+        sum_profit += d['month_profit']
+
+        monthly_rows += f"""
+        <tr>
+            <td><a href='/monthly_details/{ym}' class='text-danger fw-bold text-decoration-none'>📅 {ym}</a></td>
+            <td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>
+            <td>{d['new_investment']:,.2f}</td>
+            <td>{d['new_collected']:,.2f}</td>
+            <td>{d['debt_collected']:,.2f}</td>
+            <td class="text-warning text-dark fw-bold">{d['total_fine']:,.2f}</td>
+            <td class="text-danger fw-bold">-{d['total_discount']:,.2f}</td>
+            <td class='text-success fw-bold'>{d['month_profit']:,.2f}</td>
+        </tr>
+        """
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน (อิงตามเดือนที่จ่ายจริง 100%)</h4>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางแจกแจงที่มาของยอดกำไรสะสมรายเดือน</h4>
             <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
         </div>
-        <p class="text-muted small">💡 ตารางนี้แสดงผลยอดการเก็บเงินและกำไรสุทธิแยกตามเดือนที่มีการทำรายการชำระจริงในระบบ</p>
+        <p class="text-muted small">💡 ตารางนี้แจกแจงรายละเอียดการเงินและที่มาของกำไรสะสมโดยอิงตามเดือนที่มีการทำรายการชำระจริง 100%</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th>เดือน (ที่ชำระ)</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บดอก/ปรับ (ใหม่)</th><th>ค้างเก่าตั้งต้น</th><th>เก็บดอก/ปรับ (ค้างเก่า)</th><th>กำไรสะสม (หักส่วนลดแล้ว)</th></tr>
+                    <tr>
+                        <th>เดือนที่ชำระ</th>
+                        <th>รายการ</th>
+                        <th>ทุนที่ลูกค้าใหม่กู้</th>
+                        <th>ยอดเก็บจากลูกค้าใหม่</th>
+                        <th>ยอดเก็บจากลูกค้าเก่า</th>
+                        <th>ยอดค่าปรับ</th>
+                        <th>ยอดส่วนลด</th>
+                        <th>กำไรสะสมเดือนนี้</th>
+                    </tr>
                 </thead>
-                <tbody>{monthly_rows if monthly_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงินรายเดือน</td></tr>"}</tbody>
+                <tbody>
+                    {monthly_rows if monthly_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงินรายเดือน</td></tr>"}
+                </tbody>
             </table>
         </div>
     </div>
