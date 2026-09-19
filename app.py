@@ -102,14 +102,14 @@ BASE_LAYOUT = """
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
         .sidebar-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 1045; }
 
-        .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
-        .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
+        .btn-warning { background-color: #ffd700; border-color: #ffc700; color: #2c0b0e; font-weight: 700; }
+        .btn-warning:hover { background-color: #ffc107; border-color: #ffb300; color: #000; }
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
         .table-responsive::-webkit-scrollbar { height: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
-        .table-responsive::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 6px; }
+        .table-responsive::-webkit-scrollbar-thumb { background: #ffd700; border-radius: 6px; }
 
         @media (max-width: 768px) {
             .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
@@ -426,7 +426,8 @@ def index():
                     'note': f"ทุนกู้ {tx.type}"
                 })
 
-    # ดึงรายชื่อจากช่องกำไรสะสมมาแสดงในช่องเงินออกของออมสิน
+    krungsri_exceptions = {"เชิฟ", "กุลธิดา อานับ", "Anongnad Petchanoo", "ชั้นไม่ใช่ นางเอก", "แอนนา บริสุทธิ์", "วันดี ประสานสงฆ์"}
+
     profit_items = []
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -461,9 +462,10 @@ def index():
 
     for item in profit_items:
         if item['total_item_profit'] > 0:
-            bank_details_data['ออมสิน']['outflows'].append({
+            target_acc = 'กรุงศรีอยุธยา' if item['customer_name'] in krungsri_exceptions else 'ออมสิน'
+            bank_details_data[target_acc]['inflows'].append({
                 'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
-                'target': f"กำไรสะสม / ดอกเบี้ย: {item['customer_name']}",
+                'customer': f"กำไรสะสม: {item['customer_name']}",
                 'amount': item['total_item_profit'],
                 'note': f"ประเภท: {item['type']}"
             })
@@ -497,25 +499,25 @@ def index():
         <div class="modal fade" id="{modal_id}" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-{theme_color}">
-                    <div class="modal-header bg-{theme_color} text-white py-2">
-                        <h5 class="modal-title fw-bold fs-6">📊 รายละเอียดความเคลื่อนไหว: {acc_title}</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <div class="modal-header bg-{theme_color} text-white py-2 position-relative align-items-center">
+                        <h5 class="modal-title fw-bold fs-6 mb-0">📊 รายละเอียดความเคลื่อนไหว: {acc_title}</h5>
+                        <div class="d-flex align-items-center gap-2 ms-auto pe-2">
+                            <button type="button" class="btn btn-warning btn-sm fw-bold text-dark px-3 py-1 shadow-sm" style="font-size: 0.82rem;" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่</button>
+                            <button type="button" class="btn-close btn-close-white m-0" data-bs-dismiss="modal"></button>
+                        </div>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
-                        <div class="mb-3">
-                            <button type="button" class="btn btn-warning btn-sm fw-bold w-100 text-dark py-2" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่จากบัญชีนี้</button>
-                        </div>
                         <div class="mb-4">
-                            <h6 class="text-success fw-bold border-bottom pb-2">📥 เงินเข้า (มาจากลูกค้าโอนชำระยอด)</h6>
+                            <h6 class="text-success fw-bold border-bottom pb-2">📥 เงินเข้า (มาจากลูกค้าโอนชำระยอด + กำไรสะสม)</h6>
                             <div class="table-responsive">
                                 <table class="table table-sm table-striped align-middle text-nowrap">
-                                    <thead class="table-dark"><tr><th>วันที่</th><th>ชื่อลูกค้า</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
+                                    <thead class="table-dark"><tr><th>วันที่</th><th>ชื่อลูกค้า / รายการ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
                                     <tbody>{inflow_rows if inflow_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีรายการเงินเข้า</td></tr>"}</tbody>
                                 </table>
                             </div>
                         </div>
-                        <div>
-                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก (เงินต้นคงค้าง + กำไรสะสม)</h6>
+                        <div class="mb-3">
+                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก</h6>
                             <div class="table-responsive">
                                 <table class="table table-sm table-striped align-middle text-nowrap">
                                     <thead class="table-dark"><tr><th>วันที่</th><th>รายการ / ผู้รับ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
@@ -524,10 +526,8 @@ def index():
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer py-2">
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                        </div>
+                    <div class="modal-footer py-2 justify-content-end">
+                        <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal" style="font-size: 0.8rem;">ปิดหน้าต่าง</button>
                     </div>
                 </div>
             </div>
@@ -1945,7 +1945,7 @@ def members_unscheduled():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'ยังไม่มีกำหนดจ่าย').order_by(Transaction.customer_name.asc()).all()
     rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
-    html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', 'ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', 'ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
 
 @app.route('/all_transactions')
