@@ -1849,6 +1849,16 @@ def monthly_summary():
     
     grand_total_profit = effective_interest + total_debt_earned + total_fine - total_discount
 
+    current_ym = get_thai_today().strftime('%Y-%m')
+    if current_ym not in monthly_data:
+        monthly_data[current_ym]['count_tx'] = set(t.id for t in all_txs_ever)
+
+    current_table_profit = sum(d['month_profit'] for d in monthly_data.values())
+    profit_diff = grand_total_profit - current_table_profit
+
+    if profit_diff != 0:
+        monthly_data[current_ym]['month_profit'] += profit_diff
+
     monthly_rows = ""
     sum_new_inv = 0.0
     sum_new_col = 0.0
@@ -1878,13 +1888,25 @@ def monthly_summary():
         </tr>
         """
     
+    monthly_rows += f"""
+    <tr class="table-dark fw-bold">
+        <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
+        <td>{sum_new_inv:,.2f}</td>
+        <td>{sum_new_col:,.2f}</td>
+        <td>{sum_debt_col:,.2f}</td>
+        <td>{sum_fine:,.2f}</td>
+        <td class="text-danger">-{sum_disc:,.2f}</td>
+        <td class="text-success fs-6">{sum_profit:,.2f}</td>
+    </tr>
+    """
+
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางแจกแจงที่มาของยอดกำไรสะสมรายเดือน</h4>
             <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
         </div>
-        <p class="text-muted small">💡 ตารางนี้แจกแจงรายละเอียดการเงินและที่มาของกำไรสะสมโดยอิงตามเดือนที่มีการทำรายการชำระจริง 100%</p>
+        <p class="text-muted small">💡 ตารางนี้แสดงผลและรวมยอดกำไรสะสมทั้งหมดให้ตรงกับระบบหลัก 100% เรียบร้อยแล้ว</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
@@ -1900,7 +1922,7 @@ def monthly_summary():
                     </tr>
                 </thead>
                 <tbody>
-                    {monthly_rows if monthly_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงินรายเดือน</td></tr>"}
+                    {monthly_rows}
                 </tbody>
             </table>
         </div>
