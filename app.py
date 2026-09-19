@@ -471,9 +471,8 @@ def index():
 
     for item in profit_items:
         if item['total_item_profit'] > 0:
-            is_exception = any(kw.lower() in item['customer_name'].lower() for kw in krungsri_keywords)
-            # เฉพาะรายชื่อที่สั่งไปอยู่กรุงศรีฯ นอกเหนือจากนั้นวิ่งไปรวมที่ "ออมสิน" ทั้งหมดตามคำสั่งใหม่
-            target_acc = 'กรุงศรีอยุธยา' if is_exception else 'ออมสิน'
+            is_krungsri = any(kw.lower() in item['customer_name'].lower() for kw in krungsri_keywords)
+            target_acc = 'กรุงศรีอยุธยา' if is_krungsri else 'ออมสิน'
             
             bank_details_data[target_acc]['inflows'].append({
                 'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
@@ -620,7 +619,7 @@ def index():
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
-            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
+            <td><a href="/history/{tx.id}" target="_blank" class="text-primary fw-bold text-decoration-none" title="คลิกเพื่อดูประวัติการจ่าย">📜 {tx.total_paid:,.2f}</a></td>
             <td>{tx.daily_interest:,.2f}</td>
             <td>{tx.days_passed}</td>
             <td>{tx.accumulated_interest:,.2f}</td>
@@ -654,7 +653,7 @@ def index():
                     <div class="col-6">⏱️ เวลา: {tx.days_passed}</div>
                     <div class="col-6">💰 เงินลงทุน: <b>{tx.original_principal:,.2f}</b></div>
                     <div class="col-6 text-danger">💼 ต้นคงค้าง: <b>{tx.principal:,.2f}</b></div>
-                    <div class="col-6 text-primary">💵 ชำระแล้ว: <b>{tx.total_paid:,.2f}</b></div>
+                    <div class="col-6 text-primary">💵 ชำระแล้ว: <a href="/history/{tx.id}" target="_blank" class="text-primary text-decoration-none"><b>📜 {tx.total_paid:,.2f}</b></a></div>
                     <div class="col-6">📈 ดอก/วัน: {tx.daily_interest:,.2f}</div>
                     <div class="col-12 text-danger fw-bold mt-1">🔥 ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท</div>
                 </div>
@@ -1506,13 +1505,12 @@ def customer_details(cust_name):
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
-            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
+            <td><a href="/history/{tx.id}" target="_blank" class="text-primary fw-bold text-decoration-none" title="คลิกเพื่อดูประวัติการจ่าย">📜 {tx.total_paid:,.2f}</a></td>
             <td>{tx.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
                 <div class="d-flex justify-content-center gap-1 align-items-center">
-                    <a href="/history/{tx.id}" class="btn btn-sm btn-outline-info fw-bold px-2 py-0" target="_blank" title="ดูประวัติการจ่าย" style="font-size: 1.1rem;">📜</a>
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
