@@ -1125,24 +1125,24 @@ def monthly_details(ym, category):
     except:
         return redirect(url_for('monthly_summary'))
 
-    # ดึงข้อมูลจากฐานข้อมูลโดยตรงตามเดือนที่เริ่มต้น (start_date) หรือเดือนที่มีประวัติชำระ/ปิดยอด
     if category == 'new_inv':
         txs = Transaction.query.filter(
             db.extract('year', Transaction.start_date) == year_i,
-            db.extract('month', Transaction.start_date) == month_i
+            db.extract('month', Transaction.start_date) == month_i,
+            Transaction.type != 'ยอดค้างเก่า'
         ).all()
-        title_str = f"ทุนที่ลูกค้ากู้ ประจำเดือน {ym}"
+        title_str = f"ทุนที่ลูกค้าใหม่กู้ ประจำเดือน {ym}"
     elif category == 'new_col':
         txs = Transaction.query.filter(
-            db.extract('year', Transaction.closed_date) == year_i,
-            db.extract('month', Transaction.closed_date) == month_i,
+            db.extract('year', Transaction.start_date) == year_i,
+            db.extract('month', Transaction.start_date) == month_i,
             Transaction.type != 'ยอดค้างเก่า'
         ).all()
         title_str = f"ยอดเก็บจากลูกค้าใหม่ ประจำเดือน {ym}"
     elif category == 'debt_col':
         txs = Transaction.query.filter(
-            db.extract('year', Transaction.closed_date) == year_i,
-            db.extract('month', Transaction.closed_date) == month_i,
+            db.extract('year', Transaction.start_date) == year_i,
+            db.extract('month', Transaction.start_date) == month_i,
             Transaction.type == 'ยอดค้างเก่า'
         ).all()
         title_str = f"ยอดเก็บจากลูกค้าเก่า (ยอดค้างเก่า) ประจำเดือน {ym}"
@@ -1156,8 +1156,8 @@ def monthly_details(ym, category):
         title_str = f"รายการ{'ค่าปรับ' if category == 'fine' else 'ส่วนลด'} ประจำเดือน {ym}"
     else: # profit
         txs = Transaction.query.filter(
-            db.extract('year', Transaction.closed_date) == year_i,
-            db.extract('month', Transaction.closed_date) == month_i
+            db.extract('year', Transaction.start_date) == year_i,
+            db.extract('month', Transaction.start_date) == month_i
         ).all()
         title_str = f"กำไรสะสม ประจำเดือน {ym}"
 
@@ -1846,34 +1846,30 @@ def monthly_summary():
     
     all_txs = Transaction.query.all()
     for tx in all_txs:
-        # 1. จัดกลุ่มทุนที่ลูกค้ากู้ตามเดือนที่เริ่มต้น (start_date)
-        if tx.start_date:
-            ym_start = tx.start_date.strftime('%Y-%m')
+        # อิงตามเกณฑ์ Dashboard: จัดกลุ่มตามเดือนที่เริ่มต้น (start_date)
+        ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
+        
+        monthly_data[ym_start]['count_tx'].add(tx.id)
+        
+        if tx.type != 'ยอดค้างเก่า':
             monthly_data[ym_start]['new_investment'] += tx.original_principal
+            # สมมติฐานยอดเก็บใหม่และกำไรตาม Dashboard
+            hist_interest = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
+            net_earned = max(tx.paid_interest, hist_interest)
+            monthly_data[ym_start]['new_collected'] += tx.original_principal
+            monthly_data[ym_start]['month_profit'] += net_earned
+        else:
+            debt_earned = max(0.0, tx.original_principal - tx.principal)
+            monthly_data[ym_start]['debt_collected'] += debt_earned
+            monthly_data[ym_start]['month_profit'] += debt_earned
 
-        # 2. จัดกลุ่มยอดเก็บ/กำไรตามเดือนที่ปิดยอดหรือชำระ (closed_date หรือ last_payment_date)
-        pay_month_date = tx.closed_date if tx.closed_date else tx.last_payment_date
-        if pay_month_date:
-            ym_pay = pay_month_date.strftime('%Y-%m')
-            monthly_data[ym_pay]['count_tx'].add(tx.id)
-
-            # คำนวณยอดเก็บและกำไรจริงจากข้อมูลบิล
-            collected = tx.original_principal - tx.principal if tx.type == 'ยอดค้างเก่า' else tx.original_principal
-            if tx.type == 'ยอดค้างเก่า':
-                monthly_data[ym_pay]['debt_collected'] += max(0.0, collected)
-                monthly_data[ym_pay]['month_profit'] += max(0.0, collected)
-            else:
-                monthly_data[ym_pay]['new_collected'] += tx.original_principal
-                profit_val = (tx.original_principal - tx.principal) + tx.paid_interest
-                monthly_data[ym_pay]['month_profit'] += max(0.0, profit_val)
-
-        # ดึงค่าปรับและส่วนลดจากประวัติหรือค่ารวม
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
                     monthly_data[ym_h]['total_fine'] += h.fine_amount
                     monthly_data[ym_h]['total_discount'] += h.discount_amount
+                    monthly_data[ym_h]['month_profit'] += (h.fine_amount - h.discount_amount)
 
     monthly_rows = ""
     sum_new_inv = 0.0
@@ -1919,9 +1915,9 @@ def monthly_summary():
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไรตามเดือนที่ชำระจริง (คลิกตัวเลขเพื่อดูที่มาได้ทุกช่อง)</h4>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไร (ลิงก์ตรงกับหน้า Dashboard 100%)</h4>
         </div>
-        <p class="text-muted small">💡 แสดงยอดเงินและกำไรตามประวัติการชำระเงินจริง สามารถคลิกที่ตัวเลขในแต่ละช่องเพื่อตรวจสอบรายชื่อบิลเบื้องหลังได้ทันที</p>
+        <p class="text-muted small">💡 อิงผลรวมและตัวเลขตามเกณฑ์หน้า Dashboard สามารถคลิกที่ตัวเลขเพื่อตรวจสอบรายละเอียดได้</p>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
