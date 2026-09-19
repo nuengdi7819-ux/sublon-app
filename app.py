@@ -376,16 +376,6 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    total_debt_earned = sum(max(0.0, tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
-    total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
-    total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
-    effective_interest = max(total_history_interest, total_paid_interest_col)
-    total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
-    total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
-    
-    # คำนวณจากฐานข้อมูลจริงทุกประการ (รวมผลกำไรจริงทุกบรรทัด)
-    total_profit = effective_interest + total_debt_earned + total_fine - total_discount
-
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
     today_new_count = len(today_new_txs)
 
@@ -479,7 +469,6 @@ def index():
         </tr>
         """
     
-    # ใช้ผลรวมจากการบวกบรรทัดจริงใน Modal รายละเอียด 100%
     sum_modal_actual_profit = sum(item['total_item_profit'] for item in profit_items)
     
     profit_card_rows += f"""
@@ -1867,6 +1856,21 @@ def customer_debt():
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
+    all_txs_ever = Transaction.query.all()
+    sum_modal_actual_profit = 0.0
+    for tx in all_txs_ever:
+        if tx.type == 'ยอดค้างเก่า':
+            net_earned = max(0.0, (tx.original_principal - tx.principal))
+        else:
+            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
+            net_earned = max(tx.paid_interest, hist_sum)
+            
+        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
+        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
+        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+            sum_modal_actual_profit += total_item_profit
+
     monthly_data = defaultdict(lambda: {
         'count_tx': set(), 
         'new_investment': 0.0, 
@@ -1877,14 +1881,12 @@ def monthly_summary():
         'month_profit': 0.0
     })
     
-    all_txs = Transaction.query.all()
-    for tx in all_txs:
+    for tx in all_txs_ever:
         ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
         monthly_data[ym_start]['count_tx'].add(tx.id)
         
         if tx.type != 'ยอดค้างเก่า':
             monthly_data[ym_start]['new_investment'] += tx.original_principal
-            
             hist_interest = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
             net_earned = max(tx.paid_interest, hist_interest)
             monthly_data[ym_start]['new_collected'] += net_earned
@@ -1931,7 +1933,6 @@ def monthly_summary():
         </tr>
         """
     
-    # อ้างอิงผลรวมกำไรสะสมทั้งหมดจากผลบวกบรรทัดจริงใน Modal (57,470.78 บาท) ให้ตรงกัน 100%
     monthly_rows += f"""
     <tr class="table-dark fw-bold">
         <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
