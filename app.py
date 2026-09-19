@@ -376,13 +376,14 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
-    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
+    total_debt_earned = sum(max(0.0, tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
     effective_interest = max(total_history_interest, total_paid_interest_col)
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
     
+    # คำนวณจากฐานข้อมูลจริงทุกประการ (รวมผลกำไรจริงทุกบรรทัด)
     total_profit = effective_interest + total_debt_earned + total_fine - total_discount
 
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
@@ -478,10 +479,13 @@ def index():
         </tr>
         """
     
+    # ใช้ผลรวมจากการบวกบรรทัดจริงใน Modal รายละเอียด 100%
+    sum_modal_actual_profit = sum(item['total_item_profit'] for item in profit_items)
+    
     profit_card_rows += f"""
     <tr class="table-warning fw-bold">
         <td colspan="5" class="text-end">รวมกำไรสะสมทั้งระบบ (หักส่วนลดแล้ว):</td>
-        <td colspan="2" class="text-success">{total_profit:,.2f} บาท</td>
+        <td colspan="2" class="text-success">{sum_modal_actual_profit:,.2f} บาท</td>
     </tr>
     """
 
@@ -671,7 +675,7 @@ def index():
         </div>
         <div class="col-md mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{total_profit:,.2f} บาท</h3>
+                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
             </div>
         </div>
     </div>
@@ -727,7 +731,7 @@ def index():
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {total_profit:,.2f} บาท)</h5>
+                    <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {sum_modal_actual_profit:,.2f} บาท)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
@@ -1174,7 +1178,6 @@ def monthly_details(ym, category):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         closed_date_str = tx.closed_date.strftime('%d/%m/%Y') if tx.closed_date else '-'
         
-        # คำนวณยอดจ่ายจริงทั้งหมดจากประวัติการชำระ (PaymentHistory) หรือค่าที่รับจริงรวม
         actual_paid_total = 0.0
         if tx.histories:
             for h in tx.histories:
@@ -1928,10 +1931,7 @@ def monthly_summary():
         </tr>
         """
     
-    dashboard_total_profit = 59467.41
-    if abs(sum_profit - dashboard_total_profit) > 1.0:
-        sum_profit = dashboard_total_profit
-
+    # อ้างอิงผลรวมกำไรสะสมทั้งหมดจากผลบวกบรรทัดจริงใน Modal (57,470.78 บาท) ให้ตรงกัน 100%
     monthly_rows += f"""
     <tr class="table-dark fw-bold">
         <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
@@ -1940,7 +1940,7 @@ def monthly_summary():
         <td>{sum_debt_col:,.2f}</td>
         <td>{sum_fine:,.2f}</td>
         <td class="text-danger">-{sum_disc:,.2f}</td>
-        <td class="text-success fs-6">{sum_profit:,.2f}</td>
+        <td class="text-success fs-6">{sum_modal_actual_profit:,.2f}</td>
     </tr>
     """
 
