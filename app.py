@@ -314,7 +314,6 @@ def index():
             )
             db.session.add(new_tx)
 
-            # หักยอดออกจากกระเป๋าธนาคารจริงอัตโนมัติเมื่อปล่อยกู้
             if p_val > 0:
                 db.session.add(BankExpenseLog(
                     expense_date=parsed_date,
@@ -407,7 +406,6 @@ def index():
     unique_customers = sorted(list(set(t.customer_name for t in all_txs_ever if t.customer_name)))
     datalist_options = "".join([f'<option value="{name}">' for name in unique_customers])
 
-    # คำนวณยอดลงทุนแยกตามแหล่งทุน
     inv_by_source = defaultdict(float)
     total_new_investment = 0.0
     for tx in all_txs_ever:
@@ -440,7 +438,95 @@ def index():
     for acc_name in account_balances.keys():
         account_balances[acc_name] = adj_dict.get(acc_name, 0.0)
 
+    bank_details_data = {acc: {'inflows': [], 'outflows': []} for acc in account_balances.keys()}
+
+    all_histories = PaymentHistory.query.all()
+    for h in all_histories:
+        acc = h.receiving_account or 'กรุงศรีอยุธยา'
+        if acc in bank_details_data:
+            tx_ref = h.transaction
+            cust_name = tx_ref.customer_name if tx_ref else "ไม่ระบุชื่อ"
+            amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+            if amt > 0:
+                bank_details_data[acc]['inflows'].append({
+                    'date': h.payment_date.strftime('%d/%m/%Y'),
+                    'customer': cust_name,
+                    'amount': amt,
+                    'note': h.note or 'รับชำระเงิน'
+                })
+
+    for tx in all_txs_ever:
+        if tx.type != 'ยอดค้างเก่า' and tx.original_principal > 0:
+            acc = tx.funding_source or 'กรุงศรีอยุธยา'
+            if acc in bank_details_data:
+                bank_details_data[acc]['outflows'].append({
+                    'date': tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-',
+                    'target': f"ปล่อยกู้ใหม่: {tx.customer_name}",
+                    'amount': tx.original_principal,
+                    'note': f"ทุนกู้ {tx.type}"
+                })
+
     expense_logs = BankExpenseLog.query.order_by(BankExpenseLog.expense_date.desc(), BankExpenseLog.id.desc()).all()
+    for e in expense_logs:
+        acc = e.account_name
+        if acc in bank_details_data:
+            bank_details_data[acc]['outflows'].append({
+                'date': e.expense_date.strftime('%d/%m/%Y'),
+                'target': f"ถอนเงินออก: {e.note or 'ค่าใช้จ่าย'}",
+                'amount': e.amount,
+                'note': f"ผู้ทำรายการ: {e.admin_name or '-'}"
+            })
+
+    bank_modals_html = ""
+    bank_config = [
+        ('กรุงศรีอยุธยา', '🟡 กรุงศรีอยุธยา (803-931-9819)', 'modalKrungsri', 'warning'),
+        ('ออมสิน', '🩷 ออมสิน (020-409-437-819)', 'modalGSB', 'danger'),
+        ('วอลเล็ท', '🟠 TrueMoney Wallet (092-923-7819)', 'modalWallet', 'info')
+    ]
+
+    for acc_key, acc_title, modal_id, theme_color in bank_config:
+        inflows = bank_details_data[acc_key]['inflows']
+        outflows = bank_details_data[acc_key]['outflows']
+
+        inflow_rows = "".join([f"<tr><td>{item['date']}</td><td><a href='/customer_details/{item['customer']}' class='fw-bold text-dark text-decoration-none'>{item['customer']}</a></td><td class='text-success fw-bold'>+{item['amount']:,.2f}</td><td>{item['note']}</td></tr>" for item in inflows])
+        outflow_rows = "".join([f"<tr><td>{item['date']}</td><td>{item['target']}</td><td class='text-danger fw-bold'>-{item['amount']:,.2f}</td><td>{item['note']}</td></tr>" for item in outflows])
+
+        bank_modals_html += f"""
+        <div class="modal fade" id="{modal_id}" tabindex="-1">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-{theme_color}">
+                    <div class="modal-header bg-{theme_color} text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">📊 รายละเอียดความเคลื่อนไหว: {acc_title}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                        <div class="mb-4">
+                            <h6 class="text-success fw-bold border-bottom pb-2">📥 เงินเข้า (มาจากลูกค้าโอนชำระยอด)</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped align-middle text-nowrap">
+                                    <thead class="table-dark"><tr><th>วันที่</th><th>ชื่อลูกค้า</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
+                                    <tbody>{inflow_rows if inflow_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีรายการเงินเข้า</td></tr>"}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div>
+                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก (ใช้ปล่อยกู้ใหม่ หรือ ถอนออกไปจ่ายค่าใช้จ่าย)</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped align-middle text-nowrap">
+                                    <thead class="table-dark"><tr><th>วันที่</th><th>รายการ / ผู้รับ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
+                                    <tbody>{outflow_rows if outflow_rows else "<tr><td colspan='4' class='text-center text-muted'>ยังไม่มีรายการเงินออก</td></tr>"}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+
     expense_rows = "".join([f"<tr><td>{e.expense_date.strftime('%d/%m/%Y')}</td><td><span class='badge bg-warning text-dark'>{e.account_name}</span></td><td class='text-danger fw-bold'>-{e.amount:,.2f}</td><td>{e.note or '-'}</td><td><span class='badge bg-secondary'>{e.admin_name or '-'}</span></td><td><a href='/delete_expense/{e.id}' class='btn btn-sm btn-danger py-0 px-2' onclick=\"return confirm('ยืนยันลบประวัติการถอนนี้?')\">ลบ</a></td></tr>" for e in expense_logs])
 
     today_new_rows = ""
@@ -698,7 +784,7 @@ def index():
     <!-- 1. สถานะกระเป๋าเงินจริงในมือถือ -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
+            <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้น</button>
                 <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก (จ่ายพนักงาน/ค่าใช้จ่าย)</button>
@@ -706,24 +792,36 @@ def index():
         </div>
         <div class="row g-3">
             <div class="col-md-4">
-                <div class="p-3 rounded border border-warning bg-warning bg-opacity-15">
-                    <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา</h6>
-                    <small class="text-muted d-block mb-1">เลข: 803-931-9819</small>
-                    <h3 class="text-dark fw-bold mb-0">{account_balances['กรุงศรีอยุธยา']:,.2f} บาท</h3>
+                <div class="p-3 rounded border border-warning bg-warning bg-opacity-15 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalKrungsri" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา</h6>
+                            <small class="text-muted d-block mb-1">เลข: 803-931-9819</small>
+                            <h3 class="text-dark fw-bold mb-0">{account_balances['กรุงศรีอยุธยา']:,.2f} บาท</h3>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-3 rounded border border-danger bg-danger bg-opacity-10">
-                    <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน</h6>
-                    <small class="text-muted d-block mb-1">เลข: 020-409-437-819</small>
-                    <h3 class="text-danger fw-bold mb-0">{account_balances['ออมสิน']:,.2f} บาท</h3>
+                <div class="p-3 rounded border border-danger bg-danger bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalGSB" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน</h6>
+                            <small class="text-muted d-block mb-1">เลข: 020-409-437-819</small>
+                            <h3 class="text-danger fw-bold mb-0">{account_balances['ออมสิน']:,.2f} บาท</h3>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="p-3 rounded border border-info bg-info bg-opacity-10">
-                    <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet</h6>
-                    <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
-                    <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
+                <div class="p-3 rounded border border-info bg-info bg-opacity-10 shadow-sm" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#modalWallet" title="คลิกเพื่อดูรายละเอียดเงินเข้า-ออก">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet</h6>
+                            <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
+                            <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -731,7 +829,7 @@ def index():
         <!-- ประวัติการถอนเงินออกไปใช้จ่าย -->
         <div class="mt-3 pt-3 border-top">
             <button class="btn btn-outline-secondary btn-sm mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#expenseLogCollapse">
-                📜 ดูประวัติการถอนเงินออกไปจ่ายพนักงาน / ค่าใช้จ่าย (คลิกเพื่อเปิด/ปิด)
+                📜 ดูประวัติการถอนเงินออกไปจ่ายพนักงาน / ค่าใช้จ่ายทั้งหมด (คลิกเพื่อเปิด/ปิด)
             </button>
             <div class="collapse" id="expenseLogCollapse">
                 <div class="table-responsive bg-light p-2 rounded">
@@ -747,6 +845,8 @@ def index():
             </div>
         </div>
     </div>
+
+    {bank_modals_html}
 
     <!-- Modal ตั้งค่า/ปรับยอดเงินตั้งต้นในกระเป๋า -->
     <div class="modal fade" id="adjustBankModal" tabindex="-1">
@@ -897,7 +997,7 @@ def index():
             <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 text-white-50">💵 ยอดเก็บสดวันนี้ (คลิกเพื่อดู)</h6>
+                        <h6 class="mb-1 text-white-50">💵 ยอดเก็บสดวันนี้</h6>
                         <h3 class="fw-bold mb-0">{today_collected_cash:,.2f} บาท</h3>
                     </div>
                     <div class="fs-1 opacity-50">📥</div>
@@ -908,7 +1008,7 @@ def index():
             <div class="card p-3 shadow-sm text-white border-info" style="background: linear-gradient(135deg, #0dcaf0, #6610f2); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayActionsModal" title="คลิกเพื่อดูรายละเอียด">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 text-white-50">⚡ ธุรกรรมทั้งหมดวันนี้ (คลิกเพื่อดู)</h6>
+                        <h6 class="mb-1 text-white-50">⚡ ธุรกรรมทั้งหมดวันนี้</h6>
                         <h3 class="fw-bold mb-0">{total_today_actions} รายการ</h3>
                     </div>
                     <div class="fs-1 opacity-50">⚡</div>
@@ -1054,12 +1154,12 @@ def index():
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>📂 ยอดค้างเก่าคงเหลือ (คลิกเช็ก)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
+                <h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3>
             </div>
         </div>
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>💼 เงินต้นคงค้าง (คลิกเช็ก)</h5><h3>{total_new_principal:,.2f} บาท</h3>
+                <h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3>
             </div>
         </div>
     </div>
@@ -1114,12 +1214,12 @@ def index():
     <div class="row mb-4">
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#investmentSourceModal" title="คลิกเพื่อดูว่าลงทุนจากบัญชีไหนบ้าง">
-                <h5>🔱 เงินลงทุนใหม่ (คลิกดูแยกตามบัญชี)</h5><h3>{total_new_investment:,.2f} บาท</h3>
+                <h5>🔱 เงินลงทุนใหม่ (รวมทั้งหมด)</h5><h3>{total_new_investment:,.2f} บาท</h3>
             </div>
         </div>
         <div class="col-md-6 mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                <h5>💰 กำไรสะสมทั้งหมด (คลิกเช็ก)</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
+                <h5>💰 กำไรสะสมทั้งหมด</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
             </div>
         </div>
     </div>
@@ -1162,7 +1262,7 @@ def index():
             <div class="modal-content border-success">
                 <div class="modal-header bg-success text-white py-2">
                     <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {sum_modal_actual_profit:,.2f} บาท)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                     <div class="table-responsive">
@@ -1914,7 +2014,14 @@ def sales_members():
     for tx in Transaction.query.filter(Transaction.principal > 0).all():
         calculate_tx_values(tx)
         sales_data[tx.sales_name].append(tx)
-    sales_content = "".join([f"<div class='card mb-4 shadow-sm border-warning'><div class='card-header bg-danger text-white'><h5 class='mb-0 fs-6'>เซลล์: {sales}</h5></div><div class='card-body'><table class='table table-striped text-nowrap'><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th></tr></thead><tbody>{''.join([f'<tr><td><a href=\"/customer_details/{t.customer_name}\">{t.customer_name}</a></td><td>{t.phone or \"-\"}</td><td>{t.funding_source}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td></tr>' for t in txs])}</tbody></table></div></div>" for sales, txs in sales_data.items()])
+    
+    sales_content = ""
+    for sales, txs in sales_data.items():
+        table_rows = ""
+        for t in txs:
+            table_rows += f"<tr><td><a href='/customer_details/{t.customer_name}'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.funding_source}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td></tr>"
+        sales_content += f"<div class='card mb-4 shadow-sm border-warning'><div class='card-header bg-danger text-white'><h5 class='mb-0 fs-6'>เซลล์: {sales}</h5></div><div class='card-body'><table class='table table-striped text-nowrap'><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th></tr></thead><tbody>{table_rows}</tbody></table></div></div>"
+
     html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted">ยังไม่มีข้อมูล</p>')
     return render_template_string(html, title="สมาชิกภายใต้เซลล์", page="sales")
 
