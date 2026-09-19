@@ -1777,13 +1777,12 @@ def customer_debt():
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
 
 @app.route('/monthly_summary')
-@app.route('/monthly_summary')
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. บันทึกยอดตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่เริ่มต้นสัญญาเดิม
+    # 1. บันทึกยอดตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่เริ่มต้นสัญญา
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1793,23 +1792,42 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. ประมวลผลยอดเก็บและกำไร โดยคิดตาม "วันที่จ่าย / วันที่ปิดยอดจริง (Payment Date)" ในประวัติเท่านั้น
+    # 2. ประมวลผลยอดเก็บ (เฉพาะดอกเบี้ย + ค่าปรับ) และกำไรสุทธิให้สอดคล้องกับ Dashboard 100%
     all_txs = Transaction.query.all()
     for tx in all_txs:
+        # คำนวณกำไรแยกตามรายบิลเพื่อให้ตรงกับยอดสะสมทั้งหมด
+        if tx.type == 'ยอดค้างเก่า':
+            tx_net_profit = max(0.0, (tx.original_principal - tx.principal))
+        else:
+            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
+            tx_net_profit = max(tx.paid_interest, hist_sum)
+            
+        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
+        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+        total_tx_profit = tx_net_profit + tx_fine_sum - tx_discount_sum
+
+        # นำกำไรของบิลนี้ไปลงในเดือนที่มีการเคลื่อนไหวล่าสุด (หรือเดือนที่เริ่มต้น)
+        latest_date = tx.start_date
+        if tx.histories:
+            max_h_date = max(h.payment_date for h in tx.histories)
+            if max_h_date > latest_date: latest_date = max_h_date
+        if tx.last_payment_date and tx.last_payment_date > latest_date:
+            latest_date = tx.last_payment_date
+            
+        if latest_date:
+            ym_p = latest_date.strftime('%Y-%m')
+            monthly_data[ym_p]['profit'] += total_tx_profit
+
+        # ประมวลผลยอดเก็บเงินสด (เฉพาะดอกเบี้ย + ค่าปรับ) ตามประวัติการชำระจริง
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
-                    
-                    # กำไรเกิดขึ้นเฉพาะในเดือนที่มีการจ่ายจริง
-                    h_profit = h.interest_paid + h.fine_amount - h.discount_amount
-                    monthly_data[ym_h]['profit'] += h_profit
-                    
-                    pay_val = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
+                    revenue_collected = h.interest_paid + h.fine_amount
                     if tx.type == 'ยอดค้างเก่า':
-                        monthly_data[ym_h]['debt_paid'] += pay_val
+                        monthly_data[ym_h]['debt_paid'] += revenue_collected
                     else:
-                        monthly_data[ym_h]['new_paid'] += pay_val
+                        monthly_data[ym_h]['new_paid'] += revenue_collected
 
     monthly_rows = "".join([
         f"<tr>"
@@ -1831,7 +1849,7 @@ def monthly_summary():
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th>เดือน</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บใหม่ได้</th><th>ค้างเก่าตั้งต้น</th><th>เก็บค้างเก่าได้</th><th>กำไรสะสม (หักส่วนลดแล้ว)</th></tr>
+                    <tr><th>เดือน</th><th>รายการ</th><th>ทุนใหม่</th><th>เก็บดอก/ปรับ (ใหม่)</th><th>ค้างเก่าตั้งต้น</th><th>เก็บดอก/ปรับ (ค้างเก่า)</th><th>กำไรสะสม (หักส่วนลดแล้ว)</th></tr>
                 </thead>
                 <tbody>{monthly_rows if monthly_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีข้อมูลผลประกอบการรายเดือน</td></tr>"}</tbody>
             </table>
