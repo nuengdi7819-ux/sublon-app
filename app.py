@@ -601,6 +601,8 @@ def index():
 
     profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
     sum_modal_actual_profit = sum(item['total_item_profit'] for item in profit_items)
+    
+    profit_card_rows = "".join([f"<tr><td><a href='/customer_details/{item['customer_name']}' class='text-dark fw-bold text-decoration-none'>{item['customer_name']}</a></td><td><span class='badge bg-secondary'>{item['type']}</span></td><td>{item['net_earned']:,.2f}</td><td>{item['fine_amount']:,.2f}</td><td class='text-danger'>-{item['discount_amount']:,.2f}</td><td class='text-success fw-bold'>{item['total_item_profit']:,.2f}</td><td>{item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-'}</td></tr>" for item in profit_items])
 
     rows, cards, modals_html = "", "", ""
     for tx in transactions:
@@ -774,7 +776,7 @@ def index():
         table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
         view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
     elif search_query:
-        table_title = f"📋 ผลการค้นหา: \"{search_query}\""
+        table_title = f'📋 ผลการค้นหา: "{search_query}"'
         view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
     else:
         table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
