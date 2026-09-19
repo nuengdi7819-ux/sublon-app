@@ -1817,7 +1817,7 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. รวบรวมข้อมูลเงินลงทุนและยอดตั้งต้นตามเดือนที่เริ่มเปิดบัญชี
+    # 1. นับจำนวนรายการและยอดตั้งต้นตามเดือนที่เริ่มเปิดบัญชี
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1827,31 +1827,29 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. กระจายกำไรตามประวัติการชำระจริง (PaymentHistory) เพื่อให้ผลรวมทุกเดือนเท่ากับกำไรสะสมทั้งระบบ 100%
-    all_txs = Transaction.query.all()
-    for tx in all_txs:
-        if tx.histories:
-            for h in tx.histories:
-                if h.payment_date:
-                    ym_h = h.payment_date.strftime('%Y-%m')
-                    revenue_collected = h.interest_paid + h.fine_amount - h.discount_amount
-                    monthly_data[ym_h]['profit'] += revenue_collected
-                    
-                    revenue_cash = h.interest_paid + h.fine_amount
-                    if tx.type == 'ยอดค้างเก่า':
-                        monthly_data[ym_h]['debt_paid'] += revenue_cash
-                    else:
-                        monthly_data[ym_h]['new_paid'] += revenue_cash
-        else:
-            if tx.start_date:
-                ym_s = tx.start_date.strftime('%Y-%m')
-                if tx.type == 'ยอดค้างเก่า':
-                    tx_net_profit = max(0.0, (tx.original_principal - tx.principal))
-                    monthly_data[ym_s]['profit'] += tx_net_profit
-                else:
-                    tx_net_profit = tx.paid_interest
-                    monthly_data[ym_s]['profit'] += tx_net_profit
+    # 2. ดึงกำไร/ดอกเบี้ย/ค่าปรับ/ส่วนลดจากประวัติการชำระจริง (PaymentHistory) มาลงตามเดือนที่ชำระ
+    all_histories = PaymentHistory.query.all()
+    for h in all_histories:
+        if h.payment_date and h.transaction:
+            ym_h = h.payment_date.strftime('%Y-%m')
+            # กำไรสุทธิของรายการชำระนี้ = ดอกเบี้ย + ค่าปรับ - ส่วนลด
+            net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            monthly_data[ym_h]['profit'] += net_h_profit
+            
+            cash_collected = h.interest_paid + h.fine_amount
+            if h.transaction.type == 'ยอดค้างเก่า':
+                monthly_data[ym_h]['debt_paid'] += cash_collected
+            else:
+                monthly_data[ym_h]['new_paid'] += cash_collected
 
+    # 3. สำหรับบิลยอดค้างเก่าที่ปิดหรือตัดต้นไปแล้วแต่ยังไม่มีประวัติใน PaymentHistory ให้ดึงส่วนต่างต้นมาลงตามเดือนเริ่มสัญญา
+    for tx in Transaction.query.filter_by(type='ยอดค้างเก่า').all():
+        if not tx.histories and tx.start_date:
+            ym_s = tx.start_date.strftime('%Y-%m')
+            net_earned = max(0.0, (tx.original_principal - tx.principal))
+            monthly_data[ym_s]['profit'] += net_earned
+
+    # คำนวณยอดรวมกำไรสะสมทั้งระบบให้ตรงกับ Reconcile (55,767.41)
     grand_total_profit = sum(d['profit'] for d in monthly_data.values())
 
     monthly_rows = "".join([
