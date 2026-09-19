@@ -87,7 +87,6 @@ BASE_LAYOUT = """
 
         .btn-warning { background-color: #d4af37; border-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .btn-warning:hover { background-color: #b38f27; border-color: #b38f27; color: #fff; }
-
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
@@ -377,11 +376,11 @@ def index():
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     
+    # --- สูตรคำนวณกำไรสะสมกลางระบบ (เทียบเท่าชีต Reconcile ตรงเป๊ะ) ---
+    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
     effective_interest = max(total_history_interest, total_paid_interest_col)
-
-    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
     total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
     total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
     
@@ -1817,7 +1816,6 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. นับจำนวนรายการและยอดตั้งต้นตามเดือนที่เริ่มเปิดบัญชี
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1827,12 +1825,9 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. ดึงกำไร/ดอกเบี้ย/ค่าปรับ/ส่วนลดจากประวัติการชำระจริง (PaymentHistory) มาลงตามเดือนที่ชำระ
-    all_histories = PaymentHistory.query.all()
-    for h in all_histories:
+    for h in PaymentHistory.query.all():
         if h.payment_date and h.transaction:
             ym_h = h.payment_date.strftime('%Y-%m')
-            # กำไรสุทธิของรายการชำระนี้ = ดอกเบี้ย + ค่าปรับ - ส่วนลด
             net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym_h]['profit'] += net_h_profit
             
@@ -1842,15 +1837,23 @@ def monthly_summary():
             else:
                 monthly_data[ym_h]['new_paid'] += cash_collected
 
-    # 3. สำหรับบิลยอดค้างเก่าที่ปิดหรือตัดต้นไปแล้วแต่ยังไม่มีประวัติใน PaymentHistory ให้ดึงส่วนต่างต้นมาลงตามเดือนเริ่มสัญญา
     for tx in Transaction.query.filter_by(type='ยอดค้างเก่า').all():
         if not tx.histories and tx.start_date:
             ym_s = tx.start_date.strftime('%Y-%m')
             net_earned = max(0.0, (tx.original_principal - tx.principal))
             monthly_data[ym_s]['profit'] += net_earned
 
-    # คำนวณยอดรวมกำไรสะสมทั้งระบบให้ตรงกับ Reconcile (55,767.41)
-    grand_total_profit = sum(d['profit'] for d in monthly_data.values())
+    # ดึงสูตรกลางตัวเดียวกับ Dashboard เพื่อให้ยอดตรงกัน 55,767.41 บาท
+    all_txs_ever = Transaction.query.all()
+    total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
+    total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
+    effective_interest = max(total_history_interest, total_paid_interest_col)
+
+    total_debt_earned = sum((tx.original_principal - tx.principal) for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
+    total_fine = db.session.query(db.func.sum(PaymentHistory.fine_amount)).scalar() or 0.0
+    total_discount = db.session.query(db.func.sum(PaymentHistory.discount_amount)).scalar() or 0.0
+    
+    grand_total_profit = effective_interest + total_debt_earned + total_fine - total_discount
 
     monthly_rows = "".join([
         f"<tr>"
