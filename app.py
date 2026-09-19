@@ -46,6 +46,8 @@ class Transaction(db.Model):
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
+    # เพิ่มฟิลด์เก็บว่าใช้บัญชีไหนปล่อยกู้ / ดึงมาจากกำไรไหม
+    funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา') # กรุงศรีอยุธยา, ออมสิน, วอลเล็ท, กำไรสะสม
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -59,6 +61,7 @@ class PaymentHistory(db.Model):
     principal_reduced = db.Column(db.Float, default=0.0)
     note = db.Column(db.String(255), nullable=True)
     admin_name = db.Column(db.String(100), nullable=True)
+    receiving_account = db.Column(db.String(50), default='กรุงศรีอยุธยา') # ลูกค้าโอนเข้าบัญชีไหน
 
     transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
 
@@ -279,6 +282,7 @@ def index():
             current_sales = session.get('admin', 'unknown')
             d_interest = float(request.form.get('daily_interest', 0))
             tx_type = request.form.get('type')
+            funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
@@ -291,7 +295,8 @@ def index():
                 type=tx_type, customer_name=request.form.get('customer_name'), phone=request.form.get('phone'),
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
-                schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ'
+                schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
+                funding_source=funding_source
             )
             db.session.add(new_tx)
             db.session.commit()
@@ -385,6 +390,28 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
+    # คำนวณยอดแยกตาม 3 บัญชีจริง เพื่อให้ตรงกับแอปในมือถือ
+    # หลักการ: ยอดเงินในบัญชี = (เงินลงทุนที่ออกทางบัญชีนั้น) + (ยอดรับชำระที่เข้าบัญชีนั้น)
+    account_balances = {
+        'กรุงศรีอยุธยา': 0.0,
+        'ออมสิน': 0.0,
+        'วอลเล็ท': 0.0,
+        'กำไรสะสม (Reinvest)': 0.0
+    }
+
+    for tx in all_txs_ever:
+        src = tx.funding_source if tx.funding_source else 'กรุงศรีอยุธยา'
+        if src in account_balances:
+            account_balances[src] -= tx.original_principal
+        elif src == 'กำไรสะสม':
+            account_balances['กำไรสะสม (Reinvest)'] += tx.original_principal
+
+    for h in PaymentHistory.query.all():
+        acc = h.receiving_account if h.receiving_account else 'กรุงศรีอยุธยา'
+        p_amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+        if acc in account_balances:
+            account_balances[acc] += p_amt
+
     today_new_rows = ""
     for tx in today_new_txs:
         today_new_rows += f"""
@@ -393,6 +420,7 @@ def index():
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td>{tx.phone or '-'}</td>
             <td class="text-primary fw-bold">{tx.original_principal:,.2f}</td>
+            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td><span class="badge bg-danger">{tx.sales_name}</span></td>
         </tr>
         """
@@ -408,7 +436,8 @@ def index():
         <tr>
             <td><a href="/customer_details/{cust_display}" class="text-dark fw-bold text-decoration-none">{cust_display}</a></td>
             <td class="text-success fw-bold">{display_pay:,.2f}</td>
-            <td class="text-danger">{h.fine_amount:,.2f}</td>
+            <td><span class="badge bg-info text-dark">{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td>
+            <td>{h.fine_amount:,.2f}</td>
             <td>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
             <td>{h.principal_reduced:,.2f}</td>
@@ -504,6 +533,7 @@ def index():
             </td>
             <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}</td>
+            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str_fmt}</td>
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -531,6 +561,7 @@ def index():
                             👤 <a href="/customer_details/{tx.customer_name}" class="text-danger text-decoration-none">{tx.customer_name}</a>{count_badge}
                         </h6>
                         <span class="badge bg-secondary">{tx.type}</span> {schedule_badge}
+                        <span class="badge bg-warning text-dark">บัญชีปล่อย: {tx.funding_source or 'กรุงศรีอยุธยา'}</span>
                         <span class="badge {badge_color}">{tx.status}</span>
                     </div>
                     <div class="text-end"><small class="text-muted">โทร: {tx.phone or '-'}</small></div>
@@ -573,6 +604,16 @@ def index():
                             <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
+                            </div>
+
+                            <!-- เลือกบัญชีที่ลูกค้าโอนเงินเข้า -->
+                            <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
+                                <select name="receiving_account" class="form-select form-select-sm border-success">
+                                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                                </select>
                             </div>
 
                             <div class="p-2 mb-2 rounded border border-primary bg-primary bg-opacity-10">
@@ -646,6 +687,34 @@ def index():
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
     content = f"""
+    <!-- แผงแสดงยอดเงินคงเหลือแยกตามบัญชีจริงและวอลเล็ท -->
+    <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
+        <h5 class="text-danger fw-bold mb-3">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="p-3 rounded border border-warning bg-warning bg-opacity-15">
+                    <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา</h6>
+                    <small class="text-muted d-block mb-1">เลข: 803-931-9819</small>
+                    <h3 class="text-dark fw-bold mb-0">{account_balances['กรุงศรีอยุธยา']:,.2f} บาท</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded border border-danger bg-danger bg-opacity-10">
+                    <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน</h6>
+                    <small class="text-muted d-block mb-1">เลข: 020-409-437-819</small>
+                    <h3 class="text-danger fw-bold mb-0">{account_balances['ออมสิน']:,.2f} บาท</h3>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="p-3 rounded border border-info bg-info bg-opacity-10">
+                    <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet</h6>
+                    <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
+                    <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row mb-4">
         <div class="col-md mb-3">
             <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
@@ -778,6 +847,7 @@ def index():
                                 <tr>
                                     <th>ชื่อลูกค้า</th>
                                     <th>ยอดจ่ายจริง</th>
+                                    <th>เข้าบัญชี</th>
                                     <th>ค่าปรับ</th>
                                     <th>ส่วนลด</th>
                                     <th>ตัดดอกเบี้ย</th>
@@ -787,7 +857,7 @@ def index():
                                 </tr>
                             </thead>
                             <tbody>
-                                {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการเก็บเงินในวันนี้</td></tr>"}
+                                {today_history_rows if today_history_rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีการเก็บเงินในวันนี้</td></tr>"}
                             </tbody>
                         </table>
                     </div>
@@ -813,10 +883,10 @@ def index():
                         <div class="table-responsive">
                             <table class="table table-sm table-striped align-middle text-nowrap">
                                 <thead class="table-dark">
-                                    <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>ยอดลงทุน</th><th>เซลล์ผู้ดูแล</th></tr>
+                                    <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>ยอดลงทุน</th><th>บัญชีที่ใช้ปล่อย</th><th>เซลล์ผู้ดูแล</th></tr>
                                 </thead>
                                 <tbody>
-                                    {today_new_rows if today_new_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีการเพิ่มเงินลงทุนใหม่ในวันนี้</td></tr>"}
+                                    {today_new_rows if today_new_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีการเพิ่มเงินลงทุนใหม่ในวันนี้</td></tr>"}
                                 </tbody>
                             </table>
                         </div>
@@ -830,6 +900,7 @@ def index():
                                     <tr>
                                         <th>ชื่อลูกค้า</th>
                                         <th>ยอดจ่ายจริง</th>
+                                        <th>เข้าบัญชี</th>
                                         <th>ค่าปรับ</th>
                                         <th>ส่วนลด</th>
                                         <th>ตัดดอกเบี้ย</th>
@@ -839,7 +910,7 @@ def index():
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {today_history_rows if today_history_rows else "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีการทำธุรกรรมรับชำระในวันนี้</td></tr>"}
+                                    {today_history_rows if today_history_rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีการทำธุรกรรมรับชำระในวันนี้</td></tr>"}
                                 </tbody>
                             </table>
                         </div>
@@ -876,6 +947,18 @@ def index():
                 <label class="form-label">วันที่กู้/วันที่เริ่ม</label>
                 <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
             </div>
+            
+            <!-- เลือกบัญชีที่ใช้โอนเงินออกให้ลูกค้ากู้ (หรือเลือกดึงจากกำไรมาหมุนซ้ำ) -->
+            <div class="col-md-4">
+                <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี / แหล่งทุน:</label>
+                <select name="funding_source" class="form-select border-success" required>
+                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                    <option value="กำไรสะสม">🔄 ดึงจากกำไรสะสมมาหมุนซ้ำ (Reinvestment)</option>
+                </select>
+            </div>
+
             <div class="col-md-3">
                 <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
                 <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
@@ -884,10 +967,10 @@ def index():
                     <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                 </select>
             </div>
-            <div class="col-md-6" id="dueDayDiv" style="display: none;">
-                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย (เลือกได้มากกว่า 1 รอบหากจ่าย 2 รอบ/เดือน)</label>
+            <div class="col-md-5" id="dueDayDiv" style="display: none;">
+                <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
                 <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
-                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2 (ข้ามเดือน)</label></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
@@ -934,6 +1017,7 @@ def index():
                         <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
                         <th>เบอร์โทร</th>
                         <th>ประเภทการชำระ</th>
+                        <th>บัญชีปล่อยกู้</th>
                         <th>วันที่กู้</th>
                         <th>ชำระล่าสุด</th>
                         <th>เงินลงทุน</th>
@@ -946,7 +1030,7 @@ def index():
                         <th style="position: sticky; right: 0; background-color: #212529; z-index: 3; text-align: center;">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
             </table>
         </div>
 
@@ -981,6 +1065,7 @@ def customer_details(cust_name):
         rows += f"""
         <tr>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
+            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str}</td>
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -1015,6 +1100,15 @@ def customer_details(cust_name):
                             <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
+                            </div>
+
+                            <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
+                                <select name="receiving_account" class="form-select form-select-sm border-success">
+                                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                                </select>
                             </div>
 
                             <div class="p-2 mb-2 rounded border border-primary bg-primary bg-opacity-10">
@@ -1088,6 +1182,7 @@ def customer_details(cust_name):
                 <thead class="table-dark">
                     <tr>
                         <th>ประเภทบัญชี</th>
+                        <th>บัญชีปล่อยกู้</th>
                         <th>วันที่กู้</th>
                         <th>ชำระล่าสุด</th>
                         <th>เงินลงทุน</th>
@@ -1099,7 +1194,7 @@ def customer_details(cust_name):
                         <th class="text-center">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1186,6 +1281,7 @@ def monthly_details(ym, category):
             </td>
             <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
+            <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str}</td>
             <td>{closed_date_str}</td>
             <td>{tx.original_principal:,.2f}</td>
@@ -1201,7 +1297,7 @@ def monthly_details(ym, category):
 
     rows += f"""
     <tr class="table-dark fw-bold">
-        <td colspan="5" class="text-end">รวมทั้งสิ้น:</td>
+        <td colspan="6" class="text-end">รวมทั้งสิ้น:</td>
         <td>{total_inv_sum:,.2f}</td>
         <td>{total_prin_sum:,.2f}</td>
         <td>-</td>
@@ -1223,6 +1319,7 @@ def monthly_details(ym, category):
                         <th>ชื่อลูกค้า</th>
                         <th>เบอร์โทร</th>
                         <th>ประเภท</th>
+                        <th>บัญชีปล่อยกู้</th>
                         <th>วันที่กู้</th>
                         <th>วันที่ปิด/ชำระ</th>
                         <th>เงินลงทุน</th>
@@ -1233,7 +1330,7 @@ def monthly_details(ym, category):
                         <th class="text-center">จัดการ</th>
                     </tr>
                 </thead>
-                <tbody>{rows if txs else "<tr><td colspan='11' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
+                <tbody>{rows if txs else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1320,6 +1417,7 @@ def members_scheduled_all():
                 </td>
                 <td>{t.phone or '-'}</td>
                 <td><span class="badge bg-danger">{t.sales_name}</span></td>
+                <td><span class="badge bg-warning text-dark">{t.funding_source or 'กรุงศรีอยุธยา'}</span></td>
                 <td>{start_str}</td>
                 <td>{t.original_principal:,.2f}</td>
                 <td>{t.principal:,.2f}</td>
@@ -1344,6 +1442,7 @@ def members_scheduled_all():
                             <th style="position: sticky; left: 0; background-color: #212529; z-index: 3;">ชื่อลูกค้า</th>
                             <th>เบอร์โทร</th>
                             <th>เซลล์ผู้ดูแล</th>
+                            <th>บัญชีปล่อย</th>
                             <th>วันที่กู้</th>
                             <th>เงินลงทุน</th>
                             <th>ต้นคงค้าง</th>
@@ -1354,7 +1453,7 @@ def members_scheduled_all():
                             <th style="text-align: center;">จัดการกลุ่ม</th>
                         </tr>
                     </thead>
-                    <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ยังไม่มีสมาชิกในรอบวันนี้</td></tr>"}</tbody>
+                    <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีสมาชิกในรอบวันนี้</td></tr>"}</tbody>
                 </table>
             </div>
         </div>
@@ -1418,8 +1517,8 @@ def members():
         s_date = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
         sched_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
         status_color = 'bg-success' if t.status == 'ปกติ' else ('bg-danger' if t.status == 'คืนแล้ว' else 'bg-secondary')
-        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {status_color}'>{t.status}</span></td></tr>"
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ (ยังไม่ปิดบัญชี)</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
+        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {status_color}'>{t.status}</span></td></tr>"
+    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ (ยังไม่ปิดบัญชี)</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สมาชิกทั้งหมด", page="members")
 
@@ -1434,7 +1533,7 @@ def members_daily():
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
-        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
+        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
     
     content = f"""
     <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
@@ -1445,7 +1544,7 @@ def members_daily():
             <div class="col-md-3"><button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่ม</button></div>
         </form>
     </div>
-    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.1 สมาชิกประเภท: จ่ายทุกวัน</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
+    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.1 สมาชิกประเภท: จ่ายทุกวัน</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
     """
     html = BASE_LAYOUT.replace('{% block header %}1.1 จ่ายทุกวัน{% endblock %}', '1.1 จ่ายทุกวัน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="จ่ายทุกวัน", page="members_daily")
@@ -1461,7 +1560,7 @@ def members_unscheduled():
     for t in txs:
         calculate_tx_values(t)
         start_str = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
-        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
+        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{start_str}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>"
     
     content = f"""
     <div class="card p-3 mb-3 bg-light border-warning shadow-sm">
@@ -1472,7 +1571,7 @@ def members_unscheduled():
             <div class="col-md-3"><button type="submit" class="btn btn-sm btn-success w-100 fw-bold">📥 ดึงเข้ากลุ่ม</button></div>
         </form>
     </div>
-    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.2 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
+    <div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">🔸 1.2 สมาชิกประเภท: ยังไม่มีกำหนดจ่าย</h4><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>
     """
     html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', '1.2 ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
@@ -1523,6 +1622,7 @@ def all_transactions():
                 </td>
                 <td>{tx.phone or '-'}</td>
                 <td><span class="badge bg-secondary">{tx.type}</span></td>
+                <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
                 <td>{start_date_str}</td>
                 <td>{last_pay_str}</td>
                 <td>{tx.original_principal:,.2f}</td>
@@ -1554,9 +1654,9 @@ def all_transactions():
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
+                    <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
                 </thead>
-                <tbody>{active_rows if active_rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการบัญชีที่เปิดอยู่</td></tr>"}</tbody>
+                <tbody>{active_rows if active_rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่มีรายการบัญชีที่เปิดอยู่</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1569,9 +1669,9 @@ def all_transactions():
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-secondary">
-                    <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
+                    <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr>
                 </thead>
-                <tbody>{closed_rows if closed_rows else "<tr><td colspan='12' class='text-center text-muted'>ยังไม่มีบัญชีที่ปิดแล้ว</td></tr>"}</tbody>
+                <tbody>{closed_rows if closed_rows else "<tr><td colspan='13' class='text-center text-muted'>ยังไม่มีบัญชีที่ปิดแล้ว</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1584,7 +1684,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -1596,7 +1696,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum
+            tx_fine_sum, tx_discount_sum, t.funding_source
         ])
         
     output = io.BytesIO()
@@ -1625,6 +1725,7 @@ def import_data():
                     except: pass
                 
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
+                funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -1633,7 +1734,8 @@ def import_data():
                     principal=float(row.get('Principal', 0)), daily_interest=float(row.get('DailyInterest', 0)),
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
-                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val
+                    schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
+                    funding_source=funding
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -1650,7 +1752,8 @@ def import_data():
                         interest_paid=0.0,
                         principal_reduced=0.0,
                         note="นำเข้าข้อมูลสะสมจาก Backup CSV",
-                        admin_name=session.get('admin')
+                        admin_name=session.get('admin'),
+                        receiving_account="กรุงศรีอยุธยา"
                     ))
 
             db.session.commit()
@@ -1663,6 +1766,7 @@ def update_payment(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     payment_type = request.form.get('payment_type')
+    receiving_account = request.form.get('receiving_account', 'กรุงศรีอยุธยา')
     thai_today = get_thai_today()
     
     pay_amount_input = request.form.get('pay_amount', '').strip()
@@ -1746,7 +1850,8 @@ def update_payment(tx_id):
     db.session.add(PaymentHistory(
         transaction_id=tx.id, payment_date=thai_today, pay_amount=pay_amount,
         fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
-        principal_reduced=actual_principal_reduced, note=note_text, admin_name=session.get('admin')
+        principal_reduced=actual_principal_reduced, note=note_text, admin_name=session.get('admin'),
+        receiving_account=receiving_account
     ))
     db.session.commit()
     db.session.remove()
@@ -1774,6 +1879,7 @@ def payment_history(tx_id):
         <tr>
             <td>{h.payment_date.strftime('%d/%m/%Y')}</td>
             <td class='text-primary fw-bold'>{display_pay:,.2f}</td>
+            <td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td>
             <td class='text-danger'>{h.fine_amount:,.2f}</td>
             <td class='text-warning text-dark'>{h.discount_amount:,.2f}</td>
             <td>{h.interest_paid:,.2f}</td>
@@ -1784,7 +1890,7 @@ def payment_history(tx_id):
         """
 
     if not rows:
-        rows = "<tr><td colspan='8' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
+        rows = "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
     
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
@@ -1794,7 +1900,7 @@ def payment_history(tx_id):
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead>
+                <thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead>
                 <tbody>{rows}</tbody>
             </table>
         </div>
@@ -1813,11 +1919,11 @@ def sales_members():
 
     sales_content = ""
     for sales, txs in sales_data.items():
-        sub_rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-secondary'>{t.type}</span></td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge bg-success'>{t.status}</span></td></tr>" for t in txs])
+        sub_rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-secondary'>{t.type}</span></td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge bg-success'>{t.status}</span></td></tr>" for t in txs])
         sales_content += f"""
         <div class="card mb-4 shadow-sm border-warning">
             <div class="card-header bg-danger text-white"><h5 class="mb-0 fs-6">🔱 เซลล์ผู้ดูแล: {sales}</h5></div>
-            <div class="card-body"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{sub_rows}</tbody></table></div></div>
+            <div class="card-body"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{sub_rows}</tbody></table></div></div>
         </div>
         """
     html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted">ยังไม่มีข้อมูล</p>')
@@ -1826,30 +1932,30 @@ def sales_members():
 @app.route('/customer_summary')
 def customer_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{t.type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td>{t.paid_interest:,.2f}</td><td><span class='badge {'bg-success' if t.principal>0 else 'bg-danger'}'>{'ปกติ' if t.principal>0 else 'คืนแล้ว'}</span></td></tr>" for t in Transaction.query.order_by(Transaction.customer_name.asc()).all() if calculate_tx_values(t) or True])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📂 สรุปข้อมูลลูกค้าทั้งหมด</h4><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>กำไรสะสม</th><th>สถานะ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td>{t.type}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td>{t.paid_interest:,.2f}</td><td><span class='badge {'bg-success' if t.principal>0 else 'bg-danger'}'>{'ปกติ' if t.principal>0 else 'คืนแล้ว'}</span></td></tr>" for t in Transaction.query.order_by(Transaction.customer_name.asc()).all() if calculate_tx_values(t) or True])
+    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📂 สรุปข้อมูลลูกค้าทั้งหมด</h4><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>กำไรสะสม</th><th>สถานะ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}3. สรุปลูกค้า{% endblock %}', 'สรุปลูกค้า').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สรุปลูกค้า", page="customer")
 
 @app.route('/customer_emergency')
 def customer_emergency():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='เงินฉุกเฉิน').all() if calculate_tx_values(t) or True])
-    html = BASE_LAYOUT.replace('{% block header %}3.1 เงินฉุกเฉิน{% endblock %}', 'เงินฉุกเฉิน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='เงินฉุกเฉิน').all() if calculate_tx_values(t) or True])
+    html = BASE_LAYOUT.replace('{% block header %}3.1 เงินฉุกเฉิน{% endblock %}', 'เงินฉุกเฉิน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="เงินฉุกเฉิน", page="emergency")
 
 @app.route('/customer_gold')
 def customer_gold():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ผ่อนทอง').all() if calculate_tx_values(t) or True])
-    html = BASE_LAYOUT.replace('{% block header %}3.2 ผ่อนทอง{% endblock %}', 'ผ่อนทอง').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ผ่อนทอง').all() if calculate_tx_values(t) or True])
+    html = BASE_LAYOUT.replace('{% block header %}3.2 ผ่อนทอง{% endblock %}', 'ผ่อนทอง').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ผ่อนทอง", page="gold")
 
 @app.route('/customer_debt')
 def customer_debt():
     if 'admin' not in session: return redirect(url_for('login'))
-    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ยอดค้างเก่า').all() if calculate_tx_values(t) or True])
-    html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ยอดค้างเก่า').all() if calculate_tx_values(t) or True])
+    html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
 
 @app.route('/monthly_summary')
