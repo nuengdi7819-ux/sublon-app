@@ -1777,12 +1777,13 @@ def customer_debt():
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
 
 @app.route('/monthly_summary')
+@app.route('/monthly_summary')
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. จัดหมวดหมู่บัญชีตามเดือนที่เริ่มต้น (สำหรับแสดงจำนวนรายการและยอดตั้งต้น)
+    # 1. บันทึกยอดตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่เริ่มต้นสัญญาเดิม
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1792,7 +1793,7 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. ประมวลผลยอดเก็บและกำไร โดยอิงตาม "วันที่ที่มีการชำระจริง (Payment Date)" เป็นหลัก
+    # 2. ประมวลผลยอดเก็บและกำไร โดยคิดตาม "วันที่จ่าย / วันที่ปิดยอดจริง (Payment Date)" ในประวัติเท่านั้น
     all_txs = Transaction.query.all()
     for tx in all_txs:
         if tx.histories:
@@ -1800,7 +1801,7 @@ def monthly_summary():
                 if h.payment_date:
                     ym_h = h.payment_date.strftime('%Y-%m')
                     
-                    # คำนวณกำไรสุทธิ (ดอกเบี้ย + ค่าปรับ - ส่วนลด) ลงในเดือนที่จ่ายจริง
+                    # กำไรเกิดขึ้นเฉพาะในเดือนที่มีการจ่ายจริง
                     h_profit = h.interest_paid + h.fine_amount - h.discount_amount
                     monthly_data[ym_h]['profit'] += h_profit
                     
@@ -1809,15 +1810,6 @@ def monthly_summary():
                         monthly_data[ym_h]['debt_paid'] += pay_val
                     else:
                         monthly_data[ym_h]['new_paid'] += pay_val
-        else:
-            # กรณีบัญชีไหนยังไม่มีประวัติการจ่ายเงิน ให้ลงกำไรตามเดือนที่เริ่มต้นสัญญา (start_date)
-            if tx.start_date:
-                ym_s = tx.start_date.strftime('%Y-%m')
-                if tx.type == 'ยอดค้างเก่า':
-                    tx_profit = max(0.0, (tx.original_principal - tx.principal))
-                else:
-                    tx_profit = max(tx.paid_interest, 0.0)
-                monthly_data[ym_s]['profit'] += tx_profit
 
     monthly_rows = "".join([
         f"<tr>"
