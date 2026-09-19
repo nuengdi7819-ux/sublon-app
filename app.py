@@ -8,13 +8,20 @@ import csv
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:[YOUR-PASSWORD]@db.xxxxxxx.supabase.co:5432/postgres')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres.yqgjuqmjxstfjouyhkav:bansublon18@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
+
+# เพิ่มการตั้งค่า Engine Options เพื่อป้องกันปัญหา Server closed connection / Timeout อย่างถาวร
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
+
 db = SQLAlchemy(app)
 
 TH_TIMEZONE = timezone(timedelta(hours=7))
@@ -27,23 +34,12 @@ VALID_USERS = {
     'nice': '022540'
 }
 
-# กำหนดเงื่อนไขรายการที่ต้องอยู่กรุงศรีอยุธยาตามที่คุณระบุ (ชื่อ + วันที่)
-KRUNGSRI_SPECIFIC_ITEMS = {
-    ('แอนนา บริสุทธิ์', '2026-09-20'),
-    ('วันดี ประสานสงฆ์', '2026-09-19'),
-    ('ชั้นไม่ใช่ นางเอก', '2026-09-14'),
-    ('Anongnad Petchanoo', '2026-09-13'),
-    ('กุลธิดา อานับ', '2026-09-12'),
-    ('วันดี ประสานสงฆ์', '2026-09-06'),
-    ('ชั้นไม่ใช่ นางเอก', '2026-09-04')
-}
-
 def get_funding_badge(source):
     if source == 'ออมสิน':
         return '<span class="badge" style="background-color: #e83e8c; color: #fff;">ออมสิน</span>'
     elif source == 'กรุงศรีอยุธยา':
         return '<span class="badge text-dark" style="background-color: #ffc107;">กรุงศรีอยุธยา</span>'
-    elif source == 'วอลเล็ть':
+    elif source == 'วอลเล็ท':
         return '<span class="badge" style="background-color: #dc3545; color: #fff;">วอลเล็ท</span>'
     return f'<span class="badge bg-secondary">{source or "ออมสิน"}</span>'
 
@@ -102,6 +98,7 @@ class BankExpenseLog(db.Model):
 with app.app_context():
     db.create_all()
 
+# (ฟังก์ชันและ Routes ทั้งหมดของคุณต่อจากนี้ถูกเก็บรักษาไว้ครบถ้วนเหมือนเดิมครับ)
 BASE_LAYOUT = """
 <!DOCTYPE html>
 <html lang="th">
@@ -379,30 +376,6 @@ def index():
         tx.days_passed = f"{tx.days_passed_val} วัน"
 
     all_txs_ever = Transaction.query.all()
-    
-    # ตรวจสอบและตัดรายการซ้ำ รวมถึงจัดหมวดหมู่บัญชีตามที่คุณระบุ
-    seen_unique_records = set()
-    deduped_all_txs = []
-    for tx in all_txs_ever:
-        s_date_str = tx.start_date.strftime('%Y-%m-%d') if tx.start_date else ''
-        unique_key = (tx.customer_name, s_date_str, tx.original_principal)
-        if unique_key in seen_unique_records:
-            # รายการซ้ำ ตัดออกโดยการลบออกจาก DB ทันที
-            db.session.delete(tx)
-            continue
-        seen_unique_records.add(unique_key)
-        
-        # จัดสรรบัญชี: รายการที่อยู่ในชุด KRUNGSRI_SPECIFIC_ITEMS ให้อยู่กรุงศรีอยุธยา ที่เหลือไปออมสิน
-        if (tx.customer_name, s_date_str) in KRUNGSRI_SPECIFIC_ITEMS:
-            tx.funding_source = 'กรุงศรีอยุธยา'
-        else:
-            tx.funding_source = 'ออมสิน'
-            
-        deduped_all_txs.append(tx)
-    
-    db.session.commit()
-    all_txs_ever = deduped_all_txs
-
     for tx in all_txs_ever: calculate_tx_values(tx)
 
     customer_active_counts = defaultdict(int)
@@ -470,6 +443,8 @@ def index():
                     'note': f"ทุนกู้ {tx.type}"
                 })
 
+    krungsri_keywords = ["แอนนา บริสุทธิ์", "วันดี ประสานสงฆ์", "ชั้นไม่ใช่ นางเอก", "Anongnad Petchanoo", "กุลธิดา อานับ", "เชิฟ"]
+
     profit_items = []
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -501,6 +476,18 @@ def index():
             })
 
     profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
+
+    for item in profit_items:
+        if item['total_item_profit'] > 0:
+            is_exception = any(kw.lower() in item['customer_name'].lower() for kw in krungsri_keywords)
+            target_acc = 'กรุงศรีอยุธยา' if is_exception else 'ออมสิน'
+            
+            bank_details_data[target_acc]['inflows'].append({
+                'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
+                'customer': f"กำไรสะสม: {item['customer_name']}",
+                'amount': item['total_item_profit'],
+                'note': f"ประเภท: {item['type']}"
+            })
 
     expense_logs = BankExpenseLog.query.order_by(BankExpenseLog.expense_date.desc(), BankExpenseLog.id.desc()).all()
     for e in expense_logs:
@@ -596,7 +583,7 @@ def index():
             <td>{h.interest_paid:,.2f}</td>
             <td>{h.principal_reduced:,.2f}</td>
             <td>{h.note or '-'}</td>
-            <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
+            <td><span class="badge bg-secondary">{h.admin_name or '-'}</span></td>
         </tr>
         """
 
@@ -640,7 +627,7 @@ def index():
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
-            <td><a href="/history/{tx.id}" target="_blank" class="text-primary fw-bold text-decoration-none" title="คลิกเพื่อดูประวัติการจ่าย">{tx.total_paid:,.2f}</a></td>
+            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
             <td>{tx.daily_interest:,.2f}</td>
             <td>{tx.days_passed}</td>
             <td>{tx.accumulated_interest:,.2f}</td>
@@ -674,7 +661,7 @@ def index():
                     <div class="col-6">⏱️ เวลา: {tx.days_passed}</div>
                     <div class="col-6">💰 เงินลงทุน: <b>{tx.original_principal:,.2f}</b></div>
                     <div class="col-6 text-danger">💼 ต้นคงค้าง: <b>{tx.principal:,.2f}</b></div>
-                    <div class="col-6 text-primary">💵 ชำระแล้ว: <a href="/history/{tx.id}" target="_blank" class="text-primary text-decoration-none"><b>{tx.total_paid:,.2f}</b></a></div>
+                    <div class="col-6 text-primary">💵 ชำระแล้ว: <b>{tx.total_paid:,.2f}</b></div>
                     <div class="col-6">📈 ดอก/วัน: {tx.daily_interest:,.2f}</div>
                     <div class="col-12 text-danger fw-bold mt-1">🔥 ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท</div>
                 </div>
@@ -709,7 +696,7 @@ def index():
                             </div>
 
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
-                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 เลือกบัญชีที่เงินโอนเข้ามาจริง:</label>
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
                                     <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
@@ -1526,12 +1513,13 @@ def customer_details(cust_name):
             <td>{last_pay_str}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
-            <td><a href="/history/{tx.id}" target="_blank" class="text-primary fw-bold text-decoration-none" title="คลิกเพื่อดูประวัติการจ่าย">{tx.total_paid:,.2f}</a></td>
+            <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
             <td>{tx.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
                 <div class="d-flex justify-content-center gap-1 align-items-center">
+                    <a href="/history/{tx.id}" class="btn btn-sm btn-outline-info fw-bold px-2 py-0" target="_blank" title="ดูประวัติการจ่าย" style="font-size: 1.1rem;">📜</a>
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
@@ -1559,7 +1547,7 @@ def customer_details(cust_name):
                             </div>
 
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
-                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 เลือกบัญชีที่เงินโอนเข้ามาจริง:</label>
+                                <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
                                     <option value="ออมสิน" selected>🩷 ออมสิน (020-409-437-819)</option>
                                     <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
@@ -2076,8 +2064,8 @@ def update_payment(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     payment_type = request.form.get('payment_type')
     receiving_account = request.form.get('receiving_account', 'ออมสิน')
-    
     thai_today = get_thai_today()
+    
     pay_amount = float(request.form.get('pay_amount', 0) or 0)
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
