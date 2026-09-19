@@ -499,12 +499,9 @@ def index():
         <div class="modal fade" id="{modal_id}" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-{theme_color}">
-                    <div class="modal-header bg-{theme_color} text-white py-2 position-relative align-items-center">
-                        <h5 class="modal-title fw-bold fs-6 mb-0">📊 รายละเอียดความเคลื่อนไหว: {acc_title}</h5>
-                        <div class="d-flex align-items-center gap-2 ms-auto pe-2">
-                            <button type="button" class="btn btn-warning btn-sm fw-bold text-dark px-3 py-1 shadow-sm" style="font-size: 0.82rem;" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่</button>
-                            <button type="button" class="btn-close btn-close-white m-0" data-bs-dismiss="modal"></button>
-                        </div>
+                    <div class="modal-header bg-{theme_color} text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">📊 รายละเอียดความเคลื่อนไหว: {acc_title}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                         <div class="mb-4">
@@ -526,7 +523,8 @@ def index():
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer py-2 justify-content-end">
+                    <div class="modal-footer py-2 justify-content-between">
+                        <button type="button" class="btn btn-warning btn-sm fw-bold text-dark px-3 py-1 shadow-sm" style="font-size: 0.82rem;" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal" style="font-size: 0.8rem;">ปิดหน้าต่าง</button>
                     </div>
                 </div>
@@ -1831,6 +1829,7 @@ def monthly_details(ym, category):
 def members_scheduled_all():
     if 'admin' not in session: return redirect(url_for('login'))
     all_txs_for_select = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
+    for t in all_txs_for_select: calculate_tx_values(t)
 
     sections = [
         ("2", "📅 รอบช่วงวันที่ 29-2 (รอบข้ามเดือน)", ["2", "29", "30", "31", "1"]),
@@ -1927,6 +1926,7 @@ def quick_assign_schedule_multi():
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
+    for t in txs: calculate_tx_values(t)
     rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.schedule_type}</td><td>{t.start_date.strftime('%d/%m/%Y')}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีข้อมูล</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
@@ -1936,6 +1936,7 @@ def members():
 def members_daily():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'จ่ายทุกวัน').order_by(Transaction.customer_name.asc()).all()
+    for t in txs: calculate_tx_values(t)
     rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     html = BASE_LAYOUT.replace('{% block header %}1.1 จ่ายทุกวัน{% endblock %}', 'จ่ายทุกวัน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped text-nowrap"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="จ่ายทุกวัน", page="members_daily")
@@ -1944,6 +1945,7 @@ def members_daily():
 def members_unscheduled():
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.principal > 0, Transaction.schedule_type == 'ยังไม่มีกำหนดจ่าย').order_by(Transaction.customer_name.asc()).all()
+    for t in txs: calculate_tx_values(t)
     rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-danger'>{t.funding_source or 'ออมสิน'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in txs])
     html = BASE_LAYOUT.replace('{% block header %}1.2 ยังไม่มีกำหนดจ่าย{% endblock %}', 'ยังไม่มีกำหนดจ่าย').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยังไม่มีกำหนดจ่าย", page="members_unscheduled")
