@@ -1125,7 +1125,6 @@ def monthly_details(ym):
     except:
         return redirect(url_for('monthly_summary'))
 
-    # ดึงเฉพาะรายการที่มีประวัติการจ่ายเงินในเดือน ym นั้นจริงๆ
     histories_in_month = PaymentHistory.query.filter(
         db.extract('year', PaymentHistory.payment_date) == year_i,
         db.extract('month', PaymentHistory.payment_date) == month_i
@@ -1811,7 +1810,7 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. ดึงข้อมูลจาก PaymentHistory ทั้งหมด มาจัดกลุ่มตาม "เดือนที่มีการชำระจริง" เท่านั้น
+    # วิ่งผ่านประวัติการชำระเงินทั้งหมด (PaymentHistory) เพื่อดึงและจัดกลุ่มตามเดือนที่มีการจ่ายจริง 100%
     all_histories = PaymentHistory.query.all()
     for h in all_histories:
         if h.payment_date and h.transaction:
@@ -1819,25 +1818,19 @@ def monthly_summary():
             tx = h.transaction
             monthly_data[ym_h]['count_tx'].add(tx.id)
             
+            # คำนวณกำไรสุทธิ (ดอกเบี้ยที่จ่าย + ค่าปรับ - ส่วนลด)
             net_h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym_h]['profit'] += net_h_profit
             
             cash_collected = h.interest_paid + h.fine_amount
             if tx.type == 'ยอดค้างเก่า':
                 monthly_data[ym_h]['debt_paid'] += cash_collected
+                monthly_data[ym_h]['debt_start'] += tx.original_principal
             else:
                 monthly_data[ym_h]['new_paid'] += cash_collected
+                monthly_data[ym_h]['new_investment'] += tx.original_principal
 
-    # 2. นำข้อมูลเงินลงทุนใหม่และยอดค้างเก่าตั้งต้นมาลงตามเดือนที่เริ่มเปิดบิล
-    for tx in Transaction.query.all():
-        if tx.start_date:
-            ym_s = tx.start_date.strftime('%Y-%m')
-            if tx.type == 'ยอดค้างเก่า':
-                monthly_data[ym_s]['debt_start'] += tx.original_principal
-            else:
-                monthly_data[ym_s]['new_investment'] += tx.original_principal
-
-    # 3. ดึงสูตรคำนวณกำไรสะสมรวมทั้งระบบ (Reconcile Total) ให้ตรงกับหน้า Dashboard เป๊ะๆ
+    # คำนวณกำไรสะสมรวมทั้งระบบให้ตรงกับหน้า Dashboard เป๊ะๆ
     all_txs_ever = Transaction.query.all()
     total_history_interest = db.session.query(db.func.sum(PaymentHistory.interest_paid)).scalar() or 0.0
     total_paid_interest_col = sum(tx.paid_interest for tx in all_txs_ever)
@@ -1865,7 +1858,7 @@ def monthly_summary():
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน (อิงตามเดือนที่จ่ายจริง)</h4>
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 สรุปยอดผลประกอบการรายเดือน (อิงตามเดือนที่จ่ายจริง 100%)</h4>
             <span class="badge bg-success fs-6 px-3 py-2">💰 กำไรสะสมรวมทั้งระบบ: {grand_total_profit:,.2f} บาท</span>
         </div>
         <p class="text-muted small">💡 ตารางนี้แสดงผลยอดการเก็บเงินและกำไรสุทธิแยกตามเดือนที่มีการทำรายการชำระจริงในระบบ</p>
