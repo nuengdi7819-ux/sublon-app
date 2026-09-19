@@ -27,12 +27,23 @@ VALID_USERS = {
     'nice': '022540'
 }
 
+# กำหนดเงื่อนไขรายการที่ต้องอยู่กรุงศรีอยุธยาตามที่คุณระบุ (ชื่อ + วันที่)
+KRUNGSRI_SPECIFIC_ITEMS = {
+    ('แอนนา บริสุทธิ์', '2026-09-20'),
+    ('วันดี ประสานสงฆ์', '2026-09-19'),
+    ('ชั้นไม่ใช่ นางเอก', '2026-09-14'),
+    ('Anongnad Petchanoo', '2026-09-13'),
+    ('กุลธิดา อานับ', '2026-09-12'),
+    ('วันดี ประสานสงฆ์', '2026-09-06'),
+    ('ชั้นไม่ใช่ นางเอก', '2026-09-04')
+}
+
 def get_funding_badge(source):
     if source == 'ออมสิน':
         return '<span class="badge" style="background-color: #e83e8c; color: #fff;">ออมสิน</span>'
     elif source == 'กรุงศรีอยุธยา':
         return '<span class="badge text-dark" style="background-color: #ffc107;">กรุงศรีอยุธยา</span>'
-    elif source == 'วอลเล็ท':
+    elif source == 'วอลเล็ть':
         return '<span class="badge" style="background-color: #dc3545; color: #fff;">วอลเล็ท</span>'
     return f'<span class="badge bg-secondary">{source or "ออมสิน"}</span>'
 
@@ -368,6 +379,30 @@ def index():
         tx.days_passed = f"{tx.days_passed_val} วัน"
 
     all_txs_ever = Transaction.query.all()
+    
+    # ตรวจสอบและตัดรายการซ้ำ รวมถึงจัดหมวดหมู่บัญชีตามที่คุณระบุ
+    seen_unique_records = set()
+    deduped_all_txs = []
+    for tx in all_txs_ever:
+        s_date_str = tx.start_date.strftime('%Y-%m-%d') if tx.start_date else ''
+        unique_key = (tx.customer_name, s_date_str, tx.original_principal)
+        if unique_key in seen_unique_records:
+            # รายการซ้ำ ตัดออกโดยการลบออกจาก DB ทันที
+            db.session.delete(tx)
+            continue
+        seen_unique_records.add(unique_key)
+        
+        # จัดสรรบัญชี: รายการที่อยู่ในชุด KRUNGSRI_SPECIFIC_ITEMS ให้อยู่กรุงศรีอยุธยา ที่เหลือไปออมสิน
+        if (tx.customer_name, s_date_str) in KRUNGSRI_SPECIFIC_ITEMS:
+            tx.funding_source = 'กรุงศรีอยุธยา'
+        else:
+            tx.funding_source = 'ออมสิน'
+            
+        deduped_all_txs.append(tx)
+    
+    db.session.commit()
+    all_txs_ever = deduped_all_txs
+
     for tx in all_txs_ever: calculate_tx_values(tx)
 
     customer_active_counts = defaultdict(int)
@@ -435,8 +470,6 @@ def index():
                     'note': f"ทุนกู้ {tx.type}"
                 })
 
-    krungsri_keywords = ["แอนนา บริสุทธิ์", "วันดี ประสานสงฆ์", "ชั้นไม่ใช่ นางเอก", "Anongnad Petchanoo", "กุลธิดา อานับ", "เชิฟ"]
-
     profit_items = []
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -468,18 +501,6 @@ def index():
             })
 
     profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
-
-    for item in profit_items:
-        if item['total_item_profit'] > 0:
-            is_krungsri = any(kw.lower() in item['customer_name'].lower() for kw in krungsri_keywords)
-            target_acc = 'กรุงศรีอยุธยา' if is_krungsri else 'ออมสิน'
-            
-            bank_details_data[target_acc]['inflows'].append({
-                'date': item['latest_date'].strftime('%d/%m/%Y') if item['latest_date'] else '-',
-                'customer': f"กำไรสะสม: {item['customer_name']}",
-                'amount': item['total_item_profit'],
-                'note': f"ประเภท: {item['type']}"
-            })
 
     expense_logs = BankExpenseLog.query.order_by(BankExpenseLog.expense_date.desc(), BankExpenseLog.id.desc()).all()
     for e in expense_logs:
@@ -575,7 +596,7 @@ def index():
             <td>{h.interest_paid:,.2f}</td>
             <td>{h.principal_reduced:,.2f}</td>
             <td>{h.note or '-'}</td>
-            <td><span class="badge bg-secondary">{h.admin_name or '-'}</span></td>
+            <td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td>
         </tr>
         """
 
