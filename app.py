@@ -1536,10 +1536,24 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth'])
+    # เพิ่มคอลัมน์ TotalFine และ TotalDiscount ในหัวตาราง CSV
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount'])
+    
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
-        cw.writerow([t.id, t.type, t.customer_name, t.phone, t.sales_name, t.start_date, t.closed_date, t.original_principal, t.principal, t.daily_interest, t.paid_interest, t.status, t.installment_amount, total_paid, t.schedule_type, t.due_day_of_month])
+        
+        # คำนวณผลรวมค่าปรับและส่วนลดจากประวัติการชำระของบิลนี้
+        tx_fine_sum = sum(h.fine_amount for h in t.histories) if t.histories else 0.0
+        tx_discount_sum = sum(h.discount_amount for h in t.histories) if t.histories else 0.0
+        
+        cw.writerow([
+            t.id, t.type, t.customer_name, t.phone, t.sales_name, 
+            t.start_date, t.closed_date, t.original_principal, t.principal, 
+            t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
+            total_paid, t.schedule_type, t.due_day_of_month, 
+            tx_fine_sum, tx_discount_sum
+        ])
+        
     output = io.BytesIO()
     output.write(si.getvalue().encode('utf-8-sig'))
     output.seek(0)
@@ -1577,6 +1591,24 @@ def import_data():
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val
                 )
                 db.session.add(new_t)
+                db.session.flush()
+
+                # นำเข้าค่าปรับและส่วนลดสะสมย้อนหลังลงตาราง payment_history ถ้ามีข้อมูล
+                total_fine_val = float(row.get('TotalFine', 0) or 0)
+                total_discount_val = float(row.get('TotalDiscount', 0) or 0)
+                if total_fine_val > 0 or total_discount_val > 0:
+                    db.session.add(PaymentHistory(
+                        transaction_id=new_t.id,
+                        payment_date=s_date,
+                        pay_amount=total_fine_val,
+                        fine_amount=total_fine_val,
+                        discount_amount=total_discount_val,
+                        interest_paid=0.0,
+                        principal_reduced=0.0,
+                        note="นำเข้าข้อมูลสะสมจาก Backup CSV",
+                        admin_name=session.get('admin')
+                    ))
+
             db.session.commit()
             db.session.remove()
         except Exception as e: print("Import error:", e)
@@ -1782,7 +1814,6 @@ def monthly_summary():
     
     monthly_data = defaultdict(lambda: {'count': set(), 'new_investment': 0.0, 'debt_start': 0.0, 'profit': 0.0, 'new_paid': 0.0, 'debt_paid': 0.0})
     
-    # 1. บันทึกยอดตั้งต้น (ทุนใหม่ / ค้างเก่าตั้งต้น) ตามเดือนที่เริ่มต้นสัญญา
     for tx in Transaction.query.all():
         if tx.start_date:
             ym = tx.start_date.strftime('%Y-%m')
@@ -1792,10 +1823,8 @@ def monthly_summary():
             else:
                 monthly_data[ym]['new_investment'] += tx.original_principal
 
-    # 2. ประมวลผลยอดเก็บ (เฉพาะดอกเบี้ย + ค่าปรับ) และกำไรสุทธิให้สอดคล้องกับ Dashboard 100%
     all_txs = Transaction.query.all()
     for tx in all_txs:
-        # คำนวณกำไรแยกตามรายบิลเพื่อให้ตรงกับยอดสะสมทั้งหมด
         if tx.type == 'ยอดค้างเก่า':
             tx_net_profit = max(0.0, (tx.original_principal - tx.principal))
         else:
@@ -1806,7 +1835,6 @@ def monthly_summary():
         tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
         total_tx_profit = tx_net_profit + tx_fine_sum - tx_discount_sum
 
-        # นำกำไรของบิลนี้ไปลงในเดือนที่มีการเคลื่อนไหวล่าสุด (หรือเดือนที่เริ่มต้น)
         latest_date = tx.start_date
         if tx.histories:
             max_h_date = max(h.payment_date for h in tx.histories)
@@ -1818,7 +1846,6 @@ def monthly_summary():
             ym_p = latest_date.strftime('%Y-%m')
             monthly_data[ym_p]['profit'] += total_tx_profit
 
-        # ประมวลผลยอดเก็บเงินสด (เฉพาะดอกเบี้ย + ค่าปรับ) ตามประวัติการชำระจริง
         if tx.histories:
             for h in tx.histories:
                 if h.payment_date:
