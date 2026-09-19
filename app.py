@@ -46,7 +46,6 @@ class Transaction(db.Model):
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
-    # เพิ่มฟิลด์เก็บว่าใช้บัญชีไหนปล่อยกู้ / ดึงมาจากกำไรไหม
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา') # กรุงศรีอยุธยา, ออมสิน, วอลเล็ท, กำไรสะสม
 
 class PaymentHistory(db.Model):
@@ -61,7 +60,7 @@ class PaymentHistory(db.Model):
     principal_reduced = db.Column(db.Float, default=0.0)
     note = db.Column(db.String(255), nullable=True)
     admin_name = db.Column(db.String(100), nullable=True)
-    receiving_account = db.Column(db.String(50), default='กรุงศรีอยุธยา') # ลูกค้าโอนเข้าบัญชีไหน
+    receiving_account = db.Column(db.String(50), default='กรุงศรีอยุธยา')
 
     transaction = db.relationship('Transaction', backref=db.backref('histories', lazy=True, cascade='all, delete-orphan'))
 
@@ -390,8 +389,6 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
-    # คำนวณยอดแยกตาม 3 บัญชีจริง เพื่อให้ตรงกับแอปในมือถือ
-    # หลักการ: ยอดเงินในบัญชี = (เงินลงทุนที่ออกทางบัญชีนั้น) + (ยอดรับชำระที่เข้าบัญชีนั้น)
     account_balances = {
         'กรุงศรีอยุธยา': 0.0,
         'ออมสิน': 0.0,
@@ -606,7 +603,6 @@ def index():
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
                             </div>
 
-                            <!-- เลือกบัญชีที่ลูกค้าโอนเงินเข้า -->
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
                                 <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
@@ -948,7 +944,6 @@ def index():
                 <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
             </div>
             
-            <!-- เลือกบัญชีที่ใช้โอนเงินออกให้ลูกค้ากู้ (หรือเลือกดึงจากกำไรมาหมุนซ้ำ) -->
             <div class="col-md-4">
                 <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี / แหล่งทุน:</label>
                 <select name="funding_source" class="form-select border-success" required>
@@ -1203,6 +1198,129 @@ def customer_details(cust_name):
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า {cust_name}{% endblock %}', f'รายละเอียดลูกค้า {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=f"ลูกค้า: {cust_name}", page="dashboard")
 
+@app.route('/monthly_summary')
+def monthly_summary():
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    all_txs_ever = Transaction.query.all()
+    sum_modal_actual_profit = 0.0
+    for tx in all_txs_ever:
+        if tx.type == 'ยอดค้างเก่า':
+            net_earned = max(0.0, (tx.original_principal - tx.principal))
+        else:
+            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
+            net_earned = max(tx.paid_interest, hist_sum)
+            
+        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
+        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
+        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+            sum_modal_actual_profit += total_item_profit
+
+    monthly_data = defaultdict(lambda: {
+        'count_tx': set(), 
+        'new_investment': 0.0, 
+        'new_collected': 0.0, 
+        'debt_collected': 0.0, 
+        'total_fine': 0.0, 
+        'total_discount': 0.0, 
+        'month_profit': 0.0
+    })
+    
+    for tx in all_txs_ever:
+        ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
+        monthly_data[ym_start]['count_tx'].add(tx.id)
+        
+        if tx.type != 'ยอดค้างเก่า':
+            monthly_data[ym_start]['new_investment'] += tx.original_principal
+            hist_interest = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
+            net_earned = max(tx.paid_interest, hist_interest)
+            monthly_data[ym_start]['new_collected'] += net_earned
+            monthly_data[ym_start]['month_profit'] += net_earned
+        else:
+            debt_earned = max(0.0, tx.original_principal - tx.principal)
+            monthly_data[ym_start]['debt_collected'] += debt_earned
+            monthly_data[ym_start]['month_profit'] += debt_earned
+
+        if tx.histories:
+            for h in tx.histories:
+                if h.payment_date:
+                    ym_h = h.payment_date.strftime('%Y-%m')
+                    monthly_data[ym_h]['total_fine'] += h.fine_amount
+                    monthly_data[ym_h]['total_discount'] += h.discount_amount
+                    monthly_data[ym_h]['month_profit'] += (h.fine_amount - h.discount_amount)
+
+    monthly_rows = ""
+    sum_new_inv = 0.0
+    sum_new_col = 0.0
+    sum_debt_col = 0.0
+    sum_fine = 0.0
+    sum_disc = 0.0
+    sum_profit = 0.0
+
+    for ym, d in sorted(monthly_data.items(), reverse=True):
+        sum_new_inv += d['new_investment']
+        sum_new_col += d['new_collected']
+        sum_debt_col += d['debt_collected']
+        sum_fine += d['total_fine']
+        sum_disc += d['total_discount']
+        sum_profit += d['month_profit']
+
+        monthly_rows += f"""
+        <tr>
+            <td><span class='text-danger fw-bold'>📅 {ym}</span></td>
+            <td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>
+            <td><a href='/monthly_details/{ym}/new_inv' class='text-primary fw-bold text-decoration-none'>{d['new_investment']:,.2f}</a></td>
+            <td><a href='/monthly_details/{ym}/new_col' class='text-success fw-bold text-decoration-none'>{d['new_collected']:,.2f}</a></td>
+            <td><a href='/monthly_details/{ym}/debt_col' class='text-warning text-dark fw-bold text-decoration-none'>{d['debt_collected']:,.2f}</a></td>
+            <td><a href='/monthly_details/{ym}/fine' class='text-warning text-dark fw-bold text-decoration-none'>{d['total_fine']:,.2f}</a></td>
+            <td><a href='/monthly_details/{ym}/discount' class='text-danger fw-bold text-decoration-none'>-{d['total_discount']:,.2f}</a></td>
+            <td><a href='/monthly_details/{ym}/profit' class='text-success fw-bold text-decoration-none'>{d['month_profit']:,.2f}</a></td>
+        </tr>
+        """
+    
+    monthly_rows += f"""
+    <tr class="table-dark fw-bold">
+        <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
+        <td>{sum_new_inv:,.2f}</td>
+        <td>{sum_new_col:,.2f}</td>
+        <td>{sum_debt_col:,.2f}</td>
+        <td>{sum_fine:,.2f}</td>
+        <td class="text-danger">-{sum_disc:,.2f}</td>
+        <td class="text-success fs-6">{sum_modal_actual_profit:,.2f}</td>
+    </tr>
+    """
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไร (ลิงก์ตรงกับหน้า Dashboard 100%)</h4>
+        </div>
+        <p class="text-muted small">💡 อ้างอิงตัวเลขและผลรวมกำไรสะสมสอดคล้องกับหน้า Dashboard สามารถคลิกที่ตัวเลขเพื่อตรวจสอบรายละเอียดได้</p>
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr>
+                        <th>เดือนที่ชำระ</th>
+                        <th>รายการ</th>
+                        <th>ทุนที่ลูกค้าใหม่กู้</th>
+                        <th>ยอดเก็บจากลูกค้าใหม่</th>
+                        <th>ยอดเก็บจากลูกค้าเก่า</th>
+                        <th>ยอดค่าปรับ</th>
+                        <th>ยอดส่วนลด</th>
+                        <th>กำไรสะสมเดือนนี้</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {monthly_rows}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    """
+    html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', 'สรุปยอดรายเดือน').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="สรุปยอดรายเดือน", page="monthly")
+
 @app.route('/monthly_details/<ym>/<category>')
 def monthly_details(ym, category):
     if 'admin' not in session: return redirect(url_for('login'))
@@ -1242,7 +1360,7 @@ def monthly_details(ym, category):
         tx_ids = [h.transaction_id for h in histories if (h.fine_amount > 0 if category == 'fine' else h.discount_amount > 0)]
         txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
         title_str = f"รายการ{'ค่าปรับ' if category == 'fine' else 'ส่วนลด'} ประจำเดือน {ym}"
-    else: # profit
+    else:
         txs = Transaction.query.filter(
             db.extract('year', Transaction.start_date) == year_i,
             db.extract('month', Transaction.start_date) == month_i
@@ -1957,129 +2075,6 @@ def customer_debt():
     rows = "".join([f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td>{t.sales_name}</td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td></tr>" for t in Transaction.query.filter_by(type='ยอดค้างเก่า').all() if calculate_tx_values(t) or True])
     html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><table class="table table-striped"><thead><tr><th>ชื่อ</th><th>เบอร์</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>')
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
-
-@app.route('/monthly_summary')
-def monthly_summary():
-    if 'admin' not in session: return redirect(url_for('login'))
-    
-    all_txs_ever = Transaction.query.all()
-    sum_modal_actual_profit = 0.0
-    for tx in all_txs_ever:
-        if tx.type == 'ยอดค้างเก่า':
-            net_earned = max(0.0, (tx.original_principal - tx.principal))
-        else:
-            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-            net_earned = max(tx.paid_interest, hist_sum)
-            
-        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
-        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
-            sum_modal_actual_profit += total_item_profit
-
-    monthly_data = defaultdict(lambda: {
-        'count_tx': set(), 
-        'new_investment': 0.0, 
-        'new_collected': 0.0, 
-        'debt_collected': 0.0, 
-        'total_fine': 0.0, 
-        'total_discount': 0.0, 
-        'month_profit': 0.0
-    })
-    
-    for tx in all_txs_ever:
-        ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
-        monthly_data[ym_start]['count_tx'].add(tx.id)
-        
-        if tx.type != 'ยอดค้างเก่า':
-            monthly_data[ym_start]['new_investment'] += tx.original_principal
-            hist_interest = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
-            net_earned = max(tx.paid_interest, hist_interest)
-            monthly_data[ym_start]['new_collected'] += net_earned
-            monthly_data[ym_start]['month_profit'] += net_earned
-        else:
-            debt_earned = max(0.0, tx.original_principal - tx.principal)
-            monthly_data[ym_start]['debt_collected'] += debt_earned
-            monthly_data[ym_start]['month_profit'] += debt_earned
-
-        if tx.histories:
-            for h in tx.histories:
-                if h.payment_date:
-                    ym_h = h.payment_date.strftime('%Y-%m')
-                    monthly_data[ym_h]['total_fine'] += h.fine_amount
-                    monthly_data[ym_h]['total_discount'] += h.discount_amount
-                    monthly_data[ym_h]['month_profit'] += (h.fine_amount - h.discount_amount)
-
-    monthly_rows = ""
-    sum_new_inv = 0.0
-    sum_new_col = 0.0
-    sum_debt_col = 0.0
-    sum_fine = 0.0
-    sum_disc = 0.0
-    sum_profit = 0.0
-
-    for ym, d in sorted(monthly_data.items(), reverse=True):
-        sum_new_inv += d['new_investment']
-        sum_new_col += d['new_collected']
-        sum_debt_col += d['debt_collected']
-        sum_fine += d['total_fine']
-        sum_disc += d['total_discount']
-        sum_profit += d['month_profit']
-
-        monthly_rows += f"""
-        <tr>
-            <td><span class='text-danger fw-bold'>📅 {ym}</span></td>
-            <td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>
-            <td><a href='/monthly_details/{ym}/new_inv' class='text-primary fw-bold text-decoration-none'>{d['new_investment']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/new_col' class='text-success fw-bold text-decoration-none'>{d['new_collected']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/debt_col' class='text-warning text-dark fw-bold text-decoration-none'>{d['debt_collected']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/fine' class='text-warning text-dark fw-bold text-decoration-none'>{d['total_fine']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/discount' class='text-danger fw-bold text-decoration-none'>-{d['total_discount']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/profit' class='text-success fw-bold text-decoration-none'>{d['month_profit']:,.2f}</a></td>
-        </tr>
-        """
-    
-    monthly_rows += f"""
-    <tr class="table-dark fw-bold">
-        <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
-        <td>{sum_new_inv:,.2f}</td>
-        <td>{sum_new_col:,.2f}</td>
-        <td>{sum_debt_col:,.2f}</td>
-        <td>{sum_fine:,.2f}</td>
-        <td class="text-danger">-{sum_disc:,.2f}</td>
-        <td class="text-success fs-6">{sum_modal_actual_profit:,.2f}</td>
-    </tr>
-    """
-
-    content = f"""
-    <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไร (ลิงก์ตรงกับหน้า Dashboard 100%)</h4>
-        </div>
-        <p class="text-muted small">💡 อ้างอิงตัวเลขและผลรวมกำไรสะสมสอดคล้องกับหน้า Dashboard สามารถคลิกที่ตัวเลขเพื่อตรวจสอบรายละเอียดได้</p>
-        <div class="table-responsive">
-            <table class="table table-bordered align-middle text-nowrap">
-                <thead class="table-dark">
-                    <tr>
-                        <th>เดือนที่ชำระ</th>
-                        <th>รายการ</th>
-                        <th>ทุนที่ลูกค้าใหม่กู้</th>
-                        <th>ยอดเก็บจากลูกค้าใหม่</th>
-                        <th>ยอดเก็บจากลูกค้าเก่า</th>
-                        <th>ยอดค่าปรับ</th>
-                        <th>ยอดส่วนลด</th>
-                        <th>กำไรสะสมเดือนนี้</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {monthly_rows}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    """
-    html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', 'สรุปยอดรายเดือน').replace('{% block content %}{% endblock %}', content)
-    return render_template_string(html, title="สรุปยอดรายเดือน", page="monthly")
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
