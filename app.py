@@ -61,7 +61,7 @@ class Transaction(db.Model):
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
     id = db.Column(db.Integer, primary_key=True)
-    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id', onDELETE='CASCADE'), nullable=True)
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id', ondelete='CASCADE'), nullable=True)
     payment_date = db.Column(db.Date, nullable=False, default=get_thai_today)
     pay_amount = db.Column(db.Float, default=0.0)
     fine_amount = db.Column(db.Float, default=0.0)
