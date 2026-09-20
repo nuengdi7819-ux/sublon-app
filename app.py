@@ -16,7 +16,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
 
-# ป้องกันปัญหา Internal Server Error จากการหลุดการเชื่อมต่อฐานข้อมูล
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle': 300,
     'pool_pre_ping': True
@@ -130,7 +129,7 @@ BASE_LAYOUT = """
 
         @media (max-width: 768px) {
             .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
-            .modal-body { max-height: 70vh; overflow-y: auto; }
+            .modal-body { max-height: 75vh; overflow-y: auto; }
         }
 
         @media (max-width: 992px) {
@@ -378,7 +377,6 @@ def index():
     all_txs_ever = Transaction.query.all()
     for tx in all_txs_ever: calculate_tx_values(tx)
 
-    # ดึงรายชื่อลูกค้าที่ไม่ซ้ำกันสำหรับระบบ Autocomplete
     all_unique_customers = sorted(list(set(t.customer_name for t in all_txs_ever if t.customer_name)))
 
     customer_active_counts = defaultdict(int)
@@ -406,6 +404,7 @@ def index():
     today_payment_count = len(today_histories)
     total_today_actions = today_new_count + today_payment_count
 
+    # Optimized Bank Calculation (Single Pass & Indexed Lookup)
     account_balances = {
         'กรุงศรีอยุธยา': 0.0,
         'ออมสิน': 0.0,
@@ -536,7 +535,7 @@ def index():
                             </div>
                         </div>
                         <div class="mb-3">
-                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก</h6>
+                            <h6 class="text-danger fw-bold border-bottom pb-2">📤 เงินออก (รวมถึงการปล่อยกู้ใหม่ทั้งหมด)</h6>
                             <div class="table-responsive">
                                 <table class="table table-sm table-striped align-middle text-nowrap">
                                     <thead class="table-dark"><tr><th>วันที่</th><th>รายการ / ผู้รับ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
@@ -778,7 +777,6 @@ def index():
         table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
-    # สร้าง Datalist สำหรับ Autocomplete ชื่อลูกค้าเก่า
     datalist_options = "".join([f'<option value="{c_name}">' for c_name in all_unique_customers])
 
     content = f"""
@@ -965,89 +963,89 @@ def index():
         </div>
     </div>
 
-    <!-- Modal เพิ่มรายการใหม่ (เปิดจากปุ่มในหน้าต่างบัญชี) -->
+    <!-- Modal เพิ่มรายการใหม่ (แบบกระทัดรัด 2 คอลัมน์) -->
     <div class="modal fade" id="addTransactionModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content border-success">
                 <form action="/add_transaction" method="POST">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">➕ เพิ่มรายการปล่อยกู้ใหม่</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">ประเภทรายการ</label>
-                            <select name="type" class="form-select" id="txTypeSelect" onchange="handleTypeChange()" required>
-                                <option value="เงินฉุกเฉิน">เงินฉุกเฉิน (ลูกค้าใหม่)</option>
-                                <option value="ผ่อนทอง">ผ่อนทอง (ลูกค้าใหม่)</option>
-                                <option value="ยอดค้างเก่า">ยอดค้างเก่า (ลูกค้าเก่า)</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">ชื่อลูกค้า</label>
-                            <input type="text" name="customer_name" class="form-control" list="customerListOptions" autocomplete="off" placeholder="พิมพ์ชื่อเพื่อค้นหาหรือเพิ่มใหม่..." required>
-                            <datalist id="customerListOptions">
-                                {datalist_options}
-                            </datalist>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">เบอร์โทร</label>
-                            <input type="text" name="phone" class="form-control" autocomplete="tel">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">วันที่กู้/วันที่เริ่ม</label>
-                            <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label fw-bold text-success">💳 แหล่งทุนที่ใช้ปล่อย (ล็อกให้อัตโนมัติ):</label>
-                            <select name="funding_source" id="addFundingSource" class="form-select border-success fw-bold text-success" required>
-                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
-                                <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
-                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
-                            </select>
-                            <small class="text-muted d-block" style="font-size: 0.75rem;">* ระบบจะหักเงินสดออกจากบัญชีนี้ทันที</small>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label fw-bold text-danger">ประเภทกำหนดจ่าย</label>
-                            <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
-                                <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
-                                <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
-                                <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3" id="dueDayDiv" style="display: none;">
-                            <label class="form-label fw-bold text-primary">รอบช่วงวันที่ต้องจ่าย</label>
-                            <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
+                    <div class="modal-body py-3">
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">ประเภทรายการ</label>
+                                <select name="type" class="form-select form-select-sm" id="txTypeSelect" onchange="handleTypeChange()" required>
+                                    <option value="เงินฉุกเฉิน">เงินฉุกเฉิน (ลูกค้าใหม่)</option>
+                                    <option value="ผ่อนทอง">ผ่อนทอง (ลูกค้าใหม่)</option>
+                                    <option value="ยอดค้างเก่า">ยอดค้างเก่า (ลูกค้าเก่า)</option>
+                                </select>
                             </div>
-                        </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">ชื่อลูกค้า</label>
+                                <input type="text" name="customer_name" class="form-control form-control-sm" list="customerListOptions" autocomplete="off" placeholder="พิมพ์ชื่อเพื่อค้นหาหรือเพิ่มใหม่..." required>
+                                <datalist id="customerListOptions">
+                                    {datalist_options}
+                                </datalist>
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
-                            <input type="number" step="any" name="principal" class="form-control" required>
-                        </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">เบอร์โทร</label>
+                                <input type="text" name="phone" class="form-control form-control-sm" autocomplete="tel" placeholder="08x-xxx-xxxx">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">วันที่กู้/วันที่เริ่ม</label>
+                                <input type="date" name="start_date" class="form-control form-control-sm" value="{thai_today.strftime('%Y-%m-%d')}" required>
+                            </div>
 
-                        <div class="mb-3" id="installmentDiv" style="display: none;">
-                            <label class="form-label fw-bold text-danger">ยอดชำระต่องวด (บาท)</label>
-                            <input type="number" step="any" name="installment_amount" class="form-control" value="0" placeholder="เช่น 150">
-                        </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-success small mb-1">💳 แหล่งทุนที่ใช้ปล่อย:</label>
+                                <select name="funding_source" id="addFundingSource" class="form-select form-select-sm border-success fw-bold text-success" required>
+                                    <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                    <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                    <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-danger small mb-1">ประเภทกำหนดจ่าย</label>
+                                <select name="schedule_type" class="form-select form-select-sm border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
+                                    <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
+                                    <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกหลายรอบ)</option>
+                                    <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
+                                </select>
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">ดอกเบี้ย/วัน (บาท)</label>
-                            <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
+                            <div class="col-12" id="dueDayDiv" style="display: none;">
+                                <label class="form-label fw-bold text-primary small mb-1">รอบช่วงวันที่ต้องจ่าย</label>
+                                <div class="p-2 border rounded bg-light d-flex flex-wrap gap-3">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
+                                <input type="number" step="any" name="principal" class="form-control form-control-sm" placeholder="0.00" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small mb-1">ดอกเบี้ย/วัน (บาท)</label>
+                                <input type="number" step="any" name="daily_interest" class="form-control form-control-sm" value="0" required>
+                            </div>
+
+                            <div class="col-12" id="installmentDiv" style="display: none;">
+                                <label class="form-label fw-bold text-danger small mb-1">ยอดชำระต่องวด (บาท)</label>
+                                <input type="number" step="any" name="installment_amount" class="form-control form-control-sm" value="0" placeholder="เช่น 150">
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer py-2">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                        <button type="submit" class="btn btn-success btn-sm fw-bold px-3" onclick="closeAllModals()">บันทึกข้อมูล</button>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold px-4" onclick="closeAllModals()">บันทึกข้อมูล</button>
                     </div>
                 </form>
             </div>
