@@ -251,20 +251,26 @@ def index():
     for acc_name in account_balances.keys(): account_balances[acc_name] = adj_dict.get(acc_name, 0.0)
 
     bank_details_data = {acc: {'inflows': [], 'outflows': []} for acc in account_balances.keys()}
-    for h in PaymentHistory.query.all():
-        acc = h.receiving_account or 'ออมสิน'
-        if acc in bank_details_data:
-            cust_name = h.transaction.customer_name if h.transaction else "ไม่ระบุชื่อ"
-            amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-            if amt > 0: bank_details_data[acc]['inflows'].append({'date': h.payment_date.strftime('%d/%m/%Y'), 'customer': cust_name, 'amount': amt, 'note': h.note or 'รับชำระเงิน'})
+    try:
+        for h in PaymentHistory.query.all():
+            acc = h.receiving_account or 'ออมสิน'
+            if acc in bank_details_data:
+                cust_name = h.transaction.customer_name if h.transaction else "ไม่ระบุชื่อ"
+                amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+                if amt > 0: bank_details_data[acc]['inflows'].append({'date': h.payment_date.strftime('%d/%m/%Y'), 'customer': cust_name, 'amount': amt, 'note': h.note or 'รับชำระเงิน'})
+    except Exception:
+        pass
 
     for tx in all_txs_ever:
         if tx.type != 'ยอดค้างเก่า' and tx.principal > 0:
             acc = tx.funding_source or 'ออมสิน'
             if acc in bank_details_data: bank_details_data[acc]['outflows'].append({'date': tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-', 'target': f"ปล่อยกู้ใหม่: {tx.customer_name}", 'amount': tx.original_principal, 'note': f"ทุนกู้ {tx.type}"})
 
-    for e in BankExpenseLog.query.all():
-        if e.account_name in bank_details_data: bank_details_data[e.account_name]['outflows'].append({'date': e.expense_date.strftime('%d/%m/%Y'), 'target': f"ถอนเงินออก: {e.note or 'ค่าใช้จ่าย'}", 'amount': e.amount, 'note': f"ผู้ทำ: {e.admin_name or '-'}"})
+    try:
+        for e in BankExpenseLog.query.all():
+            if e.account_name in bank_details_data: bank_details_data[e.account_name]['outflows'].append({'date': e.expense_date.strftime('%d/%m/%Y'), 'target': f"ถอนเงินออก: {e.note or 'ค่าใช้จ่าย'}", 'amount': e.amount, 'note': f"ผู้ทำ: {e.admin_name or '-'}"})
+    except Exception:
+        pass
 
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) + h.fine_amount for h in today_histories)
@@ -311,6 +317,7 @@ def index():
     rows, modals_html = "", ""
     for tx in transactions:
         badge_color = 'bg-success' if tx.status == 'ปกติ' else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-danger')
+        # ใส่ชื่อลูกค้ากลับมาไว้ที่คอลัมน์แรกสุด
         rows += f"""
         <tr>
             <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
@@ -466,14 +473,11 @@ def add_transaction():
 def transactions_list():
     if 'admin' not in session: return redirect(url_for('login'))
     search_q = request.args.get('search', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = 20  # จำกัด 20 รายการต่อหน้า เพื่อให้โหลดไวบนมือถือ
-
     all_txs_query = Transaction.query.order_by(Transaction.start_date.desc())
     if search_q:
         all_txs_query = all_txs_query.filter(Transaction.customer_name.ilike(f"%{search_q}%"))
     
-    all_txs = all_txs_query.all()
+    all_txs = all_txs_query.limit(100).all()
     all_customers = sorted(list(set(t.customer_name for t in Transaction.query.all() if t.customer_name)))
 
     active_txs = [tx for tx in all_txs if tx.principal > 0]
@@ -514,14 +518,14 @@ def transactions_list():
         <div class="table-responsive mb-4">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
-                <tbody>{build_rows(active_txs[:50]) if active_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีรายการที่กำลังเดินอยู่</td></tr>"}</tbody>
+                <tbody>{build_rows(active_txs) if active_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีรายการที่กำลังเดินอยู่</td></tr>"}</tbody>
             </table>
         </div>
         <h6 class="text-secondary fw-bold border-bottom pb-2">📁 บัญชีที่ปิดไปแล้ว (ประวัติย้อนหลัง {len(closed_txs)} บิล)</h6>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-secondary"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
-                <tbody>{build_rows(closed_txs[:50]) if closed_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีประวัติบัญชีที่ปิดไปแล้ว</td></tr>"}</tbody>
+                <tbody>{build_rows(closed_txs) if closed_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีประวัติบัญชีที่ปิดไปแล้ว</td></tr>"}</tbody>
             </table>
         </div>
     </div>
