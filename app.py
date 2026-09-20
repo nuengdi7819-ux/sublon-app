@@ -1149,7 +1149,7 @@ def index():
             </div>
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>💰 กำไรสะสมทั้งหมด/h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
+                    <h5>💰 กำไรสะสมทั้งหมด</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
                 </div>
             </div>
         </div>
