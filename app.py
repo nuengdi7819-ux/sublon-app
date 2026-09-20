@@ -421,7 +421,8 @@ def index():
         today_new_count = len(today_new_txs)
 
         today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
-        today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) + h.fine_amount for h in today_histories)
+        # แก้ไขจุดนี้: เอาค่าปรับออกจากการบวกเบิ้ลซ้ำซ้อน เพราะ pay_amount ได้รวมค่าปรับไว้แล้ว
+        today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in today_histories)
         
         today_payment_count = len(today_histories)
         total_today_actions = today_new_count + today_payment_count
@@ -1470,7 +1471,9 @@ def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
     all_txs_ever = Transaction.query.all()
-    sum_modal_actual_profit = 0.0
+    all_histories = PaymentHistory.query.all()
+    
+    total_system_profit = 0.0
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
             net_earned = max(0.0, (tx.original_principal - tx.principal))
@@ -1480,9 +1483,7 @@ def monthly_summary():
             
         tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
         tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
-        if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
-            sum_modal_actual_profit += total_item_profit
+        total_system_profit += (net_earned + tx_fine_sum - tx_discount_sum)
 
     monthly_data = defaultdict(lambda: {
         'count_tx': set(), 
@@ -1500,20 +1501,28 @@ def monthly_summary():
         if tx.type != 'ยอดค้างเก่า':
             monthly_data[ym_start]['new_investment'] += tx.original_principal
 
-    all_histories = PaymentHistory.query.all()
     for h in all_histories:
-        if h.payment_date:
-            ym_h = h.payment_date.strftime('%Y-%m')
+        h_date = h.payment_date
+        if not h_date and h.transaction:
+            h_date = h.transaction.start_date
+            
+        if h_date:
+            ym_h = h_date.strftime('%Y-%m')
             tx_ref = h.transaction
             
+            item_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+            if item_pay < 0: item_pay = 0.0
+
             if tx_ref and tx_ref.type == 'ยอดค้างเก่า':
-                monthly_data[ym_h]['debt_collected'] += h.principal_reduced
+                monthly_data[ym_h]['debt_collected'] += h.principal_reduced if h.principal_reduced > 0 else item_pay
             else:
-                monthly_data[ym_h]['new_collected'] += h.interest_paid
+                monthly_data[ym_h]['new_collected'] += h.interest_paid if h.interest_paid > 0 else item_pay
 
             monthly_data[ym_h]['total_fine'] += h.fine_amount
             monthly_data[ym_h]['total_discount'] += h.discount_amount
-            monthly_data[ym_h]['month_profit'] += (h.interest_paid + h.fine_amount - h.discount_amount)
+            
+            calc_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            monthly_data[ym_h]['month_profit'] += calc_profit
 
     monthly_rows = ""
     sum_new_inv = 0.0
@@ -1521,7 +1530,7 @@ def monthly_summary():
     sum_debt_col = 0.0
     sum_fine = 0.0
     sum_disc = 0.0
-    sum_profit = 0.0
+    sum_calc_profit = 0.0
 
     for ym, d in sorted(monthly_data.items(), reverse=True):
         sum_new_inv += d['new_investment']
@@ -1529,7 +1538,7 @@ def monthly_summary():
         sum_debt_col += d['debt_collected']
         sum_fine += d['total_fine']
         sum_disc += d['total_discount']
-        sum_profit += d['month_profit']
+        sum_calc_profit += d['month_profit']
 
         monthly_rows += f"""
         <tr>
@@ -1552,7 +1561,7 @@ def monthly_summary():
         <td>{sum_debt_col:,.2f}</td>
         <td>{sum_fine:,.2f}</td>
         <td class="text-danger">-{sum_disc:,.2f}</td>
-        <td class="text-success fs-6">{sum_modal_actual_profit:,.2f}</td>
+        <td class="text-success fs-6">{total_system_profit:,.2f}</td>
     </tr>
     """
 
@@ -1596,6 +1605,11 @@ def monthly_details(ym, category):
     except:
         return redirect(url_for('monthly_summary'))
 
+    histories_in_month = PaymentHistory.query.filter(
+        db.extract('year', PaymentHistory.payment_date) == year_i,
+        db.extract('month', PaymentHistory.payment_date) == month_i
+    ).all()
+
     if category == 'new_inv':
         txs = Transaction.query.filter(
             db.extract('year', Transaction.start_date) == year_i,
@@ -1604,28 +1618,31 @@ def monthly_details(ym, category):
         ).all()
         title_str = f"ทุนที่ลูกค้าใหม่กู้ ประจำเดือน {ym}"
     else:
-        histories = PaymentHistory.query.filter(
-            db.extract('year', PaymentHistory.payment_date) == year_i,
-            db.extract('month', PaymentHistory.payment_date) == month_i
-        ).all()
-        
-        if category == 'new_col':
-            tx_ids = [h.transaction_id for h in histories if h.transaction and h.transaction.type != 'ยอดค้างเก่า' and h.interest_paid > 0]
-            title_str = f"ยอดเก็บจากลูกค้าใหม่ ประจำเดือน {ym}"
-        elif category == 'debt_col':
-            tx_ids = [h.transaction_id for h in histories if h.transaction and h.transaction.type == 'ยอดค้างเก่า' and h.principal_reduced > 0]
-            title_str = f"ยอดเก็บจากลูกค้าเก่า (ยอดค้างเก่า) ประจำเดือน {ym}"
-        elif category == 'fine':
-            tx_ids = [h.transaction_id for h in histories if h.fine_amount > 0]
-            title_str = f"รายการค่าปรับ ประจำเดือน {ym}"
-        elif category == 'discount':
-            tx_ids = [h.transaction_id for h in histories if h.discount_amount > 0]
-            title_str = f"รายการส่วนลด ประจำเดือน {ym}"
-        else:
-            tx_ids = [h.transaction_id for h in histories]
-            title_str = f"กำไรสะสม ประจำเดือน {ym}"
+        tx_ids = set()
+        for h in histories_in_month:
+            if not h.transaction:
+                continue
+            
+            is_debt = (h.transaction.type == 'ยอดค้างเก่า')
+            
+            if category == 'new_col' and not is_debt:
+                tx_ids.add(h.transaction_id)
+            elif category == 'debt_col' and is_debt:
+                tx_ids.add(h.transaction_id)
+            elif category == 'fine' and h.fine_amount > 0:
+                tx_ids.add(h.transaction_id)
+            elif category == 'discount' and h.discount_amount > 0:
+                tx_ids.add(h.transaction_id)
+            elif category == 'profit':
+                tx_ids.add(h.transaction_id)
 
-        txs = Transaction.query.filter(Transaction.id.in_(tx_ids)).all() if tx_ids else []
+        txs = Transaction.query.filter(Transaction.id.in_(list(tx_ids))).all() if tx_ids else []
+        
+        if category == 'new_col': title_str = f"ยอดเก็บจากลูกค้าใหม่ ประจำเดือน {ym}"
+        elif category == 'debt_col': title_str = f"ยอดเก็บจากลูกค้าเก่า (ยอดค้างเก่า) ประจำเดือน {ym}"
+        elif category == 'fine': title_str = f"รายการค่าปรับ ประจำเดือน {ym}"
+        elif category == 'discount': title_str = f"รายการส่วนลด ประจำเดือน {ym}"
+        else: title_str = f"กำไรสะสม ประจำเดือน {ym}"
 
     rows = ""
     total_actual_paid_sum = 0.0
@@ -1643,10 +1660,10 @@ def monthly_details(ym, category):
         actual_paid_total = 0.0
         if tx.histories:
             for h in tx.histories:
-                p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-                actual_paid_total += p_item
-        else:
-            actual_paid_total = tx.total_paid
+                h_date = h.payment_date if h.payment_date else tx.start_date
+                if h_date and h_date.year == year_i and h_date.month == month_i:
+                    p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+                    actual_paid_total += p_item
 
         total_actual_paid_sum += actual_paid_total
         total_inv_sum += tx.original_principal
@@ -2249,16 +2266,23 @@ def update_payment(tx_id):
         elif new_status:
             tx.status = new_status
 
-    if pay_amount <= 0:
-        pay_amount = actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt
-        if pay_amount < 0: pay_amount = 0.0
+    total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
+    if total_net_pay < 0: total_net_pay = 0.0
 
     db.session.add(PaymentHistory(
-        transaction_id=tx.id, payment_date=thai_today, pay_amount=pay_amount,
+        transaction_id=tx.id, payment_date=thai_today, pay_amount=total_net_pay,
         fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
         principal_reduced=actual_principal_reduced, note=note_text, admin_name=session.get('admin'),
         receiving_account=receiving_account
     ))
+
+    if total_net_pay > 0 and receiving_account in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
+        adj_bank = BankAdjustment.query.filter_by(account_name=receiving_account).first()
+        if adj_bank:
+            adj_bank.adjustment_amount += total_net_pay
+        else:
+            db.session.add(BankAdjustment(account_name=receiving_account, adjustment_amount=total_net_pay))
+
     db.session.commit()
     db.session.remove()
     return redirect(request.referrer or url_for('index'))
