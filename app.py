@@ -15,6 +15,13 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
+
+# ป้องกันปัญหา Internal Server Error จากการหลุดการเชื่อมต่อฐานข้อมูล
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_recycle': 300,
+    'pool_pre_ping': True
+}
+
 db = SQLAlchemy(app)
 
 TH_TIMEZONE = timezone(timedelta(hours=7))
@@ -370,6 +377,9 @@ def index():
 
     all_txs_ever = Transaction.query.all()
     for tx in all_txs_ever: calculate_tx_values(tx)
+
+    # ดึงรายชื่อลูกค้าที่ไม่ซ้ำกันสำหรับระบบ Autocomplete
+    all_unique_customers = sorted(list(set(t.customer_name for t in all_txs_ever if t.customer_name)))
 
     customer_active_counts = defaultdict(int)
     for t in all_txs_ever:
@@ -768,6 +778,9 @@ def index():
         table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
         view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
+    # สร้าง Datalist สำหรับ Autocomplete ชื่อลูกค้าเก่า
+    datalist_options = "".join([f'<option value="{c_name}">' for c_name in all_unique_customers])
+
     content = f"""
     <!-- 1. สถานะกระเป๋าเงินจริงในมือถือ -->
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
@@ -972,7 +985,10 @@ def index():
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">ชื่อลูกค้า</label>
-                            <input type="text" name="customer_name" class="form-control" autocomplete="off" required>
+                            <input type="text" name="customer_name" class="form-control" list="customerListOptions" autocomplete="off" placeholder="พิมพ์ชื่อเพื่อค้นหาหรือเพิ่มใหม่..." required>
+                            <datalist id="customerListOptions">
+                                {datalist_options}
+                            </datalist>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">เบอร์โทร</label>
