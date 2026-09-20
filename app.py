@@ -117,9 +117,9 @@ BASE_LAYOUT = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; margin: 0; padding: 0; overflow-x: hidden; }
+        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; margin: 0; padding: 0; }
         .sidebar { width: 260px; min-height: 100vh; background: #2c0b0e; border-right: 2px solid #d4af37; position: fixed; top: 0; left: 0; z-index: 1050; transition: transform 0.3s ease-in-out; overflow-y: auto; color: #f8f9fa; }
-        .main-content { margin-left: 260px; padding: 20px; width: calc(100% - 260px); box-sizing: border-box; }
+        .main-content { margin-left: 260px; padding: 25px; min-height: 100vh; background-color: #fcf6f0; }
         .nav-link { color: #f1d3b2; font-weight: 500; padding: 10px 15px; border-radius: 6px; margin-bottom: 4px; font-size: 0.95rem; white-space: nowrap; }
         .nav-link:hover, .nav-link.active { background-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
@@ -129,7 +129,7 @@ BASE_LAYOUT = """
         @media (max-width: 992px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.show { transform: translateX(0); }
-            .main-content { margin-left: 0; width: 100%; padding: 10px; }
+            .main-content { margin-left: 0; padding: 15px; }
             .mobile-header { display: flex; justify-content: space-between; align-items: center; }
             .sidebar-backdrop.show { display: block; }
         }
