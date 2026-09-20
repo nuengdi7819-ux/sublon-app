@@ -238,7 +238,7 @@ def index():
                 seen_ids.add(t.id)
                 transactions.append(t)
     else:
-        transactions = query.order_by(Transaction.customer_name.asc()).all()
+        transactions = query.order_by(Transaction.customer_name.asc()).limit(50).all()
 
     for tx in transactions: calculate_tx_values(tx)
     all_txs_ever = Transaction.query.all()
@@ -287,7 +287,6 @@ def index():
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0)
 
-    # ข้อมูลธุรกรรมวันนี้สำหรับลิ้นชักสรุป
     today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
     today_outflow_by_acc = defaultdict(float)
     for tx in today_new_txs:
@@ -345,10 +344,8 @@ def index():
     </div>
     {bank_modals_html}
 
-    <!-- Modal ถอนเงินออก / โยกเงินออก -->
     <div class="modal fade" id="withdrawModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-danger"><form action="/withdraw_money" method="POST"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fw-bold fs-6">💸 ถอนเงินออก / โยกเงินจากบัญชี</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-2"><label class="form-label fw-bold small">เลือกบัญชีที่ต้องการถอนออก:</label><select name="account_name" class="form-select form-select-sm" required><option value="ออมสิน">🩷 ออมสิน</option><option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา</option><option value="วอลเล็ท">🟠 TrueMoney Wallet</option></select></div><div class="mb-2"><label class="form-label fw-bold small">จำนวนเงินที่ถอนออก (บาท):</label><input type="number" step="any" name="amount" class="form-control form-control-sm" placeholder="0.00" required></div><div class="mb-2"><label class="form-label fw-bold small">หมายเหตุ / เหตุผลการถอน:</label><input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น ค่าใช้จ่าย, โยกเงิน..."></div></div><div class="modal-footer py-2"><button type="submit" class="btn btn-danger btn-sm fw-bold px-3">ยืนยันการถอนออก</button></div></form></div></div></div></div>
 
-    <!-- 4 กล่องสรุป -->
     <div class="row mb-4">
         <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-success shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalCollectedToday"><h6>💵 ยอดเก็บสดวันนี้</h6><h3 class="fw-bold mb-0">{today_collected_cash:,.2f} ฿</h3><small class="text-light" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
         <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-primary shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalTotalProfit"><h6>💰 กำไรสะสมทั้งหมด</h6><h3 class="fw-bold mb-0">{total_profit_sum:,.2f} ฿</h3><small class="text-light" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
@@ -356,13 +353,11 @@ def index():
         <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-warning text-dark shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalDebtPrincipal"><h6>📂 ยอดค้างเก่ารอเก็บ</h6><h3 class="fw-bold mb-0">{total_debt_principal:,.2f} ฿</h3><small class="text-dark" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
     </div>
 
-    <!-- Modals 4 กล่อง -->
     <div class="modal fade" id="modalCollectedToday" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-success text-white py-2"><h5 class="modal-title fs-6">💵 รายละเอียดยอดเก็บสดวันนี้</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดรวมเก็บสดวันนี้: <b>{today_collected_cash:,.2f} บาท</b></p><a href="/export_report/collected_today" class="btn btn-success btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
     <div class="modal fade" id="modalTotalProfit" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-primary text-white py-2"><h5 class="modal-title fs-6">💰 รายละเอียดกำไรสะสมทั้งหมด</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>กำไรสะสมรวม: <b>{total_profit_sum:,.2f} บาท</b></p><a href="/export_report/total_profit" class="btn btn-primary btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
     <div class="modal fade" id="modalNewPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fs-6">💼 รายละเอียดทุนใหม่คงค้าง</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ทุนใหม่คงค้างรวม: <b>{total_new_principal:,.2f} บาท</b></p><a href="/export_report/new_principal" class="btn btn-danger btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
     <div class="modal fade" id="modalDebtPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-warning py-2"><h5 class="modal-title fs-6 text-dark">📂 รายละเอียดยอดค้างเก่ารอเก็บ</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดค้างเก่าคงเหลือรวม: <b>{total_debt_principal:,.2f} บาท</b></p><a href="/export_report/debt_principal" class="btn btn-warning btn-sm w-100 fw-bold text-dark">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
 
-    <!-- ลิ้นชักสรุปรายการธุรกรรมวันนี้ -->
     <div class="card mb-4 shadow-sm border-info">
         <div class="card-header bg-info bg-opacity-25 py-2">
             <button class="btn btn-sm btn-outline-dark w-100 fw-bold d-flex justify-content-between align-items-center border-0" type="button" data-bs-toggle="collapse" data-bs-target="#todayTransactionCollapse">
@@ -471,11 +466,15 @@ def add_transaction():
 def transactions_list():
     if 'admin' not in session: return redirect(url_for('login'))
     search_q = request.args.get('search', '').strip()
-    all_txs = Transaction.query.order_by(Transaction.start_date.desc()).all()
-    all_customers = sorted(list(set(t.customer_name for t in all_txs if t.customer_name)))
+    page = request.args.get('page', 1, type=int)
+    per_page = 20  # จำกัด 20 รายการต่อหน้า เพื่อให้โหลดไวบนมือถือ
 
+    all_txs_query = Transaction.query.order_by(Transaction.start_date.desc())
     if search_q:
-        all_txs = [t for t in all_txs if search_q.lower() in t.customer_name.lower()]
+        all_txs_query = all_txs_query.filter(Transaction.customer_name.ilike(f"%{search_q}%"))
+    
+    all_txs = all_txs_query.all()
+    all_customers = sorted(list(set(t.customer_name for t in Transaction.query.all() if t.customer_name)))
 
     active_txs = [tx for tx in all_txs if tx.principal > 0]
     closed_txs = [tx for tx in all_txs if tx.principal <= 0]
@@ -515,14 +514,14 @@ def transactions_list():
         <div class="table-responsive mb-4">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
-                <tbody>{build_rows(active_txs) if active_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีรายการที่กำลังเดินอยู่</td></tr>"}</tbody>
+                <tbody>{build_rows(active_txs[:50]) if active_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีรายการที่กำลังเดินอยู่</td></tr>"}</tbody>
             </table>
         </div>
         <h6 class="text-secondary fw-bold border-bottom pb-2">📁 บัญชีที่ปิดไปแล้ว (ประวัติย้อนหลัง {len(closed_txs)} บิล)</h6>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-secondary"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
-                <tbody>{build_rows(closed_txs) if closed_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีประวัติบัญชีที่ปิดไปแล้ว</td></tr>"}</tbody>
+                <tbody>{build_rows(closed_txs[:50]) if closed_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีประวัติบัญชีที่ปิดไปแล้ว</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -541,7 +540,7 @@ def members():
         customers = [c for c in customers if search_q.lower() in c.lower()]
 
     rows = ""
-    for c in customers:
+    for c in customers[:50]:
         c_txs = [t for t in all_txs if t.customer_name == c]
         phone_val = next((t.phone for t in c_txs if t.phone), '-')
         active_cnt = sum(1 for t in c_txs if t.principal > 0)
