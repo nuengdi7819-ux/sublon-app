@@ -546,6 +546,9 @@ def index():
             last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
             closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
             
+            selected_normal = "selected" if tx.status == "ปกติ" else ""
+            selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
+
             schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
             if tx.schedule_type == 'กำหนดจ่ายประจำเดือน' and tx.due_day_of_month:
                 code_map = {"2": "29-2", "6": "4-6", "12": "9-12", "16": "14-16", "23": "20-23", "26": "24-26"}
