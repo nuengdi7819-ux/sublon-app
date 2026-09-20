@@ -15,6 +15,13 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
+
+# ป้องกันปัญหา SSL SYSCALL error / Connection closed บน Cloud (Render/Supabase)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+}
+
 db = SQLAlchemy(app)
 
 TH_TIMEZONE = timezone(timedelta(hours=7))
@@ -315,7 +322,6 @@ def index():
             )
             db.session.add(new_tx)
 
-            # ตัดยอดเงินออกจากกระเป๋าจริงอัตโนมัติ
             if p_val > 0 and funding_source in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
                 adj = BankAdjustment.query.filter_by(account_name=funding_source).first()
                 if adj:
@@ -682,7 +688,8 @@ def index():
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ (เทียบเท่าแอปธนาคาร & วอลเล็ท)</h5>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferBankModal">🔄 โยกเงินระหว่างบัญชี (พักบัญชี)</button>
                 <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอดเงินตั้งต้น</button>
                 <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก (จ่ายพนักงาน/ค่าใช้จ่าย)</button>
             </div>
@@ -714,7 +721,7 @@ def index():
         <!-- ประวัติการถอนเงินออกไปใช้จ่าย -->
         <div class="mt-3 pt-3 border-top">
             <button class="btn btn-outline-secondary btn-sm mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#expenseLogCollapse">
-                📜 ดูประวัติการถอนเงินออกไปจ่ายพนักงาน / ค่าใช้จ่าย (คลิกเพื่อเปิด/ปิด)
+                📜 ดูประวัติการโยกเงิน / ถอนเงินออกไปจ่ายพนักงาน / ค่าใช้จ่าย (คลิกเพื่อเปิด/ปิด)
             </button>
             <div class="collapse" id="expenseLogCollapse">
                 <div class="table-responsive bg-light p-2 rounded">
@@ -723,10 +730,55 @@ def index():
                             <tr><th>วันที่</th><th>บัญชี</th><th>จำนวนเงิน</th><th>หมายเหตุ</th><th>ผู้ทำรายการ</th><th>จัดการ</th></tr>
                         </thead>
                         <tbody>
-                            {expense_rows if expense_rows else "<tr><td colspan='6' class='text-center text-muted'>ยังไม่มีประวัติการถอนเงินออก</td></tr>"}
+                            {expense_rows if expense_rows else "<tr><td colspan='6' class='text-center text-muted'>ยังไม่มีประวัติการโยก/ถอนเงินออก</td></tr>"}
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal โยกเงินระหว่างบัญชี (พักบัญชี) -->
+    <div class="modal fade" id="transferBankModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-primary">
+                <form action="/transfer_bank_money" method="POST">
+                    <div class="modal-header bg-primary text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">🔄 โยกเงินระหว่างบัญชี (เพื่อพักบัญชี / หมุนเงิน)</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">ระบบจะทำการหักเงินจากบัญชีต้นทาง และบวกเงินเพิ่มเข้าบัญชีปลายทางให้อัตโนมัติทันที</p>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-danger">📤 จากบัญชีต้นทาง (บัญชีที่โอนออก)</label>
+                            <select name="from_account" class="form-select border-danger" required>
+                                <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">📥 ไปยังบัญชีปลายทาง (บัญชีที่รับเงิน)</label>
+                            <select name="to_account" class="form-select border-success" required>
+                                <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
+                                <option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                <option value="วอลเล็ท">🟠 TrueMoney Wallet (092-923-7819)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-primary">💵 จำนวนเงินที่ต้องการโยก (บาท)</label>
+                            <input type="number" step="any" name="transfer_amount" class="form-control" placeholder="เช่น 10000" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-dark">📝 หมายเหตุการโยกเงิน</label>
+                            <input type="text" name="note" class="form-control" placeholder="เช่น โยกไปพักไว้บัญชีออมสิน" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-primary btn-sm fw-bold px-3">ยืนยันการโยกเงิน</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1131,6 +1183,49 @@ def index():
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
     return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
 
+@app.route('/transfer_bank_money', methods=['POST'])
+def transfer_bank_money():
+    if 'admin' not in session: return redirect(url_for('login'))
+    try:
+        from_acc = request.form.get('from_account')
+        to_acc = request.form.get('to_account')
+        transfer_amt = float(request.form.get('transfer_amount', 0))
+        note_text = request.form.get('note', '').strip()
+
+        if from_acc == to_acc:
+            return redirect(url_for('index'))
+
+        if transfer_amt > 0:
+            # 1. หักเงินออกจากบัญชีต้นทาง
+            adj_from = BankAdjustment.query.filter_by(account_name=from_acc).first()
+            if adj_from:
+                adj_from.adjustment_amount = max(0.0, adj_from.adjustment_amount - transfer_amt)
+            else:
+                db.session.add(BankAdjustment(account_name=from_acc, adjustment_amount=0.0))
+
+            # 2. เพิ่มเงินเข้าบัญชีปลายทาง
+            adj_to = BankAdjustment.query.filter_by(account_name=to_acc).first()
+            if adj_to:
+                adj_to.adjustment_amount += transfer_amt
+            else:
+                db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=transfer_amt))
+
+            # 3. บันทึกประวัติการโยกเงิน (ใช้ BankExpenseLog บันทึกเพื่อให้ดูในประวัติได้)
+            db.session.add(BankExpenseLog(
+                expense_date=get_thai_today(),
+                account_name=f"{from_acc} ➡️ {to_acc}",
+                amount=transfer_amt,
+                note=f"[โยกเงินพักบัญชี] {note_text}",
+                admin_name=session.get('admin')
+            ))
+
+            db.session.commit()
+    except Exception as e:
+        print("Transfer error:", e)
+        db.session.rollback()
+    db.session.remove()
+    return redirect(url_for('index'))
+
 @app.route('/update_bank_adjustment', methods=['POST'])
 def update_bank_adjustment():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -1184,9 +1279,22 @@ def withdraw_bank_money():
 def delete_expense(exp_id):
     if 'admin' not in session: return redirect(url_for('login'))
     exp = BankExpenseLog.query.get_or_404(exp_id)
-    adj = BankAdjustment.query.filter_by(account_name=exp.account_name).first()
-    if adj:
-        adj.adjustment_amount += exp.amount
+    
+    # ถ้ายกเลิกรายการโยกเงิน ให้คืนเงินกลับบัญชีเดิม
+    if "➡️" in exp.account_name:
+        parts = exp.account_name.split(" ➡️ ")
+        if len(parts) == 2:
+            from_acc, to_acc = parts[0], parts[1]
+            adj_from = BankAdjustment.query.filter_by(account_name=from_acc).first()
+            if adj_from: adj_from.adjustment_amount += exp.amount
+            
+            adj_to = BankAdjustment.query.filter_by(account_name=to_acc).first()
+            if adj_to: adj_to.adjustment_amount = max(0.0, adj_to.adjustment_amount - exp.amount)
+    else:
+        adj = BankAdjustment.query.filter_by(account_name=exp.account_name).first()
+        if adj:
+            adj.adjustment_amount += exp.amount
+            
     db.session.delete(exp)
     db.session.commit()
     db.session.remove()
