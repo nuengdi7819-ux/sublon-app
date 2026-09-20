@@ -117,9 +117,9 @@ BASE_LAYOUT = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; }
+        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; overflow-x: hidden; }
         .sidebar { width: 260px; min-height: 100vh; background: #2c0b0e; border-right: 2px solid #d4af37; position: fixed; top: 0; left: 0; z-index: 1050; transition: transform 0.3s ease-in-out; overflow-y: auto; color: #f8f9fa; }
-        .main-content { margin-left: 260px; padding: 25px; transition: margin 0.3s ease-in-out; }
+        .main-content { margin-left: 260px; padding: 20px; transition: margin 0.3s ease-in-out; max-width: calc(100vw - 260px); }
         .nav-link { color: #f1d3b2; font-weight: 500; padding: 10px 15px; border-radius: 6px; margin-bottom: 4px; font-size: 0.95rem; white-space: nowrap; }
         .nav-link:hover, .nav-link.active { background-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
@@ -129,7 +129,7 @@ BASE_LAYOUT = """
         @media (max-width: 992px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.show { transform: translateX(0); }
-            .main-content { margin-left: 0; padding: 12px; }
+            .main-content { margin-left: 0; padding: 10px; max-width: 100vw; }
             .mobile-header { display: flex; justify-content: space-between; align-items: center; }
             .sidebar-backdrop.show { display: block; }
         }
@@ -317,10 +317,9 @@ def index():
     rows, modals_html = "", ""
     for tx in transactions:
         badge_color = 'bg-success' if tx.status == 'ปกติ' else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-danger')
-        # ใส่ชื่อลูกค้ากลับมาไว้ที่คอลัมน์แรกสุด
         rows += f"""
         <tr>
-            <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
+            <td class="fw-bold"><a href="/customer_details/{tx.customer_name}" class="text-dark text-decoration-none">{tx.customer_name}</a></td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td>{get_funding_badge(tx.funding_source)}</td>
             <td>{tx.start_date.strftime('%d/%m/%Y')}</td>
@@ -490,7 +489,7 @@ def transactions_list():
             badge_color = 'bg-success' if tx.status == 'ปกติ' else 'bg-danger'
             res += f"""
             <tr>
-                <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
+                <td class="fw-bold"><a href="/customer_details/{tx.customer_name}" class="text-dark text-decoration-none">{tx.customer_name}</a></td>
                 <td><span class="badge bg-secondary">{tx.type}</span></td>
                 <td>{get_funding_badge(tx.funding_source)}</td>
                 <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
@@ -551,7 +550,7 @@ def members():
         closed_cnt = sum(1 for t in c_txs if t.principal <= 0)
         rows += f"""
         <tr>
-            <td><a href="/customer_details/{c}" class="text-dark fw-bold text-decoration-none">👤 {c}</a></td>
+            <td class="fw-bold"><a href="/customer_details/{c}" class="text-dark text-decoration-none">👤 {c}</a></td>
             <td>{phone_val}</td>
             <td><span class="badge bg-success">เดิน {active_cnt} บิล</span></td>
             <td><span class="badge bg-secondary">ปิด {closed_cnt} บิล</span></td>
