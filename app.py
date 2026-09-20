@@ -39,7 +39,7 @@ def get_funding_badge(source):
     elif source == 'กรุงศรีอยุธยา':
         return '<span class="badge text-dark" style="background-color: #ffc107;">กรุงศรีอยุธยา</span>'
     elif source == 'วอลเล็ท':
-        return '<span class="badge" style="background-color: #dc3545; color: #fff;">วอลเล็ท</span>'
+        return '<span class="badge" style="background-color: #fd7e14; color: #fff;">วอลเล็ท</span>'
     return f'<span class="badge bg-secondary">{source or "ออมสิน"}</span>'
 
 class Transaction(db.Model):
