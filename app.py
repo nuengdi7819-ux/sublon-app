@@ -117,9 +117,9 @@ BASE_LAYOUT = """
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; overflow-x: hidden; }
+        body { font-family: 'Prompt', sans-serif; background-color: #fcf6f0; margin: 0; padding: 0; overflow-x: hidden; }
         .sidebar { width: 260px; min-height: 100vh; background: #2c0b0e; border-right: 2px solid #d4af37; position: fixed; top: 0; left: 0; z-index: 1050; transition: transform 0.3s ease-in-out; overflow-y: auto; color: #f8f9fa; }
-        .main-content { margin-left: 260px; padding: 20px; transition: margin 0.3s ease-in-out; max-width: calc(100vw - 260px); }
+        .main-content { margin-left: 260px; padding: 20px; width: calc(100% - 260px); box-sizing: border-box; }
         .nav-link { color: #f1d3b2; font-weight: 500; padding: 10px 15px; border-radius: 6px; margin-bottom: 4px; font-size: 0.95rem; white-space: nowrap; }
         .nav-link:hover, .nav-link.active { background-color: #d4af37; color: #2c0b0e; font-weight: 600; }
         .mobile-header { display: none; background: #2c0b0e; border-bottom: 2px solid #d4af37; color: #fff; padding: 12px 15px; position: sticky; top: 0; z-index: 1040; }
@@ -129,7 +129,7 @@ BASE_LAYOUT = """
         @media (max-width: 992px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.show { transform: translateX(0); }
-            .main-content { margin-left: 0; padding: 10px; max-width: 100vw; }
+            .main-content { margin-left: 0; width: 100%; padding: 10px; }
             .mobile-header { display: flex; justify-content: space-between; align-items: center; }
             .sidebar-backdrop.show { display: block; }
         }
@@ -361,7 +361,7 @@ def index():
 
     <div class="modal fade" id="modalCollectedToday" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-success text-white py-2"><h5 class="modal-title fs-6">💵 รายละเอียดยอดเก็บสดวันนี้</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดรวมเก็บสดวันนี้: <b>{today_collected_cash:,.2f} บาท</b></p><a href="/export_report/collected_today" class="btn btn-success btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
     <div class="modal fade" id="modalTotalProfit" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-primary text-white py-2"><h5 class="modal-title fs-6">💰 รายละเอียดกำไรสะสมทั้งหมด</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>กำไรสะสมรวม: <b>{total_profit_sum:,.2f} บาท</b></p><a href="/export_report/total_profit" class="btn btn-primary btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
-    <div class="modal fade" id="modalNewPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fs-6">💼 รายละเอียดทุนใหม่คงค้าง</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ทุนใหม่คงค้างรวม: <b>{total_new_principal:,.2f} บาท</b></p><a href="/export_report/new_principal" class="btn btn-danger btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
+    <div class="modal fade" id="modalNewPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fs-6">💼 รายละเอียดทุนใหม่คงค้าง</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ทุนใหม่คงค้างรวม: <b>{total_new_principal:,.2f} บาท</b></p><a href="/export_report/new_principal" class="btn btn-danger btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
     <div class="modal fade" id="modalDebtPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-warning py-2"><h5 class="modal-title fs-6 text-dark">📂 รายละเอียดยอดค้างเก่ารอเก็บ</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดค้างเก่าคงเหลือรวม: <b>{total_debt_principal:,.2f} บาท</b></p><a href="/export_report/debt_principal" class="btn btn-warning btn-sm w-100 fw-bold text-dark">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
 
     <div class="card mb-4 shadow-sm border-info">
