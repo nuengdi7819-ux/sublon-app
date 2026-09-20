@@ -349,6 +349,7 @@ def index():
     end_date_str = request.args.get('end_date', '').strip()
     thai_today = get_thai_today()
     today_day = thai_today.day
+    current_year, current_month = thai_today.year, thai_today.month
 
     try:
         query = Transaction.query.filter(Transaction.principal > 0)
@@ -413,9 +414,11 @@ def index():
         unique_customers = sorted(list(set(t.customer_name for t in all_txs_ever if t.customer_name)))
         datalist_options = "".join([f'<option value="{name}">' for name in unique_customers])
 
-        total_new_investment = sum(tx.original_principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า')
-        total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า')
-        total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
+        # ปรับให้ 3 กล่องคำนวณเฉพาะข้อมูลของ "เดือนปัจจุบัน" (รีเซ็ตใหม่ทุกวันที่ 1)
+        total_new_investment = sum(tx.original_principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.start_date and tx.start_date.year == current_year and tx.start_date.month == current_month)
+        
+        total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0 and tx.start_date and tx.start_date.year == current_year and tx.start_date.month == current_month)
+        total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0 and tx.start_date and tx.start_date.year == current_year and tx.start_date.month == current_month)
         
         today_new_txs = [tx for tx in all_txs_ever if tx.start_date == thai_today]
         today_new_count = len(today_new_txs)
@@ -475,14 +478,22 @@ def index():
             </tr>
             """
 
-        debt_card_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0]
+        debt_card_txs = [tx for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0 and tx.start_date and tx.start_date.year == current_year and tx.start_date.month == current_month]
         debt_card_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in debt_card_txs])
 
-        new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
+        new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0 and tx.start_date and tx.start_date.year == current_year and tx.start_date.month == current_month]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
         profit_items = []
+        current_month_profit = 0.0
         for tx in all_txs_ever:
+            latest_date = tx.start_date
+            if tx.histories:
+                max_h_date = max((h.payment_date for h in tx.histories if h.payment_date), default=None)
+                if max_h_date and max_h_date > latest_date: latest_date = max_h_date
+            if tx.last_payment_date and tx.last_payment_date > latest_date:
+                latest_date = tx.last_payment_date
+
             if tx.type == 'ยอดค้างเก่า':
                 net_earned = max(0.0, (tx.original_principal - tx.principal))
             else:
@@ -493,14 +504,11 @@ def index():
             tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
             total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
 
-            if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
-                latest_date = tx.start_date
-                if tx.histories:
-                    max_h_date = max(h.payment_date for h in tx.histories if h.payment_date)
-                    if max_h_date > latest_date: latest_date = max_h_date
-                if tx.last_payment_date and tx.last_payment_date > latest_date:
-                    latest_date = tx.last_payment_date
+            # กรองเฉพาะกำไรของเดือนปัจจุบันสำหรับกล่องสรุป
+            if latest_date and latest_date.year == current_year and latest_date.month == current_month:
+                current_month_profit += total_item_profit
 
+            if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
                 profit_items.append({
                     'customer_name': tx.customer_name,
                     'type': tx.type,
@@ -1080,16 +1088,16 @@ def index():
             </div>
         </div>
 
-        <!-- 4. สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) -->
+        <!-- 4. สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) (รีเซ็ตข้อมูลเฉพาะเดือนปัจจุบัน) -->
         <div class="row mb-4">
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>📂 ยอดค้างเก่าคงเหลือ</h5><h3>{total_debt_principal:,.2f} บาท</h3>
+                    <h5>📂 ยอดค้างเก่าคงเหลือ (เดือนนี้)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
                 </div>
             </div>
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>💼 เงินต้นคงค้าง</h5><h3>{total_new_principal:,.2f} บาท</h3>
+                    <h5>💼 เงินต้นคงค้าง (เดือนนี้)</h5><h3>{total_new_principal:,.2f} บาท</h3>
                 </div>
             </div>
         </div>
@@ -1099,7 +1107,7 @@ def index():
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-warning">
                     <div class="modal-header bg-warning text-dark py-2">
-                        <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือ ({total_debt_principal:,.2f} บาท)</h5>
+                        <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือ เดือนปัจจุบัน ({total_debt_principal:,.2f} บาท)</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
@@ -1108,7 +1116,7 @@ def index():
                                 <thead class="table-dark">
                                     <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่ตั้งต้น</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th></tr>
                                 </thead>
-                                <tbody>{debt_card_rows if debt_card_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายการยอดค้างเก่า</td></tr>"}</tbody>
+                                <tbody>{debt_card_rows if debt_card_rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่มีรายการยอดค้างเก่าในเดือนนี้</td></tr>"}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1122,7 +1130,7 @@ def index():
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
-                        <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้าง ({total_new_principal:,.2f} บาท)</h5>
+                        <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้าง เดือนปัจจุบัน ({total_new_principal:,.2f} บาท)</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
@@ -1131,7 +1139,7 @@ def index():
                                 <thead class="table-dark">
                                     <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th></tr>
                                 </thead>
-                                <tbody>{new_principal_rows if new_principal_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีรายการเงินต้นคงค้าง</td></tr>"}</tbody>
+                                <tbody>{new_principal_rows if new_principal_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีรายการเงินต้นคงค้างในเดือนนี้</td></tr>"}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1140,16 +1148,16 @@ def index():
             </div>
         </div>
 
-        <!-- 5. สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่) -->
+        <!-- 5. สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่) (รีเซ็ตข้อมูลเฉพาะเดือนปัจจุบัน) -->
         <div class="row mb-4">
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
-                    <h5>🔱 เงินลงทุนใหม่</h5><h3>{total_new_investment:,.2f} บาท</h3>
+                    <h5>🔱 เงินลงทุนใหม่ (เดือนนี้)</h5><h3>{total_new_investment:,.2f} บาท</h3>
                 </div>
             </div>
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>💰 กำไรสะสมทั้งหมด</h5><h3>{sum_modal_actual_profit:,.2f} บาท</h3>
+                    <h5>💰 กำไรสะสมทั้งหมด (เดือนนี้)</h5><h3>{current_month_profit:,.2f} บาท</h3>
                 </div>
             </div>
         </div>
@@ -1159,7 +1167,7 @@ def index():
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
-                        <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด (หักส่วนลดแล้ว: {sum_modal_actual_profit:,.2f} บาท)</h5>
+                        <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด เดือนปัจจุบัน ({current_month_profit:,.2f} บาท)</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
@@ -1168,7 +1176,7 @@ def index():
                                 <thead class="table-dark">
                                     <tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไร/ดอกเบี้ย</th><th>ค่าปรับจริง</th><th>ส่วนลด</th><th>รวมสุทธิ</th><th>วันที่ชำระล่าสุด</th></tr>
                                 </thead>
-                                <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีกำไรสะสม</td></tr>"}</tbody>
+                                <tbody>{profit_card_rows if profit_card_rows else "<tr><td colspan='7' class='text-center text-muted'>ยังไม่มีกำไรสะสมในเดือนนี้</td></tr>"}</tbody>
                             </table>
                         </div>
                     </div>
@@ -1470,7 +1478,6 @@ def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
     all_txs_ever = Transaction.query.all()
-    all_histories = PaymentHistory.query.all()
     
     monthly_data = defaultdict(lambda: {
         'count_tx': set(), 
@@ -1482,14 +1489,12 @@ def monthly_summary():
         'month_profit': 0.0
     })
     
-    # 1. จัดกลุ่มเงินลงทุนใหม่ตามเดือนที่เริ่มกู้
     for tx in all_txs_ever:
         ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
         monthly_data[ym_start]['count_tx'].add(tx.id)
         if tx.type != 'ยอดค้างเก่า':
             monthly_data[ym_start]['new_investment'] += tx.original_principal
 
-    # 2. คำนวณกำไรสะสมของแต่ละรายการอย่างแม่นยำ แล้วจัดกลุ่มตาม "วันที่ชำระล่าสุด" ของแต่ละบัญชี
     total_system_profit = 0.0
     
     for tx in all_txs_ever:
@@ -1522,75 +1527,26 @@ def monthly_summary():
         else:
             monthly_data[ym_target]['new_collected'] += net_earned
 
-    monthly_rows = ""
-    sum_new_inv = 0.0
-    sum_new_col = 0.0
-    sum_debt_col = 0.0
-    sum_fine = 0.0
-    sum_disc = 0.0
-    sum_calc_profit = 0.0
-
-    for ym, d in sorted(monthly_data.items(), reverse=True):
-        sum_new_inv += d['new_investment']
-        sum_new_col += d['new_collected']
-        sum_debt_col += d['debt_collected']
-        sum_fine += d['total_fine']
-        sum_disc += d['total_discount']
-        sum_calc_profit += d['month_profit']
-
-        monthly_rows += f"""
-        <tr>
-            <td><span class='text-danger fw-bold'>📅 {ym}</span></td>
-            <td><span class='badge bg-secondary px-2 py-1'>{len(d['count_tx'])} รายการ</span></td>
-            <td><a href='/monthly_details/{ym}/new_inv' class='text-primary fw-bold text-decoration-none'>{d['new_investment']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/new_col' class='text-success fw-bold text-decoration-none'>{d['new_collected']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/debt_col' class='text-warning text-dark fw-bold text-decoration-none'>{d['debt_collected']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/fine' class='text-warning text-dark fw-bold text-decoration-none'>{d['total_fine']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/discount' class='text-danger fw-bold text-decoration-none'>-{d['total_discount']:,.2f}</a></td>
-            <td><a href='/monthly_details/{ym}/profit' class='text-success fw-bold text-decoration-none'>{d['month_profit']:,.2f}</a></td>
-        </tr>
-        """
+    cards_html = ""
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     
-    monthly_rows += f"""
-    <tr class="table-dark fw-bold">
-        <td colspan="2" class="text-end">รวมทั้งสิ้น:</td>
-        <td>{sum_new_inv:,.2f}</td>
-        <td>{sum_new_col:,.2f}</td>
-        <td>{sum_debt_col:,.2f}</td>
-        <td>{sum_fine:,.2f}</td>
-        <td class="text-danger">-{sum_disc:,.2f}</td>
-        <td class="text-success fs-6">{total_system_profit:,.2f}</td>
-    </tr>
-    """
+    for ym, d in sorted(monthly_data.items(), reverse=True):
+        parts = ym.split('-')
+        m_label = f"{thai_months.get(parts[1], parts[1])} {int(parts[0])+543}"
+        
+        cards_html += f"""
+        <div class="col-md-4 mb-3">
+            <div class="card p-3 shadow-sm border-warning">
+                <h5 class="text-danger fw-bold">📁 ประจำเดือน {m_label}</h5>
+                <p class="mb-1 text-muted">จำนวนรายการ: <b>{len(d['count_tx'])}</b> รายการ</p>
+                <p class="mb-3 text-muted">ยอดปล่อยกู้: <b>{d['new_investment']:,.2f}</b> บาท</p>
+                <a href="/monthly_details/{ym}/profit" class="btn btn-warning btn-sm fw-bold">🔍 เปิดแฟ้มดูรายละเอียด</a>
+            </div>
+        </div>
+        """
 
-    content = f"""
-    <div class="card p-4 shadow-sm border-warning">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 fs-5 text-danger fw-bold">📊 ตารางสรุปยอดรายรับและกำไร (อิงตาม "วันที่ชำระล่าสุด" ของแต่ละรายการ)</h4>
-        </div>
-        <p class="text-muted small">💡 ข้อมูลกำไรทั้งหมดถูกดึงมาแจกแจงรายเดือนตามวันที่ชำระล่าสุด เพื่อให้ยอดรวมตรงกับกำไรสะสมทั้งระบบ ({total_system_profit:,.2f} บาท)</p>
-        <div class="table-responsive">
-            <table class="table table-bordered align-middle text-nowrap">
-                <thead class="table-dark">
-                    <tr>
-                        <th>เดือนที่ชำระ</th>
-                        <th>รายการกู้ (ในเดือน)</th>
-                        <th>ทุนที่ลูกค้าใหม่กู้</th>
-                        <th>ยอดเก็บจากลูกค้าใหม่</th>
-                        <th>ยอดเก็บจากลูกค้าเก่า</th>
-                        <th>ยอดค่าปรับ</th>
-                        <th>ยอดส่วนลด</th>
-                        <th>กำไรสะสมเดือนนี้</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {monthly_rows}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    """
-    html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', 'สรุปยอดรายเดือน').replace('{% block content %}{% endblock %}', content)
+    content = f"""<div class="row">{cards_html if cards_html else "<p class='text-center text-muted'>ยังไม่มีข้อมูลในกล่องแฟ้ม</p>"}</div>"""
+    html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', '📁 กล่องแฟ้มรายเดือน (Monthly Summary)').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สรุปยอดรายเดือน", page="monthly")
 
 @app.route('/monthly_details/<ym>/<category>')
@@ -1615,29 +1571,13 @@ def monthly_details(ym, category):
             latest_date = tx.last_payment_date
             
         if latest_date and latest_date.year == year_i and latest_date.month == month_i:
-            if category == 'new_inv' and tx.type != 'ยอดค้างเก่า' and tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i:
-                target_tx_ids.append(tx.id)
-            elif category == 'new_col' and tx.type != 'ยอดค้างเก่า':
-                target_tx_ids.append(tx.id)
-            elif category == 'debt_col' and tx.type == 'ยอดค้างเก่า':
-                target_tx_ids.append(tx.id)
-            elif category == 'fine':
-                has_fine = any(h.fine_amount > 0 for h in tx.histories) if tx.histories else False
-                if has_fine: target_tx_ids.append(tx.id)
-            elif category == 'discount':
-                has_disc = any(h.discount_amount > 0 for h in tx.histories) if tx.histories else False
-                if has_disc: target_tx_ids.append(tx.id)
-            elif category == 'profit':
-                target_tx_ids.append(tx.id)
+            target_tx_ids.append(tx.id)
 
     txs = Transaction.query.filter(Transaction.id.in_(target_tx_ids)).all() if target_tx_ids else []
 
-    if category == 'new_inv': title_str = f"ทุนที่ลูกค้าใหม่กู้ ประจำเดือน {ym}"
-    elif category == 'new_col': title_str = f"ยอดเก็บจากลูกค้าใหม่ ประจำเดือน {ym}"
-    elif category == 'debt_col': title_str = f"ยอดเก็บจากลูกค้าเก่า (ยอดค้างเก่า) ประจำเดือน {ym}"
-    elif category == 'fine': title_str = f"รายการค่าปรับ ประจำเดือน {ym}"
-    elif category == 'discount': title_str = f"รายการส่วนลด ประจำเดือน {ym}"
-    else: title_str = f"กำไรสะสม ประจำเดือน {ym}"
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
+    title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
     rows = ""
     total_actual_paid_sum = 0.0
@@ -1700,7 +1640,7 @@ def monthly_details(ym, category):
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 fs-5 text-danger fw-bold">📋 {title_str}</h4>
-            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับไปหน้าสรุปรายเดือน</a>
+            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับไปหน้ากล่องแฟ้มรายเดือน</a>
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
