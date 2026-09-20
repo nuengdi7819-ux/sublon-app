@@ -160,9 +160,10 @@ BASE_LAYOUT = """
             <li><a href="/transactions" class="nav-link {% if page == 'transactions' %}active{% endif %}" onclick="toggleSidebar()">📋 รายการทั้งหมด</a></li>
         </ul>
         <hr class="border-secondary">
-        <div class="d-flex flex-column gap-2 mb-2">
-            <a href="/export_data" class="btn btn-outline-warning btn-sm w-100">📥 สำรองข้อมูล (Backup)</a>
-            <button class="btn btn-outline-info btn-sm w-100" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
+        <!-- ปุ่มสำรอง/นำเข้าข้อมูลแบบกะทัดรัด (ไอคอน) -->
+        <div class="d-flex gap-2 mb-2">
+            <a href="/export_data" class="btn btn-outline-warning btn-sm flex-fill text-center" title="สำรองข้อมูล (Backup)">📥 Backup</a>
+            <button class="btn btn-outline-info btn-sm flex-fill text-center" data-bs-toggle="modal" data-bs-target="#importModal" title="นำเข้าข้อมูล (Restore)">📤 Restore</button>
         </div>
         <div class="d-flex flex-column gap-2">
             <a href="/logout" class="btn btn-outline-danger w-100 d-none d-lg-block">ออกจากระบบ</a>
@@ -250,27 +251,12 @@ def index():
     adj_dict = {adj.account_name: adj.adjustment_amount for adj in adjustments}
     for acc_name in account_balances.keys(): account_balances[acc_name] = adj_dict.get(acc_name, 0.0)
 
+    # รีเซ็ตรายการเงินเข้า/ออกเป็นว่างเปล่าตามคำสั่ง
     bank_details_data = {acc: {'inflows': [], 'outflows': []} for acc in account_balances.keys()}
-    for h in PaymentHistory.query.all():
-        acc = h.receiving_account or 'ออมสิน'
-        if acc in bank_details_data:
-            cust_name = h.transaction.customer_name if h.transaction else "ไม่ระบุชื่อ"
-            amt = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-            if amt > 0: bank_details_data[acc]['inflows'].append({'date': h.payment_date.strftime('%d/%m/%Y'), 'customer': cust_name, 'amount': amt, 'note': h.note or 'รับชำระเงิน'})
 
-    for tx in all_txs_ever:
-        if tx.type != 'ยอดค้างเก่า' and tx.principal > 0:
-            acc = tx.funding_source or 'ออมสิน'
-            if acc in bank_details_data: bank_details_data[acc]['outflows'].append({'date': tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-', 'target': f"ปล่อยกู้ใหม่: {tx.customer_name}", 'amount': tx.original_principal, 'note': f"ทุนกู้ {tx.type}"})
-
-    for e in BankExpenseLog.query.all():
-        if e.account_name in bank_details_data: bank_details_data[e.account_name]['outflows'].append({'date': e.expense_date.strftime('%d/%m/%Y'), 'target': f"ถอนเงินออก: {e.note or 'ค่าใช้จ่าย'}", 'amount': e.amount, 'note': f"ผู้ทำ: {e.admin_name or '-'}"})
-
-    # คำนวณข้อมูลตามโจทย์
     today_histories = PaymentHistory.query.filter_by(payment_date=thai_today).all()
     today_collected_cash = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) + h.fine_amount for h in today_histories)
 
-    # กำไรสะสมทั้งหมด (ยอดค้างเก่า + กำไรตัดรายการ + ค่าปรับ - ส่วนลด)
     total_profit_sum = 0.0
     for tx in all_txs_ever:
         if tx.type == 'ยอดค้างเก่า':
@@ -281,13 +267,11 @@ def index():
         disc_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
         total_profit_sum += (net_earned + fine_sum - disc_sum)
 
-    # ยอดลงทุนใหม่ในแต่ละกระเป๋า
     inv_by_source = defaultdict(float)
     for tx in all_txs_ever:
         if tx.type != 'ยอดค้างเก่า':
             inv_by_source[tx.funding_source or 'ออมสิน'] += tx.original_principal
 
-    # คงเงินทุนใหม่คงค้าง & ยอดค้างเก่ารอเก็บ
     total_new_principal = sum(tx.principal for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0)
     total_debt_principal = sum(tx.principal for tx in all_txs_ever if tx.type == 'ยอดค้างเก่า' and tx.principal > 0)
 
@@ -296,19 +280,18 @@ def index():
         inflows = "".join([f"<tr><td>{i['date']}</td><td>{i['customer']}</td><td class='text-success fw-bold'>+{i['amount']:,.2f}</td><td>{i['note']}</td></tr>" for i in bank_details_data[acc_key]['inflows']])
         outflows = "".join([f"<tr><td>{o['date']}</td><td>{o['target']}</td><td class='text-danger fw-bold'>-{o['amount']:,.2f}</td><td>{o['note']}</td></tr>" for o in bank_details_data[acc_key]['outflows']])
         bank_modals_html += f"""
-        <div class="modal fade" id="{modal_id}" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content border-{theme_color}"><div class="modal-header bg-{theme_color} text-white py-2"><h5 class="modal-title fw-bold fs-6">📊 ความเคลื่อนไหว: {acc_title}</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" style="max-height: 60vh; overflow-y: auto;"><h6 class="text-success fw-bold">📥 เงินเข้า</h6><table class="table table-sm table-striped"><thead><tr><th>วันที่</th><th>รายการ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead><tbody>{inflows or "<tr><td colspan='4' class='text-muted text-center'>ไม่มีรายการ</td></tr>"}</tbody></table><h6 class="text-danger fw-bold mt-3">📤 เงินออก</h6><table class="table table-sm table-striped"><thead><tr><th>วันที่</th><th>รายการ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead><tbody>{outflows or "<tr><td colspan='4' class='text-muted text-center'>ไม่มีรายการ</td></tr>"}</tbody></table></div><div class="modal-footer py-2 justify-content-between"><button class="btn btn-warning btn-sm fw-bold" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่</button><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button></div></div></div></div>
+        <div class="modal fade" id="{modal_id}" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content border-{theme_color}"><div class="modal-header bg-{theme_color} text-white py-2"><h5 class="modal-title fw-bold fs-6">📊 ความเคลื่อนไหว: {acc_title}</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" style="max-height: 60vh; overflow-y: auto;"><h6 class="text-success fw-bold">📥 เงินเข้า</h6><table class="table table-sm table-striped"><thead><tr><th>วันที่</th><th>รายการ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead><tbody>{inflows or "<tr><td colspan='4' class='text-muted text-center'>ไม่มีรายการ</td></tr>"}</tbody></table><h6 class="text-danger fw-bold mt-3">📤 เงินออก</h6><table class="table table-sm table-striped"><thead><tr><th>วันที่</th><th>รายการ</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead><tbody>{outflows or "<tr><td colspan='4' class='text-muted text-center'>ไม่มีรายการ</td></tr>"}</tbody></table></div><div class="modal-footer py-2 justify-content-between"><div class="d-flex gap-2"><button class="btn btn-warning btn-sm fw-bold" data-bs-dismiss="modal" onclick="openAddModal('{acc_key}')">➕ เพิ่มรายการใหม่</button><a href="/export_bank_report/{acc_key}" class="btn btn-outline-secondary btn-sm">📥 เซฟไฟล์รายงาน</a></div><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button></div></div></div></div>
         """
 
     rows, modals_html = "", ""
     for tx in transactions:
         badge_color = 'bg-success' if tx.status == 'ปกติ' else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-danger')
+        # ตัดช่อง เบอร์โทร และ โอนเข้า ออกจากหน้าแดชบอร์ดตามสั่ง
         rows += f"""
         <tr>
             <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
-            <td>{tx.phone or '-'}</td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td>{get_funding_badge(tx.funding_source)}</td>
-            <td>{get_funding_badge(tx.receiving_account)}</td>
             <td>{tx.start_date.strftime('%d/%m/%Y')}</td>
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
@@ -323,39 +306,55 @@ def index():
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-warning"><form action="/update_payment/{tx.id}" method="POST"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name}</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body py-2"><div class="p-2 mb-2 bg-light rounded border d-flex justify-content-between"><div><small class="text-muted">ต้นคงเหลือ</small><b>{tx.principal:,.2f} ฿</b></div><div class="text-end"><small class="text-muted">ดอกสะสม</small><b class="text-danger">{tx.accumulated_interest:,.2f} ฿</b></div></div><div class="mb-2"><label class="form-label text-success fw-bold small">รับเข้าบัญชี:</label><select name="receiving_account" class="form-select form-select-sm"><option value="ออมสิน">🩷 ออมสิน</option><option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา</option><option value="วอลเล็ท">🟠 TrueMoney Wallet</option></select></div><div class="mb-2"><label class="form-label fw-bold text-primary small">ประเภทการชำระ</label><select name="payment_type" class="form-select form-select-sm" id="payType{tx.id}" onchange="togglePayInput({tx.id})" required><option value="" disabled selected>-- เลือก --</option><option value="partial">จ่ายบางส่วน</option><option value="full">คืนครบ (ปิดบิล)</option><option value="adjust">ปรับปรุงยอดต้น</option></select></div><div class="mb-2" id="amountDiv{tx.id}"><label class="form-label fw-bold small">จำนวนเงินที่รับ (บาท)</label><input type="number" step="any" name="pay_amount" class="form-control form-control-sm" placeholder="0.00"></div><div class="mb-2" id="adjustContainer{tx.id}" style="display:none;"><label class="form-label fw-bold small">จำนวนเงินปรับปรุง (+/-)</label><input type="number" step="any" name="adjust_amount" class="form-control form-control-sm" placeholder="เช่น 500 หรือ -200"></div><div class="row g-2 mb-2"><div class="col-6"><label class="form-label text-danger small">ส่วนลด</label><input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0"></div><div class="col-6"><label class="form-label text-warning text-dark small">ค่าปรับ</label><input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0"></div></div><div class="mb-2"><label class="form-label small">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm" placeholder="หมายเหตุ..."></div></div><div class="modal-footer py-2"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button><button type="submit" class="btn btn-success btn-sm fw-bold px-3">บันทึก</button></div></form></div></div></div>
         """
 
-    # Modal รายละเอียดภาพรวมต่างๆ ตามโจทย์
     content = f"""
     <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริง (คลิกกล่องเพื่อดูประวัติและเพิ่มรายการ)</h5>
         </div>
         <div class="row g-3">
-            <div class="col-md-4"><div class="p-3 rounded border border-warning bg-warning bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalKrungsri"><h6 class="text-dark fw-bold">🟡 กรุงศรีอยุธยา</h6><h3 class="fw-bold">{account_balances['กรุงศรีอยุธยา']:,.2f} ฿</h3><small class="text-muted">ลงทุนใหม่: {inv_by_source['กรุงศรีอยุธยา']:,.2f} ฿</small></div></div>
-            <div class="col-md-4"><div class="p-3 rounded border border-danger bg-danger bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalGSB"><h6 class="text-danger fw-bold">🩷 ออมสิน</h6><h3 class="fw-bold">{account_balances['ออมสิน']:,.2f} ฿</h3><small class="text-muted">ลงทุนใหม่: {inv_by_source['ออมสิน']:,.2f} ฿</small></div></div>
-            <div class="col-md-4"><div class="p-3 rounded border border-info bg-info bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalWallet"><h6 class="text-dark fw-bold">🟠 TrueMoney Wallet</h6><h3 class="fw-bold">{account_balances['วอลเล็ท']:,.2f} ฿</h3><small class="text-muted">ลงทุนใหม่: {inv_by_source['วอลเล็ท']:,.2f} ฿</small></div></div>
+            <div class="col-md-4"><div class="p-3 rounded border border-warning bg-warning bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalKrungsri"><h6 class="text-dark fw-bold">🟡 กรุงศรีอยุธยา</h6><h3 class="fw-bold">{account_balances['กรุงศรีอยุธยา']:,.2f} ฿</h3><div style="font-size:0.8rem;" class="text-muted">ลงทุนใหม่: {inv_by_source['กรุงศรีอยุธยา']:,.2f} ฿</div></div></div>
+            <div class="col-md-4"><div class="p-3 rounded border border-danger bg-danger bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalGSB"><h6 class="text-danger fw-bold">🩷 ออมสิน</h6><h3 class="fw-bold">{account_balances['ออมสิน']:,.2f} ฿</h3><div style="font-size:0.8rem;" class="text-muted">ลงทุนใหม่: {inv_by_source['ออมสิน']:,.2f} ฿</div></div></div>
+            <div class="col-md-4"><div class="p-3 rounded border border-info bg-info bg-opacity-10" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalWallet"><h6 class="text-dark fw-bold">🟠 TrueMoney Wallet</h6><h3 class="fw-bold">{account_balances['วอลเล็ท']:,.2f} ฿</h3><div style="font-size:0.8rem;" class="text-muted">ลงทุนใหม่: {inv_by_source['วอลเล็ท']:,.2f} ฿</div></div></div>
         </div>
     </div>
     {bank_modals_html}
 
+    <!-- 4 กล่องสรุป สามารถคลิกดูรายละเอียดและเซฟไฟล์ได้จริง -->
     <div class="row mb-4">
-        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-success shadow-sm"><h6>💵 ยอดเก็บสดวันนี้</h6><h3 class="fw-bold">{today_collected_cash:,.2f} ฿</h3></div></div>
-        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-primary shadow-sm"><h6>💰 กำไรสะสมทั้งหมด</h6><h3 class="fw-bold">{total_profit_sum:,.2f} ฿</h3></div></div>
-        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-danger shadow-sm"><h6>💼 ทุนใหม่คงค้าง</h6><h3 class="fw-bold">{total_new_principal:,.2f} ฿</h3></div></div>
-        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-warning text-dark shadow-sm"><h6>📂 ยอดค้างเก่ารอเก็บ</h6><h3 class="fw-bold">{total_debt_principal:,.2f} ฿</h3></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-success shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalCollectedToday"><h6>💵 ยอดเก็บสดวันนี้</h6><h3 class="fw-bold mb-0">{today_collected_cash:,.2f} ฿</h3><small class="text-light" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-primary shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalTotalProfit"><h6>💰 กำไรสะสมทั้งหมด</h6><h3 class="fw-bold mb-0">{total_profit_sum:,.2f} ฿</h3><small class="text-light" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-danger shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalNewPrincipal"><h6>💼 ทุนใหม่คงค้าง</h6><h3 class="fw-bold mb-0">{total_new_principal:,.2f} ฿</h3><small class="text-light" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
+        <div class="col-md-3 mb-2"><div class="card p-3 text-white bg-warning text-dark shadow-sm" style="cursor:pointer;" data-bs-toggle="modal" data-bs-target="#modalDebtPrincipal"><h6>📂 ยอดค้างเก่ารอเก็บ</h6><h3 class="fw-bold mb-0">{total_debt_principal:,.2f} ฿</h3><small class="text-dark" style="font-size:0.75rem;">คลิกเพื่อดูและเซฟไฟล์</small></div></div>
     </div>
 
+    <!-- Modals สำหรับ 4 กล่องสรุป -->
+    <div class="modal fade" id="modalCollectedToday" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-success text-white py-2"><h5 class="modal-title fs-6">💵 รายละเอียดยอดเก็บสดวันนี้</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดรวมเก็บสดวันนี้: <b>{today_collected_cash:,.2f} บาท</b></p><a href="/export_report/collected_today" class="btn btn-success btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
+    <div class="modal fade" id="modalTotalProfit" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-primary text-white py-2"><h5 class="modal-title fs-6">💰 รายละเอียดกำไรสะสมทั้งหมด</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>กำไรสะสมรวม: <b>{total_profit_sum:,.2f} บาท</b></p><a href="/export_report/total_profit" class="btn btn-primary btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
+    <div class="modal fade" id="modalNewPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white py-2"><h5 class="modal-title fs-6">💼 รายละเอียดทุนใหม่คงค้าง</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ทุนใหม่คงค้างรวม: <b>{total_new_principal:,.2f} บาท</b></p><a href="/export_report/new_principal" class="btn btn-danger btn-sm w-100 fw-bold">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
+    <div class="modal fade" id="modalDebtPrincipal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-warning py-2"><h5 class="modal-title fs-6 text-dark">📂 รายละเอียดยอดค้างเก่ารอเก็บ</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>ยอดค้างเก่าคงเหลือรวม: <b>{total_debt_principal:,.2f} บาท</b></p><a href="/export_report/debt_principal" class="btn btn-warning btn-sm w-100 fw-bold text-dark">📥 ดาวน์โหลดเซฟไฟล์รายงานนี้</a></div></div></div></div>
+
     <div class="card p-4 shadow-sm border-warning">
-        <h4 class="mb-3 fs-5 text-danger fw-bold">🔔 รายการที่ต้องทวงวันนี้</h4>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">🔔 รายการที่ต้องทวงวันนี้</h4>
+            <!-- ระบบค้นหาด่วน (Live Search) พิมพ์ตัวอักษรเดียวขึ้นรายชื่อ -->
+            <form method="GET" class="d-flex gap-2">
+                <input type="text" name="search" id="liveSearchInput" class="form-control form-control-sm" placeholder="🔍 พิมพ์ค้นหาชื่อลูกค้า..." value="{search_query}" list="customerListOptions" autocomplete="off">
+                <datalist id="customerListOptions">
+                    {''.join([f'<option value="{c}">' for c in all_unique_customers])}
+                </datalist>
+                <button class="btn btn-sm btn-outline-danger">ค้นหา</button>
+            </form>
+        </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
-                <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>โอนเข้า</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
-                <tbody>{rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่มีรายการทวงในวันนี้</td></tr>"}</tbody>
+                <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกสะสม</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ไม่มีรายการทวงในวันนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
 
-    <!-- Modal เพิ่มรายการใหม่ (ผูกกับธนาคาร) -->
-    <div class="modal fade" id="addTransactionModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-success"><form action="/add_transaction" method="POST"><div class="modal-header bg-success text-white py-2"><h5 class="modal-title fw-bold fs-6">➕ เพิ่มรายการใหม่</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-2"><label class="form-label fw-bold small">ประเภท</label><select name="type" class="form-select form-select-sm"><option value="เงินฉุกเฉิน">เงินฉุกเฉิน</option><option value="ผ่อนทอง">ผ่อนทอง</option><option value="ยอดค้างเก่า">ยอดค้างเก่า</option></select></div><div class="mb-2"><label class="form-label fw-bold small">ชื่อลูกค้า</label><input type="text" name="customer_name" class="form-control form-control-sm" required></div><div class="mb-2"><label class="form-label fw-bold small">แหล่งทุนปล่อยกู้</label><select name="funding_source" id="addFundingSource" class="form-select form-select-sm"><option value="ออมสิน">🩷 ออมสิน</option><option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา</option><option value="วอลเล็ท">🟠 TrueMoney Wallet</option></select></div><div class="mb-2"><label class="form-label fw-bold small">ยอดเงินลงทุน/เงินต้น</label><input type="number" step="any" name="principal" class="form-control form-control-sm" required></div><div class="mb-2"><label class="form-label fw-bold small">ดอกเบี้ย/วัน</label><input type="number" step="any" name="daily_interest" class="form-control form-control-sm" value="0" required></div></div><div class="modal-footer py-2"><button type="submit" class="btn btn-success btn-sm fw-bold px-3">บันทึก</button></div></form></div></div></div>
+    <!-- Modal เพิ่มรายการใหม่ -->
+    <div class="modal fade" id="addTransactionModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-success"><form action="/add_transaction" method="POST"><div class="modal-header bg-success text-white py-2"><h5 class="modal-title fw-bold fs-6">➕ เพิ่มรายการใหม่</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-2"><label class="form-label fw-bold small">ประเภท</label><select name="type" class="form-select form-select-sm"><option value="เงินฉุกเฉิน">เงินฉุกเฉิน</option><option value="ผ่อนทอง">ผ่อนทอง</option><option value="ยอดค้างเก่า">ยอดค้างเก่า</option></select></div><div class="mb-2"><label class="form-label fw-bold small">ชื่อลูกค้า</label><input type="text" name="customer_name" class="form-control form-control-sm" required></div><div class="mb-2"><label class="form-label fw-bold small">เบอร์โทร</label><input type="text" name="phone" class="form-control form-control-sm"></div><div class="mb-2"><label class="form-label fw-bold small">แหล่งทุนปล่อยกู้</label><select name="funding_source" id="addFundingSource" class="form-select form-select-sm"><option value="ออมสิน">🩷 ออมสิน</option><option value="กรุงศรีอยุธยา">🟢 กรุงศรีอยุธยา</option><option value="วอลเล็ท">🟠 TrueMoney Wallet</option></select></div><div class="mb-2"><label class="form-label fw-bold small">ยอดเงินลงทุน/เงินต้น</label><input type="number" step="any" name="principal" class="form-control form-control-sm" required></div><div class="mb-2"><label class="form-label fw-bold small">ดอกเบี้ย/วัน</label><input type="number" step="any" name="daily_interest" class="form-control form-control-sm" value="0" required></div></div><div class="modal-footer py-2"><button type="submit" class="btn btn-success btn-sm fw-bold px-3">บันทึก</button></div></form></div></div></div>
     {modals_html}
     """
     html = BASE_LAYOUT.replace('{% block header %}Dashboard{% endblock %}', '🔱 Dashboard บริหารจัดการระบบ')
@@ -369,6 +368,7 @@ def add_transaction():
         funding = request.form.get('funding_source', 'ออมสิน')
         new_tx = Transaction(
             type=request.form.get('type'), customer_name=request.form.get('customer_name'),
+            phone=request.form.get('phone', '').strip(),
             sales_name=session.get('admin'), original_principal=p_val, principal=p_val,
             daily_interest=float(request.form.get('daily_interest', 0)),
             initial_daily_interest=float(request.form.get('daily_interest', 0)),
@@ -385,18 +385,113 @@ def add_transaction():
 @app.route('/transactions')
 def transactions_list():
     if 'admin' not in session: return redirect(url_for('login'))
-    txs = Transaction.query.order_by(Transaction.start_date.desc()).all()
-    rows = "".join([f"<tr><td>{tx.customer_name}</td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{get_funding_badge(tx.funding_source)}</td><td>{tx.start_date.strftime('%d/%m/%Y')}</td><td>{tx.original_principal:,.2f}</td><td>{tx.principal:,.2f}</td><td><span class='badge bg-success'>{tx.status}</span></td></tr>" for tx in txs])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📋 รายการทั้งหมด</h4><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>สถานะ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+    search_q = request.args.get('search', '').strip()
+    all_txs = Transaction.query.order_by(Transaction.start_date.desc()).all()
+    all_customers = sorted(list(set(t.customer_name for t in all_txs if t.customer_name)))
+
+    if search_q:
+        all_txs = [t for t in all_txs if search_q.lower() in t.customer_name.lower()]
+
+    active_txs = [tx for tx in all_txs if tx.principal > 0]
+    closed_txs = [tx for tx in all_txs if tx.principal <= 0]
+
+    def build_rows(tx_list):
+        res = ""
+        for tx in tx_list:
+            calculate_tx_values(tx)
+            badge_color = 'bg-success' if tx.status == 'ปกติ' else 'bg-danger'
+            res += f"""
+            <tr>
+                <td><a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a></td>
+                <td><span class="badge bg-secondary">{tx.type}</span></td>
+                <td>{get_funding_badge(tx.funding_source)}</td>
+                <td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td>
+                <td>{tx.original_principal:,.2f}</td>
+                <td>{tx.principal:,.2f}</td>
+                <td><a href="/history/{tx.id}" target="_blank" class="text-primary fw-bold">{tx.total_paid:,.2f}</a></td>
+                <td><span class="badge {badge_color}">{'ปิดบิลแล้ว' if tx.principal <= 0 else tx.status}</span></td>
+            </tr>
+            """
+        return res
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">📋 รายการทั้งหมด (แยกหมวดหมู่)</h4>
+            <!-- ค้นหาด่วนทุกหน้า -->
+            <form method="GET" class="d-flex gap-2">
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="🔍 ค้นหาชื่อลูกค้า..." value="{search_q}" list="custOpts" autocomplete="off">
+                <datalist id="custOpts">
+                    {''.join([f'<option value="{c}">' for c in all_customers])}
+                </datalist>
+                <button class="btn btn-sm btn-outline-danger">ค้นหา</button>
+            </form>
+        </div>
+        <h6 class="text-success fw-bold border-bottom pb-2">🟢 รายการที่กำลังเดินอยู่ ({len(active_txs)} บิล)</h6>
+        <div class="table-responsive mb-4">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
+                <tbody>{build_rows(active_txs) if active_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีรายการที่กำลังเดินอยู่</td></tr>"}</tbody>
+            </table>
+        </div>
+        <h6 class="text-secondary fw-bold border-bottom pb-2">📁 บัญชีที่ปิดไปแล้ว (ประวัติย้อนหลัง {len(closed_txs)} บิล)</h6>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-secondary"><tr><th>ชื่อลูกค้า</th><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead>
+                <tbody>{build_rows(closed_txs) if closed_txs else "<tr><td colspan='8' class='text-center text-muted'>ไม่มีประวัติบัญชีที่ปิดไปแล้ว</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
     html = BASE_LAYOUT.replace('{% block header %}รายการทั้งหมด{% endblock %}', 'รายการทั้งหมด').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="รายการทั้งหมด", page="transactions")
 
 @app.route('/members')
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
-    customers = sorted(list(set(t.customer_name for t in Transaction.query.all() if t.customer_name)))
-    rows = "".join([f"<tr><td><a href='/customer_details/{c}' class='text-dark fw-bold text-decoration-none'>👤 {c}</a></td><td><a href='/customer_details/{c}' class='btn btn-sm btn-warning fw-bold'>🔍 ดูประวัติ</a></td></tr>" for c in customers])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมด</h4><table class="table table-striped align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>จัดการ</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+    search_q = request.args.get('search', '').strip()
+    all_txs = Transaction.query.all()
+    customers = sorted(list(set(t.customer_name for t in all_txs if t.customer_name)))
+    
+    if search_q:
+        customers = [c for c in customers if search_q.lower() in c.lower()]
+
+    rows = ""
+    for c in customers:
+        c_txs = [t for t in all_txs if t.customer_name == c]
+        phone_val = next((t.phone for t in c_txs if t.phone), '-')
+        active_cnt = sum(1 for t in c_txs if t.principal > 0)
+        closed_cnt = sum(1 for t in c_txs if t.principal <= 0)
+        rows += f"""
+        <tr>
+            <td><a href="/customer_details/{c}" class="text-dark fw-bold text-decoration-none">👤 {c}</a></td>
+            <td>{phone_val}</td>
+            <td><span class="badge bg-success">เดิน {active_cnt} บิล</span></td>
+            <td><span class="badge bg-secondary">ปิด {closed_cnt} บิล</span></td>
+            <td><a href="/customer_details/{c}" class="btn btn-sm btn-warning fw-bold">🔍 ตรวจสอบประวัติ</a></td>
+        </tr>
+        """
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมด</h4>
+            <form method="GET" class="d-flex gap-2">
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="🔍 ค้นหาชื่อสมาชิก..." value="{search_q}" list="custOpts2" autocomplete="off">
+                <datalist id="custOpts2">
+                    {''.join([f'<option value="{c}">' for c in customers])}
+                </datalist>
+                <button class="btn btn-sm btn-outline-danger">ค้นหา</button>
+            </form>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>บิลกำลังเดิน</th><th>บิลที่ปิดแล้ว</th><th>จัดการ</th></tr></thead>
+                <tbody>{rows if rows else "<tr><td colspan='5' class='text-center text-muted'>ไม่พบรายชื่อสมาชิก</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สมาชิก", page="members")
 
@@ -405,8 +500,22 @@ def customer_details(cust_name):
     if 'admin' not in session: return redirect(url_for('login'))
     txs = Transaction.query.filter(Transaction.customer_name.ilike(f"%{cust_name}%")).all()
     for tx in txs: calculate_tx_values(tx)
-    rows = "".join([f"<tr><td>{tx.type}</td><td>{get_funding_badge(tx.funding_source)}</td><td>{tx.original_principal:,.2f}</td><td>{tx.principal:,.2f}</td><td><a href='/history/{tx.id}' target='_blank' class='text-primary fw-bold'>{tx.total_paid:,.2f}</a></td></tr>" for tx in txs])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👤 ลูกค้า: {cust_name}</h4><a href="/members" class="btn btn-sm btn-secondary mb-3">⬅️ กลับ</a><table class="table table-striped align-middle"><thead><tr><th>ประเภท</th><th>บัญชี</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+    phone_val = next((t.phone for t in txs if t.phone), '-')
+    rows = "".join([f"<tr><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{get_funding_badge(tx.funding_source)}</td><td>{tx.start_date.strftime('%d/%m/%Y')}</td><td>{tx.original_principal:,.2f}</td><td>{tx.principal:,.2f}</td><td><a href='/history/{tx.id}' target='_blank' class='text-primary fw-bold'>{tx.total_paid:,.2f}</a></td></tr>" for tx in txs])
+    content = f"""
+    <div class="card p-4 shadow-sm border-warning">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0 fs-5 text-danger fw-bold">👤 ลูกค้า: {cust_name} (เบอร์โทร: {phone_val})</h4>
+            <a href="/members" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับ</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark"><tr><th>ประเภทลูกค้า</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th></tr></thead>
+                <tbody>{rows if rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีข้อมูลบิล</td></tr>"}</tbody>
+            </table>
+        </div>
+    </div>
+    """
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า{% endblock %}', f'ลูกค้า: {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=cust_name, page="members")
 
@@ -416,22 +525,62 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).all()
     rows = "".join([f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td>{h.pay_amount:,.2f}</td><td>{get_funding_badge(h.receiving_account)}</td></tr>" for h in histories])
-    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📜 ประวัติ: {tx.customer_name}</h4><table class="table table-striped"><thead><tr><th>วันที่</th><th>ยอดจ่าย</th><th>ช่องทาง</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+    content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">📜 ประวัติ: {tx.customer_name}</h4><a href="/transactions" class="btn btn-sm btn-secondary mb-3">⬅️ กลับ</a><table class="table table-striped"><thead><tr><th>วันที่</th><th>ยอดจ่าย</th><th>ช่องทาง</th></tr></thead><tbody>{rows}</tbody></table></div>"""
     html = BASE_LAYOUT.replace('{% block header %}ประวัติ{% endblock %}', 'ประวัติการชำระ').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ประวัติ", page="dashboard")
+
+@app.route('/export_report/<report_type>')
+def export_report(report_type):
+    if 'admin' not in session: return redirect(url_for('login'))
+    si = io.StringIO()
+    cw = csv.writer(si)
+    if report_type == 'collected_today':
+        cw.writerow(['PaymentDate', 'CustomerName', 'PayAmount', 'FineAmount', 'Account'])
+        for h in PaymentHistory.query.filter_by(payment_date=get_thai_today()).all():
+            cw.writerow([h.payment_date, h.transaction.customer_name if h.transaction else '-', h.pay_amount, h.fine_amount, h.receiving_account])
+    elif report_type == 'total_profit':
+        cw.writerow(['CustomerID', 'CustomerName', 'Type', 'Status'])
+        for t in Transaction.query.all():
+            cw.writerow([t.id, t.customer_name, t.type, t.status])
+    elif report_type == 'new_principal':
+        cw.writerow(['CustomerName', 'Type', 'Principal', 'FundingSource'])
+        for t in Transaction.query.filter(Transaction.principal > 0, Transaction.type != 'ยอดค้างเก่า').all():
+            cw.writerow([t.customer_name, t.type, t.principal, t.funding_source])
+    elif report_type == 'debt_principal':
+        cw.writerow(['CustomerName', 'Type', 'Principal'])
+        for t in Transaction.query.filter(Transaction.principal > 0, Transaction.type == 'ยอดค้างเก่า').all():
+            cw.writerow([t.customer_name, t.type, t.principal])
+    
+    output = io.BytesIO()
+    output.write(si.getvalue().encode('utf-8-sig'))
+    output.seek(0)
+    return send_file(output, mimetype='text/csv', as_attachment=True, download_name=f"report_{report_type}_{get_thai_today().strftime('%Y%m%d')}.csv")
+
+@app.route('/export_bank_report/<bank_name>')
+def export_bank_report(bank_name):
+    if 'admin' not in session: return redirect(url_for('login'))
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['BankName', 'Date', 'CustomerName', 'Amount', 'Type'])
+    for h in PaymentHistory.query.filter_by(receiving_account=bank_name).all():
+        cw.writerow([bank_name, h.payment_date, h.transaction.customer_name if h.transaction else '-', h.pay_amount, 'Inflow'])
+    output = io.BytesIO()
+    output.write(si.getvalue().encode('utf-8-sig'))
+    output.seek(0)
+    return send_file(output, mimetype='text/csv', as_attachment=True, download_name=f"bank_{bank_name}_{get_thai_today().strftime('%Y%m%d')}.csv")
 
 @app.route('/export_data')
 def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Principal', 'Status', 'FundingSource'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'Principal', 'Status', 'FundingSource'])
     for t in Transaction.query.all():
-        cw.writerow([t.id, t.type, t.customer_name, t.principal, t.status, t.funding_source])
+        cw.writerow([t.id, t.type, t.customer_name, t.phone, t.principal, t.status, t.funding_source])
     output = io.BytesIO()
     output.write(si.getvalue().encode('utf-8-sig'))
     output.seek(0)
-    return send_file(output, mimetype='text/csv', as_attachment=True, download_name="backup.csv")
+    return send_file(output, mimetype='text/csv', as_attachment=True, download_name="sublon_backup.csv")
 
 @app.route('/import_data', methods=['POST'])
 def import_data():
@@ -444,9 +593,9 @@ def import_data():
             for row in reader:
                 db.session.add(Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
-                    original_principal=float(row.get('Principal', 0)), principal=float(row.get('Principal', 0)),
-                    status=row.get('Status', 'ปกติ'), funding_source=row.get('FundingSource', 'ออมสิน'),
-                    sales_name=session.get('admin')
+                    phone=row.get('Phone', ''), original_principal=float(row.get('Principal', 0)),
+                    principal=float(row.get('Principal', 0)), status=row.get('Status', 'ปกติ'),
+                    funding_source=row.get('FundingSource', 'ออมสิน'), sales_name=session.get('admin')
                 ))
             db.session.commit()
         except Exception as e: print("Import error:", e)
