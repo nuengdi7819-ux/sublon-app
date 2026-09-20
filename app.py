@@ -662,7 +662,7 @@ def index():
         content = f"""
         <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงิน</h5>
+                <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
                 <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferBankModal">🔄 โยกเงิน</button>
                     <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่าเงินตั้งต้น</button>
@@ -673,21 +673,21 @@ def index():
                 <div class="col-md-4">
                     <div class="p-3 rounded border border-warning bg-warning bg-opacity-15">
                         <h6 class="text-dark fw-bold mb-1">🟡 กรุงศรีอยุธยา</h6>
-                        <small class="text-muted d-block mb-1">803-xxx-9819</small>
+                        <small class="text-muted d-block mb-1">เลข: 803-931-9819</small>
                         <h3 class="text-dark fw-bold mb-0">{account_balances['กรุงศรีอยุธยา']:,.2f} บาท</h3>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="p-3 rounded border border-danger bg-danger bg-opacity-10">
                         <h6 class="text-danger fw-bold mb-1">🩷 ออมสิน</h6>
-                        <small class="text-muted d-block mb-1">020-xxx-437-819</small>
+                        <small class="text-muted d-block mb-1">เลข: 020-409-437-819</small>
                         <h3 class="text-danger fw-bold mb-0">{account_balances['ออมสิน']:,.2f} บาท</h3>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="p-3 rounded border border-info bg-info bg-opacity-10">
                         <h6 class="text-dark fw-bold mb-1">🟠 TrueMoney Wallet</h6>
-                        <small class="text-muted d-block mb-1">092-xxx-7819</small>
+                        <small class="text-muted d-block mb-1">เบอร์: 092-923-7819</small>
                         <h3 class="text-dark fw-bold mb-0">{account_balances['วอลเล็ท']:,.2f} บาท</h3>
                     </div>
                 </div>
