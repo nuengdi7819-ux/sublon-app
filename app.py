@@ -53,6 +53,7 @@ class Transaction(db.Model):
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
+    start_next_day = db.Column(db.Boolean, default=False)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -264,6 +265,8 @@ def calculate_tx_values(tx):
     end_date = tx.closed_date if tx.closed_date else thai_today
     
     days = (end_date - tx.start_date).days + 1
+    if tx.start_next_day:
+        days -= 1
     if days < 0: days = 0
     tx.days_passed_val = days
     
@@ -299,6 +302,7 @@ def index():
             d_interest = float(request.form.get('daily_interest', 0))
             tx_type = request.form.get('type')
             funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
+            start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
@@ -312,7 +316,7 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source
+                funding_source=funding_source, start_next_day=start_next_day_val
             )
             db.session.add(new_tx)
 
@@ -944,6 +948,15 @@ def index():
                     <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
                 </div>
 
+                <div class="col-md-6 d-flex align-items-center">
+                    <div class="form-check">
+                        <input class="form-check-input border-warning" type="checkbox" name="start_next_day" id="startNextDayChk">
+                        <label class="form-check-label fw-bold text-dark" for="startNextDayChk">
+                            ⌛ เริ่มคิดดอกเบี้ยวันถัดไป (พรุ่งนี้)
+                        </label>
+                    </div>
+                </div>
+
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-success w-100 fw-bold" onclick="closeAllModals()">บันทึกข้อมูล</button>
                 </div>
@@ -1120,7 +1133,7 @@ def index():
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด เดือนปัจจุบัน ({current_month_profit:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                         <div class="table-responsive">
@@ -1662,7 +1675,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -1674,7 +1687,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source
+            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day
         ])
         
     output = io.BytesIO()
@@ -1704,6 +1717,7 @@ def import_data():
                 
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
+                s_next_day = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -1713,7 +1727,7 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding
+                    funding_source=funding, start_next_day=s_next_day
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -1752,6 +1766,8 @@ def update_payment(tx_id):
     tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
     calc_end_date = tx.closed_date if tx.closed_date else thai_today
     days = (calc_end_date - tx.start_date).days + 1
+    if tx.start_next_day:
+        days -= 1
     if days < 0: days = 0
         
     current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
@@ -1907,7 +1923,7 @@ def login():
             session['admin'] = username
             return redirect(url_for('index'))
         else: error = 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!'
-    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
+    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.5net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
     return render_template_string(login_html, error=error)
 
 @app.route('/logout')
