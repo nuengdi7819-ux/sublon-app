@@ -53,6 +53,7 @@ class Transaction(db.Model):
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
+    start_next_day = db.Column(db.Boolean, default=False)  # <--- เพิ่มฟิลด์เลือกว่าจะเริ่มคิดวันถัดไปไหม
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -269,7 +270,12 @@ def calculate_tx_values(tx):
     end_date = tx.closed_date if tx.closed_date else thai_today
     
     days = (end_date - tx.start_date).days + 1
-    if days < 1: days = 1
+    
+    # ถ้าเลือกให้เริ่มคิดดอกเบี้ยวันถัดไป ให้ลบออก 1 วัน
+    if getattr(tx, 'start_next_day', False):
+        days -= 1
+        
+    if days < 0: days = 0
     tx.days_passed_val = days
     
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
@@ -309,6 +315,8 @@ def index():
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
             due_day_str = ",".join(selected_due_days) if selected_due_days else None
 
+            start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
+
             inst_amt = 0.0
             if tx_type == 'ยอดค้างเก่า': inst_amt = float(request.form.get('installment_amount', 0))
 
@@ -317,7 +325,7 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source
+                funding_source=funding_source, start_next_day=start_next_day_val
             )
             db.session.add(new_tx)
 
@@ -923,6 +931,17 @@ def index():
                     <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
                     <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
                 </div>
+                
+                <!-- ช่องติ๊กเลือกเริ่มคิดดอกเบี้ยวันถัดไป -->
+                <div class="col-md-3 d-flex align-items-center">
+                    <div class="form-check mt-3">
+                        <input class="form-check-input border-danger" type="checkbox" name="start_next_day" id="startNextDayCheck">
+                        <label class="form-check-label text-danger fw-bold small" for="startNextDayCheck">
+                            ⏳ เริ่มคิดดอกเบี้ยวันถัดไป (พรุ่งนี้)
+                        </label>
+                    </div>
+                </div>
+
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-success w-100 fw-bold" onclick="closeAllModals()">บันทึกข้อมูล</button>
                 </div>
@@ -1483,7 +1502,6 @@ def monthly_summary():
         'month_profit': 0.0
     })
     
-    # คำนวณยอดเงินลงทุนและรวบรวมรายการตามเดือนที่ปรากฏในแฟ้มรายละเอียด
     for tx in all_txs_ever:
         latest_date = tx.start_date
         if tx.histories:
@@ -1494,7 +1512,6 @@ def monthly_summary():
             
         ym_target = latest_date.strftime('%Y-%m') if latest_date else '2026-09'
 
-        # คำนวณกำไรของบิลนี้
         if tx.type == 'ยอดค้างเก่า':
             net_earned = max(0.0, (tx.original_principal - tx.principal))
         else:
@@ -1508,13 +1525,10 @@ def monthly_summary():
         monthly_data[ym_target]['month_profit'] += item_total_profit
         monthly_data[ym_target]['count_tx'] += 1
 
-        # คำนวณยอดปล่อยกู้เฉพาะของเดือนนั้น ๆ จาก start_date
         ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
         if tx.type != 'ยอดค้างเก่า':
-            # เพื่อความแม่นยำ ให้นำยอดเงินลงทุนไปบวกสะสมตามเดือน start_date
             pass
 
-    # ปรับปรุงการคำนวณยอดปล่อยกู้และจำนวนรายการให้ตรงเป๊ะกับหน้าแสดงรายละเอียด
     monthly_summary_dict = defaultdict(lambda: {'count_tx': 0, 'new_investment': 0.0, 'month_profit': 0.0})
     
     for ym, d in monthly_data.items():
@@ -2042,7 +2056,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -2054,7 +2068,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source
+            tx_fine_sum, tx_discount_sum, t.funding_source, getattr(t, 'start_next_day', False)
         ])
         
     output = io.BytesIO()
@@ -2084,6 +2098,7 @@ def import_data():
                 
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
+                next_day_val = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -2093,7 +2108,7 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding
+                    funding_source=funding, start_next_day=next_day_val
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -2139,7 +2154,9 @@ def update_payment(tx_id):
     tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
     calc_end_date = tx.closed_date if tx.closed_date else thai_today
     days = (calc_end_date - tx.start_date).days + 1
-    if days < 1: days = 1
+    if getattr(tx, 'start_next_day', False):
+        days -= 1
+    if days < 0: days = 0
         
     current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
     total_acc_interest = (current_effective_daily * days) - tx.paid_interest
