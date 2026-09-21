@@ -53,7 +53,7 @@ class Transaction(db.Model):
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
-    start_next_day = db.Column(db.Boolean, default=False)  # <--- เพิ่มฟิลด์เลือกว่าจะเริ่มคิดวันถัดไปไหม
+    start_next_day = db.Column(db.Boolean, default=False)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -271,7 +271,6 @@ def calculate_tx_values(tx):
     
     days = (end_date - tx.start_date).days + 1
     
-    # ถ้าเลือกให้เริ่มคิดดอกเบี้ยวันถัดไป ให้ลบออก 1 วัน
     if getattr(tx, 'start_next_day', False):
         days -= 1
         
@@ -697,7 +696,35 @@ def index():
             view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
         content = f"""
-        <!-- 1. สถานะกระเป๋าเงินจริงในมือถือ -->
+        <!-- 1. ย้าย 4 กล่องสรุปมาไว้ด้านบนสุด และปรับขนาดให้กะทัดรัด (4 คอลัมน์) -->
+        <div class="row mb-4">
+            <div class="col-md-3 mb-3 mb-md-0">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
+                    <div style="font-size: 0.9rem;" class="mb-1">📂 ยอดค้างเก่าคงเหลือ</div>
+                    <h5 class="fw-bold mb-0">{total_debt_principal:,.2f} บ.</h5>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3 mb-md-0">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
+                    <div style="font-size: 0.9rem;" class="mb-1">💼 เงินต้นคงค้าง</div>
+                    <h5 class="fw-bold mb-0">{total_new_principal:,.2f} บ.</h5>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3 mb-md-0">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #004d99, #3399ff);">
+                    <div style="font-size: 0.9rem;" class="mb-1">🔱 เงินลงทุนใหม่ (เดือนนี้)</div>
+                    <h5 class="fw-bold mb-0">{total_new_investment:,.2f} บ.</h5>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
+                    <div style="font-size: 0.9rem;" class="mb-1">💰 กำไรสะสม (เดือนนี้)</div>
+                    <h5 class="fw-bold mb-0">{current_month_profit:,.2f} บ.</h5>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. สถานะกระเป๋าเงินจริงในมือถือ (ตามลงมาด้านล่าง) -->
         <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
@@ -948,7 +975,7 @@ def index():
             </form>
         </div>
 
-        <!-- 2. สรุปผลงานวันนี้ (ยอดเก็บสด & ธุรกรรมวันนี้) -->
+        <!-- 3. สรุปผลงานวันนี้ (ยอดเก็บสด & ธุรกรรมวันนี้) -->
         <div class="row mb-4">
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
@@ -1065,7 +1092,7 @@ def index():
             </div>
         </div>
 
-        <!-- 3. ตารางรายการที่ต้องจัดการวันนี้ (Action Table) -->
+        <!-- 4. ตารางรายการที่ต้องจัดการวันนี้ (Action Table) -->
         <div class="card p-4 shadow-sm border-warning mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -1102,20 +1129,6 @@ def index():
                     </thead>
                     <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- 4. สรุปสถานะเงินจมและความเสี่ยง (เงินต้นคงค้าง / ยอดค้างเก่า) (ยอดคงเหลือรวมทั้งหมด ไม่จำกัดเดือน) -->
-        <div class="row mb-4">
-            <div class="col-md-6 mb-3">
-                <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>📂 ยอดค้างเก่าคงเหลือ (รวมทั้งหมด)</h5><h3>{total_debt_principal:,.2f} บาท</h3>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #b30000, #ff4d4d); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#principalModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>💼 เงินต้นคงค้าง (รวมทั้งหมด)</h5><h3>{total_new_principal:,.2f} บาท</h3>
-                </div>
             </div>
         </div>
 
@@ -1161,20 +1174,6 @@ def index():
                         </div>
                     </div>
                     <div class="modal-footer py-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 5. สรุปกำไรและสถิติภาพรวม (กำไรสะสม / เงินลงทุนใหม่) (รีเซ็ตข้อมูลเฉพาะเดือนปัจจุบัน) -->
-        <div class="row mb-4">
-            <div class="col-md-6 mb-3">
-                <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #004d99, #3399ff);">
-                    <h5>🔱 เงินลงทุนใหม่ (เดือนนี้)</h5><h3>{total_new_investment:,.2f} บาท</h3>
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <div class="card p-3 shadow-sm text-white" style="background: linear-gradient(135deg, #006622, #00b33c); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#profitModal" title="คลิกเพื่อเช็กรายละเอียด">
-                    <h5>💰 กำไรสะสมทั้งหมด (เดือนนี้)</h5><h3>{current_month_profit:,.2f} บาท</h3>
                 </div>
             </div>
         </div>
