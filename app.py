@@ -1340,21 +1340,21 @@ def customer_details(cust_name):
             <td class="text-center">
                 <div class="d-flex justify-content-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                    {"<button type='button' class='btn btn-sm btn-warning fw-bold px-2 text-dark' data-bs-toggle='modal' data-bs-target='#refinanceModal" + str(tx.id) + "'>🔄 ทบยอด/รีบิล</button>" if tx.principal > 0 else ""}
+                    {"<button type='button' class='btn btn-sm btn-warning fw-bold px-2 text-dark' data-bs-toggle='modal' data-bs-target='#refinanceModal" + str(tx.id) + "'>🔄 รีบิล</button>" if tx.principal > 0 else ""}
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
             </td>
         </tr>
         """
         
-        # Modal สำหรับทบยอด/รีบิล
+        # Modal สำหรับรีบิล
         refinance_modal = f"""
         <div class="modal fade" id="refinanceModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-warning">
                     <form action="/refinance_tx/{tx.id}" method="POST">
                         <div class="modal-header bg-warning text-dark py-2">
-                            <h5 class="modal-title fs-6 fw-bold">🔄 ทบยอด / รีบิลใหม่: {tx.customer_name}</h5>
+                            <h5 class="modal-title fs-6 fw-bold">🔄 รีบิลใหม่: {tx.customer_name}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
@@ -1387,7 +1387,7 @@ def customer_details(cust_name):
                             </div>
                             <div class="mb-2">
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการรีบิล</label>
-                                <input type="text" name="note" class="form-control form-control-sm" value="ทบยอดรวมบิลเก่า">
+                                <input type="text" name="note" class="form-control form-control-sm" value="รีบิลรวมบิลเก่า">
                             </div>
                             <div class="alert alert-info py-1 mb-1 small">
                                 ℹ️ ระบบจะปิดบิลเก่าอัตโนมัติ และหักลบเงินในกระเป๋าเฉพาะส่วนต่างเงินสดที่จ่ายเพิ่มจริง ทำให้ยอดในแอปธนาคารตรงเป๊ะ!
@@ -1395,7 +1395,7 @@ def customer_details(cust_name):
                         </div>
                         <div class="modal-footer py-2">
                             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-3 text-dark">ยืนยันการทบยอด</button>
+                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-3 text-dark">ยืนยันรีบิล</button>
                         </div>
                     </form>
                 </div>
@@ -1505,7 +1505,6 @@ def refinance_tx(tx_id):
         current_sales = session.get('admin', 'unknown')
         thai_today = get_thai_today()
 
-        # 1. ปิดบิลเก่า
         old_tx.closed_date = thai_today
         old_tx.status = 'คืนแล้ว'
         
@@ -1513,18 +1512,17 @@ def refinance_tx(tx_id):
         db.session.add(PaymentHistory(
             transaction_id=old_tx.id, payment_date=thai_today, pay_amount=old_remaining_principal,
             fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
-            principal_reduced=old_remaining_principal, note="ปิดบิลเก่าเพื่อทบยอด/รีบิล", admin_name=current_sales,
+            principal_reduced=old_remaining_principal, note="ปิดบิลเก่าเพื่อรีบิล", admin_name=current_sales,
             receiving_account=old_tx.funding_source
         ))
         old_tx.principal = 0.0
 
-        # 2. สร้างบิลใหม่
         new_funding = request.form.get('funding_source', 'กรุงศรีอยุธยา')
         new_principal = float(request.form.get('new_principal', 0))
         per_inst = float(request.form.get('per_installment', 0))
         num_inst = float(request.form.get('num_installments', 0))
         new_total_fixed = per_inst * num_inst
-        note_text = request.form.get('note', 'ทบยอดรวมบิลเก่า')
+        note_text = request.form.get('note', 'รีบิลรวมบิลเก่า')
 
         new_tx = Transaction(
             type='จบต้นดอก', customer_name=old_tx.customer_name, phone=old_tx.phone,
@@ -1535,7 +1533,6 @@ def refinance_tx(tx_id):
         )
         db.session.add(new_tx)
 
-        # 3. คำนวณเงินสดส่วนต่างที่ต้องจ่ายเพิ่มจริง (ยอดใหม่ - ยอดเก่าที่เหลือ)
         net_cash_out = new_principal - old_remaining_principal
         if net_cash_out < 0: net_cash_out = 0.0
 
@@ -1550,7 +1547,7 @@ def refinance_tx(tx_id):
                 expense_date=thai_today,
                 account_name=new_funding,
                 amount=net_cash_out,
-                note=f"[ทบยอด/รีบิล] ลูกค้า {old_tx.customer_name} (ยอดใหม่ {new_principal:,.2f} หักยอดเก่า {old_remaining_principal:,.2f})",
+                note=f"[รีบิล] ลูกค้า {old_tx.customer_name} (ยอดใหม่ {new_principal:,.2f} หักยอดเก่า {old_remaining_principal:,.2f})",
                 admin_name=current_sales
             ))
 
