@@ -1340,7 +1340,7 @@ def customer_details(cust_name):
             <td class="text-center">
                 <div class="d-flex justify-content-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                    {"<button type='button' class='btn btn-sm btn-warning fw-bold px-2 text-dark' data-bs-toggle='modal' data-bs-target='#refinanceModal" + str(tx.id) + "'>🔄 รีบิล</button>" if tx.principal > 0 else ""}
+                    {"<button type='button' class='btn btn-sm btn-primary fw-bold px-2' data-bs-toggle='modal' data-bs-target='#refinanceModal" + str(tx.id) + "'>🔄 รีบิล</button>" if tx.principal > 0 else ""}
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
             </td>
@@ -1351,11 +1351,11 @@ def customer_details(cust_name):
         refinance_modal = f"""
         <div class="modal fade" id="refinanceModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-warning">
+                <div class="modal-content border-primary">
                     <form action="/refinance_tx/{tx.id}" method="POST">
-                        <div class="modal-header bg-warning text-dark py-2">
+                        <div class="modal-header bg-primary text-white py-2">
                             <h5 class="modal-title fs-6 fw-bold">🔄 รีบิลใหม่: {tx.customer_name}</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
                             <div class="p-2 mb-2 bg-light rounded border">
@@ -1374,8 +1374,8 @@ def customer_details(cust_name):
                                 <label class="form-label fw-bold text-primary" style="font-size: 0.85rem;">💵 ยอดเงินต้นใหม่ (ปล่อยจริง เช่น 2000)</label>
                                 <input type="number" step="any" name="new_principal" class="form-control form-control-sm border-primary" placeholder="เช่น 2000" required>
                             </div>
-                            <div class="p-2 border rounded bg-warning bg-opacity-10 mb-2">
-                                <label class="form-label text-danger fw-bold mb-1" style="font-size: 0.85rem;">⚙️ รายละเอียดจบต้นดอกใหม่ (ค่างวด × จำนวนงวด)</label>
+                            <div class="p-2 border rounded bg-primary bg-opacity-10 mb-2">
+                                <label class="form-label text-primary fw-bold mb-1" style="font-size: 0.85rem;">⚙️ รายละเอียดจบต้นดอกใหม่ (ค่างวด × จำนวนงวด)</label>
                                 <div class="row g-2">
                                     <div class="col-6">
                                         <input type="number" step="any" name="per_installment" class="form-control form-control-sm" placeholder="ค่างวด เช่น 120" required>
@@ -1395,7 +1395,7 @@ def customer_details(cust_name):
                         </div>
                         <div class="modal-footer py-2">
                             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
-                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-3 text-dark">ยืนยันรีบิล</button>
+                            <button type="submit" class="btn btn-primary btn-sm fw-bold px-3">ยืนยันรีบิล</button>
                         </div>
                     </form>
                 </div>
