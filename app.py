@@ -361,6 +361,15 @@ def index():
                 funding_source=funding_source, start_next_day=start_next_day_val, total_fixed_amount=total_fixed
             )
             db.session.add(new_tx)
+            db.session.flush()
+
+            # บันทึกประวัติการเพิ่มรายการใหม่ลงใน PaymentHistory ด้วยเสมอ
+            db.session.add(PaymentHistory(
+                transaction_id=new_tx.id, payment_date=parsed_date, pay_amount=0.0,
+                fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
+                principal_reduced=0.0, note=f"เพิ่มรายการใหม่ ({tx_type})", admin_name=current_sales,
+                receiving_account=funding_source
+            ))
 
             if p_val > 0 and funding_source in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
                 adj = BankAdjustment.query.filter_by(account_name=funding_source).first()
@@ -1390,7 +1399,7 @@ def customer_details(cust_name):
                                 <input type="text" name="note" class="form-control form-control-sm" value="รีบิลรวมบิลเก่า">
                             </div>
                             <div class="alert alert-info py-1 mb-1 small">
-                                ℹ️ ระบบจะปิดบิลเก่าอัตโนมัติ และหักลบเงินในกระเป๋าเฉพาะส่วนต่างเงินสดที่จ่ายเพิ่มจริง ทำให้ยอดในแอปธนาคารตรงเป๊ะ!
+                                ℹ️ ระบบจะปิดบิลเก่าอัตโนมัติ พร้อมบันทึกประวัติ และหักลบเงินในกระเป๋าเฉพาะส่วนต่างเงินสดที่จ่ายเพิ่มจริง ทำให้ยอดในแอปธนาคารตรงเป๊ะ!
                             </div>
                         </div>
                         <div class="modal-footer py-2">
@@ -1509,6 +1518,8 @@ def refinance_tx(tx_id):
         old_tx.status = 'คืนแล้ว'
         
         old_remaining_principal = old_tx.principal
+        
+        # บันทึกประวัติการปิดบิลเก่า
         db.session.add(PaymentHistory(
             transaction_id=old_tx.id, payment_date=thai_today, pay_amount=old_remaining_principal,
             fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
@@ -1532,6 +1543,15 @@ def refinance_tx(tx_id):
             funding_source=new_funding, start_next_day=False, total_fixed_amount=new_total_fixed
         )
         db.session.add(new_tx)
+        db.session.flush()
+
+        # บันทึกประวัติการสร้างรายการบิลใหม่จากการรีบิล
+        db.session.add(PaymentHistory(
+            transaction_id=new_tx.id, payment_date=thai_today, pay_amount=0.0,
+            fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
+            principal_reduced=0.0, note=f"สร้างบิลใหม่จากการรีบิล ({note_text})", admin_name=current_sales,
+            receiving_account=new_funding
+        ))
 
         net_cash_out = new_principal - old_remaining_principal
         if net_cash_out < 0: net_cash_out = 0.0
