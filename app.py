@@ -53,7 +53,6 @@ class Transaction(db.Model):
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
-    start_next_day = db.Column(db.Boolean, default=False)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -157,9 +156,7 @@ BASE_LAYOUT = """
         <ul class="nav nav-pills flex-column mb-auto">
             <li class="nav-item"><a href="/" class="nav-link {% if page == 'dashboard' %}active{% endif %}" onclick="toggleSidebar()">📊 Dashboard (รายการวันนี้)</a></li>
             <li><a href="/all_transactions" class="nav-link {% if page == 'all' %}active{% endif %}" onclick="toggleSidebar()">📋 รายการทั้งหมด</a></li>
-            
             <li><a href="/members" class="nav-link {% if page == 'members' %}active{% endif %}" onclick="toggleSidebar()">👥 1. สมาชิกทั้งหมด</a></li>
-
             <li><a href="/sales_members" class="nav-link {% if page == 'sales' %}active{% endif %}" onclick="toggleSidebar()">📋 2. สมาชิกภายใต้เซลล์</a></li>
             <li><a href="/customer_summary" class="nav-link {% if page == 'customer' %}active{% endif %}" onclick="toggleSidebar()">📂 3. สรุปลูกค้า</a></li>
             <li><a href="/customer_emergency" class="nav-link sub-menu {% if page == 'emergency' %}active{% endif %}" onclick="toggleSidebar()">🔸 3.1 เงินฉุกเฉิน</a></li>
@@ -267,10 +264,6 @@ def calculate_tx_values(tx):
     end_date = tx.closed_date if tx.closed_date else thai_today
     
     days = (end_date - tx.start_date).days + 1
-    
-    if getattr(tx, 'start_next_day', False):
-        days -= 1
-        
     if days < 0: days = 0
     tx.days_passed_val = days
     
@@ -311,8 +304,6 @@ def index():
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
             due_day_str = ",".join(selected_due_days) if selected_due_days else None
 
-            start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
-
             inst_amt = 0.0
             if tx_type == 'ยอดค้างเก่า': inst_amt = float(request.form.get('installment_amount', 0))
 
@@ -321,7 +312,7 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source, start_next_day=start_next_day_val
+                funding_source=funding_source
             )
             db.session.add(new_tx)
 
@@ -952,15 +943,6 @@ def index():
                     <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
                     <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
                 </div>
-                
-                <div class="col-md-3 d-flex align-items-center">
-                    <div class="form-check mt-3">
-                        <input class="form-check-input border-danger" type="checkbox" name="start_next_day" id="startNextDayCheck">
-                        <label class="form-check-label text-danger fw-bold small" for="startNextDayCheck">
-                            ⏳ เริ่มคิดดอกเบี้ยวันถัดไป (พรุ่งนี้)
-                        </label>
-                    </div>
-                </div>
 
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-success w-100 fw-bold" onclick="closeAllModals()">บันทึกข้อมูล</button>
@@ -1527,7 +1509,7 @@ def members():
 def all_transactions():
     if 'admin' not in session: return redirect(url_for('login'))
     search_query = request.args.get('search', '').strip()
-    active_tab = request.args.get('tab', 'daily') # daily, unscheduled, monthly, closed
+    active_tab = request.args.get('tab', 'daily')
     
     query = Transaction.query
     if search_query:
@@ -1537,7 +1519,6 @@ def all_transactions():
     transactions = query.all()
     for tx in transactions: calculate_tx_values(tx)
 
-    # แยกกลุ่มตามประเภทการจ่าย
     daily_txs = [t for t in transactions if t.principal > 0 and t.schedule_type == 'จ่ายทุกวัน']
     unscheduled_txs = [t for t in transactions if t.principal > 0 and t.schedule_type == 'ยังไม่มีกำหนดจ่าย']
     monthly_txs = [t for t in transactions if t.principal > 0 and t.schedule_type == 'กำหนดจ่ายประจำเดือน']
@@ -1593,7 +1574,6 @@ def all_transactions():
             </form>
         </div>
 
-        <!-- แท็บเลือกช่องประเภท -->
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
                 <a class="nav-link fw-bold text-dark {% if active_tab == 'daily' %}active bg-warning text-dark{% endif %}" href="/all_transactions?tab=daily">🔸 1.1 จ่ายทุกวัน ({len(daily_txs)})</a>
@@ -1609,7 +1589,6 @@ def all_transactions():
             </li>
         </ul>
 
-        <!-- เนื้อหาในแต่ละแท็บ -->
         <div class="tab-content">
             <div class="table-responsive {% if active_tab != 'daily' %}d-none{% endif %}">
                 <h6 class="text-danger fw-bold mb-2">🔸 รายการประเภท: จ่ายทุกวัน (ทวงทุกวัน)</h6>
@@ -1673,7 +1652,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -1685,7 +1664,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source, getattr(t, 'start_next_day', False)
+            tx_fine_sum, tx_discount_sum, t.funding_source
         ])
         
     output = io.BytesIO()
@@ -1715,7 +1694,6 @@ def import_data():
                 
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
-                next_day_val = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -1725,7 +1703,7 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding, start_next_day=next_day_val
+                    funding_source=funding
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -1764,7 +1742,6 @@ def update_payment(tx_id):
     tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
     calc_end_date = tx.closed_date if tx.closed_date else thai_today
     days = (calc_end_date - tx.start_date).days + 1
-    if getattr(tx, 'start_next_day', False): days -= 1
     if days < 0: days = 0
         
     current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
