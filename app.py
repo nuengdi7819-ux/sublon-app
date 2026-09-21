@@ -278,16 +278,25 @@ def calculate_tx_values(tx):
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
     total_history_pay = 0.0
+    sum_principal_reduced = 0.0
+    sum_interest_paid = 0.0
     if tx.histories:
         for h in tx.histories:
             p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
             total_history_pay += p_item
+            sum_principal_reduced += h.principal_reduced
+            sum_interest_paid += h.interest_paid
+
+    # คำนวณยอดชำระแล้วรวม (นำดอกเบี้ยที่จ่าย + เงินต้นที่ลดลงมารวมกัน เพื่อให้แสดงผลถูกต้องทุกสถานะ)
+    calculated_paid_total = sum_interest_paid + sum_principal_reduced
+    if calculated_paid_total <= 0 and tx.paid_interest > 0:
+        calculated_paid_total = tx.paid_interest
 
     if tx.type == 'ยอดค้างเก่า':
         principal_paid_calc = max(0.0, tx.original_principal - tx.principal)
         tx.total_paid = max(total_history_pay, principal_paid_calc)
     else:
-        tx.total_paid = total_history_pay if total_history_pay > 0 else tx.paid_interest
+        tx.total_paid = max(total_history_pay, calculated_paid_total)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -1923,7 +1932,7 @@ def login():
             session['admin'] = username
             return redirect(url_for('index'))
         else: error = 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!'
-    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.5net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
+    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
     return render_template_string(login_html, error=error)
 
 @app.route('/logout')
