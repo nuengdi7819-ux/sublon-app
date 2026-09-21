@@ -216,20 +216,21 @@ BASE_LAYOUT = """
         let selectElem = document.getElementById('payType' + id);
         let amountContainer = document.getElementById('amountDiv' + id);
         let adjustContainer = document.getElementById('adjustContainer' + id);
-        let statusElem = document.getElementById('newStatus' + id);
+        let statusSelect = document.getElementById('newStatus' + id);
         
         if (selectElem) {
             if (selectElem.value === 'full') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusElem) { statusElem.value = 'คืนแล้ว'; }
+                if (statusSelect) { statusSelect.value = 'คืนแล้ว'; }
             } else if (selectElem.value === 'adjust') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'block';
+                if (statusSelect) { statusSelect.value = 'ปกติ'; }
             } else {
                 if(amountContainer) amountContainer.style.display = 'block';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusElem) { statusElem.value = 'ตัดยอดบางส่วน'; }
+                if (statusSelect) { statusSelect.value = 'ตัดยอดบางส่วน'; }
             }
         }
     }
@@ -363,7 +364,6 @@ def index():
             db.session.add(new_tx)
             db.session.flush()
 
-            # บันทึกประวัติการเพิ่มรายการใหม่ลงใน PaymentHistory ด้วยเสมอ
             db.session.add(PaymentHistory(
                 transaction_id=new_tx.id, payment_date=parsed_date, pay_amount=0.0,
                 fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
@@ -606,6 +606,7 @@ def index():
             
             selected_normal = "selected" if tx.status == "ปกติ" else ""
             selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
+            selected_full = "selected" if tx.status == "คืนแล้ว" else ""
 
             schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
             if tx.schedule_type == 'กำหนดจ่ายประจำเดือน' and tx.due_day_of_month:
@@ -632,7 +633,7 @@ def index():
                 <td>{tx.daily_interest:,.2f}</td>
                 <td>{tx.days_passed}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
-                <td><span class="badge {badge_color}">{tx.status}</span></td>
+                <td><span class="badge {badge_color}">{'ตัดยอด' if tx.status == 'ตัดยอดบางส่วน' else tx.status}</span></td>
                 <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">
                     <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
                         <button type="button" class="btn btn-sm btn-success-light w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
@@ -707,10 +708,11 @@ def index():
                                     <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
                                 </div>
                                 <div class="mb-1">
-                                    <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ</label>
-                                    <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
+                                    <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ (อัปอัตโนมัติ)</label>
+                                    <select name="new_status" class="form-select form-select-sm border-success bg-light" id="newStatus{tx.id}">
                                         <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
+                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอด</option>
+                                        <option value="คืนแล้ว" {selected_full}>คืนแล้ว</option>
                                     </select>
                                 </div>
                             </div>
@@ -1181,7 +1183,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                         <div class="table-responsive">
@@ -1333,6 +1335,7 @@ def customer_details(cust_name):
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
         selected_normal = "selected" if tx.status == "ปกติ" else ""
         selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
+        selected_full = "selected" if tx.status == "คืนแล้ว" else ""
 
         rows += f"""
         <tr>
@@ -1345,7 +1348,7 @@ def customer_details(cust_name):
             <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
             <td>{tx.daily_interest:,.2f}</td>
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
-            <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
+            <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else ('ตัดยอด' if tx.status == 'ตัดยอดบางส่วน' else tx.status)}</span></td>
             <td class="text-center">
                 <div class="d-flex justify-content-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
@@ -1356,7 +1359,6 @@ def customer_details(cust_name):
         </tr>
         """
         
-        # Modal สำหรับรีบิล
         refinance_modal = f"""
         <div class="modal fade" id="refinanceModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1463,10 +1465,11 @@ def customer_details(cust_name):
                             </div>
                             <div class="mb-2"><label class="form-label text-dark fw-bold mb-1">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm"></div>
                             <div class="mb-1">
-                                <label class="form-label text-success fw-bold mb-1">สถานะ</label>
-                                <select name="new_status" class="form-select form-select-sm border-success">
+                                <label class="form-label text-success fw-bold mb-1">สถานะ (อัปอัตโนมัติ)</label>
+                                <select name="new_status" class="form-select form-select-sm border-success bg-light" id="newStatus{tx.id}">
                                     <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
+                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอด</option>
+                                    <option value="คืนแล้ว" {selected_full}>คืนแล้ว</option>
                                 </select>
                             </div>
                         </div>
@@ -1519,7 +1522,6 @@ def refinance_tx(tx_id):
         
         old_remaining_principal = old_tx.principal
         
-        # บันทึกประวัติการปิดบิลเก่า
         db.session.add(PaymentHistory(
             transaction_id=old_tx.id, payment_date=thai_today, pay_amount=old_remaining_principal,
             fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
@@ -1545,7 +1547,6 @@ def refinance_tx(tx_id):
         db.session.add(new_tx)
         db.session.flush()
 
-        # บันทึกประวัติการสร้างรายการบิลใหม่จากการรีบิล
         db.session.add(PaymentHistory(
             transaction_id=new_tx.id, payment_date=thai_today, pay_amount=0.0,
             fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
@@ -1679,7 +1680,7 @@ def monthly_details(ym, category):
             <td>{tx.principal:,.2f}</td>
             <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
             <td><strong class="text-success">{actual_paid_total:,.2f}</strong></td>
-            <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
+            <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else ('ตัดยอด' if tx.status == 'ตัดยอดบางส่วน' else tx.status)}</span></td>
             <td class="text-center"><a href="/customer_details/{tx.customer_name}" class="btn btn-sm btn-success-light">ดูประวัติ</a></td>
         </tr>
         """
@@ -1714,7 +1715,8 @@ def members():
         s_date = t.start_date.strftime('%d/%m/%Y') if t.start_date else '-'
         sched_badge = f'<span class="badge bg-dark">{t.schedule_type}</span>'
         status_color = 'bg-success' if t.status == 'ปกติ' else ('bg-danger' if t.status == 'คืนแล้ว' else 'bg-secondary')
-        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {status_color}'>{t.status}</span></td></tr>"
+        status_text = 'ตัดยอด' if t.status == 'ตัดยอดบางส่วน' else t.status
+        rows += f"<tr><td><a href='/customer_details/{t.customer_name}' class='text-dark text-decoration-none fw-bold'>{t.customer_name}</a></td><td>{t.phone or '-'}</td><td><span class='badge bg-danger'>{t.sales_name}</span></td><td><span class='badge bg-warning text-dark'>{t.funding_source or 'กรุงศรีอยุธยา'}</span></td><td>{sched_badge}</td><td>{s_date}</td><td>{t.original_principal:,.2f}</td><td>{t.principal:,.2f}</td><td><strong>{t.total_paid:,.2f}</strong></td><td><span class='badge {status_color}'>{status_text}</span></td></tr>"
     content = f"""<div class="card p-4 shadow-sm border-warning"><h4 class="mb-3 fs-5 text-danger fw-bold">👥 สมาชิกทั้งหมดในระบบ (ยังไม่ปิดบัญชี)</h4><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th>บัญชีปล่อย</th><th>ประเภท</th><th>วันที่กู้</th><th>ลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีข้อมูลสมาชิก</td></tr>"}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}สมาชิกทั้งหมด{% endblock %}', 'สมาชิกทั้งหมด').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สมาชิกทั้งหมด", page="members")
@@ -1751,6 +1753,8 @@ def all_transactions():
                 labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
                 schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
 
+            status_text = 'คืนแล้ว' if is_closed else ('ตัดยอด' if tx.status == 'ตัดยอดบางส่วน' else tx.status)
+
             res += f"""
             <tr>
                 <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500; box-shadow: 2px 0 5px rgba(0,0,0,0.05);">
@@ -1766,7 +1770,7 @@ def all_transactions():
                 <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
                 <td>{tx.daily_interest:,.2f}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
-                <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
+                <td><span class="badge {badge_color}">{status_text}</span></td>
                 <td><a href="/" class="btn btn-sm btn-success-light">จัดการ</a></td>
             </tr>
             """
@@ -2067,6 +2071,10 @@ def update_payment(tx_id):
                 if not tx.closed_date: tx.closed_date = thai_today
             elif tx.principal < tx.original_principal: tx.status = 'ตัดยอดบางส่วน'
             elif new_status: tx.status = new_status
+
+    # หากมีการเลือกสถานะจากฟอร์มส่งมา ให้บันทึกตามที่เลือก (ซึ่งหน้าเว็บจะอัปเดตให้อัตโนมัติ)
+    if new_status:
+        tx.status = new_status
 
     total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
     if total_net_pay < 0: total_net_pay = 0.0
