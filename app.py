@@ -1563,6 +1563,16 @@ def all_transactions():
     monthly_rows = build_rows(monthly_txs, False)
     closed_rows = build_rows(closed_txs, True)
 
+    daily_active_cls = "active bg-warning text-dark" if active_tab == 'daily' else "text-dark"
+    unscheduled_active_cls = "active bg-warning text-dark" if active_tab == 'unscheduled' else "text-dark"
+    monthly_active_cls = "active bg-warning text-dark" if active_tab == 'monthly' else "text-dark"
+    closed_active_cls = "active bg-secondary text-white" if active_tab == 'closed' else "text-dark"
+
+    daily_div_cls = "" if active_tab == 'daily' else "d-none"
+    unscheduled_div_cls = "" if active_tab == 'unscheduled' else "d-none"
+    monthly_div_cls = "" if active_tab == 'monthly' else "d-none"
+    closed_div_cls = "" if active_tab == 'closed' else "d-none"
+
     content = f"""
     <div class="card p-4 shadow-sm border-warning mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -1576,21 +1586,21 @@ def all_transactions():
 
         <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
-                <a class="nav-link fw-bold text-dark {% if active_tab == 'daily' %}active bg-warning text-dark{% endif %}" href="/all_transactions?tab=daily">🔸 1.1 จ่ายทุกวัน ({len(daily_txs)})</a>
+                <a class="nav-link fw-bold {daily_active_cls}" href="/all_transactions?tab=daily">🔸 1.1 จ่ายทุกวัน ({len(daily_txs)})</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link fw-bold text-dark {% if active_tab == 'unscheduled' %}active bg-warning text-dark{% endif %}" href="/all_transactions?tab=unscheduled">🔸 1.2 ยังไม่มีกำหนดจ่าย ({len(unscheduled_txs)})</a>
+                <a class="nav-link fw-bold {unscheduled_active_cls}" href="/all_transactions?tab=unscheduled">🔸 1.2 ยังไม่มีกำหนดจ่าย ({len(unscheduled_txs)})</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link fw-bold text-dark {% if active_tab == 'monthly' %}active bg-warning text-dark{% endif %}" href="/all_transactions?tab=monthly">🔸 1.3 กำหนดจ่ายประจำเดือน ({len(monthly_txs)})</a>
+                <a class="nav-link fw-bold {monthly_active_cls}" href="/all_transactions?tab=monthly">🔸 1.3 กำหนดจ่ายประจำเดือน ({len(monthly_txs)})</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link fw-bold text-dark {% if active_tab == 'closed' %}active bg-secondary text-white{% endif %}" href="/all_transactions?tab=closed">📁 ประวัติปิดบัญชีแล้ว ({len(closed_txs)})</a>
+                <a class="nav-link fw-bold {closed_active_cls}" href="/all_transactions?tab=closed">📁 ประวัติปิดบัญชีแล้ว ({len(closed_txs)})</a>
             </li>
         </ul>
 
         <div class="tab-content">
-            <div class="table-responsive {% if active_tab != 'daily' %}d-none{% endif %}">
+            <div class="table-responsive {daily_div_cls}">
                 <h6 class="text-danger fw-bold mb-2">🔸 รายการประเภท: จ่ายทุกวัน (ทวงทุกวัน)</h6>
                 <table class="table table-striped align-middle text-nowrap">
                     <thead class="table-dark">
@@ -1603,7 +1613,7 @@ def all_transactions():
                 </table>
             </div>
 
-            <div class="table-responsive {% if active_tab != 'unscheduled' %}d-none{% endif %}">
+            <div class="table-responsive {unscheduled_div_cls}">
                 <h6 class="text-danger fw-bold mb-2">🔸 รายการประเภท: ยังไม่มีกำหนดจ่าย</h6>
                 <table class="table table-striped align-middle text-nowrap">
                     <thead class="table-dark">
@@ -1616,7 +1626,7 @@ def all_transactions():
                 </table>
             </div>
 
-            <div class="table-responsive {% if active_tab != 'monthly' %}d-none{% endif %}">
+            <div class="table-responsive {monthly_div_cls}">
                 <h6 class="text-danger fw-bold mb-2">🔸 รายการประเภท: กำหนดจ่ายประจำเดือน</h6>
                 <table class="table table-striped align-middle text-nowrap">
                     <thead class="table-dark">
@@ -1629,7 +1639,7 @@ def all_transactions():
                 </table>
             </div>
 
-            <div class="table-responsive {% if active_tab != 'closed' %}d-none{% endif %}">
+            <div class="table-responsive {closed_div_cls}">
                 <h6 class="text-secondary fw-bold mb-2">📁 ประวัติบัญชีที่ปิดแล้ว (คืนครบทั้งหมด)</h6>
                 <table class="table table-striped align-middle text-nowrap">
                     <thead class="table-secondary">
