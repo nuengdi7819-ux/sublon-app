@@ -287,14 +287,14 @@ def calculate_tx_values(tx):
             sum_principal_reduced += h.principal_reduced
             sum_interest_paid += h.interest_paid
 
-    # คำนวณยอดชำระแล้วรวม (นำดอกเบี้ยที่จ่าย + เงินต้นที่ลดลงมารวมกัน เพื่อให้แสดงผลถูกต้องทุกสถานะ)
+    # คำนวณยอดชำระแล้วรวมจากประวัติจริง และกรณีไม่มีประวัติให้ใช้ส่วนลด/ต้นที่ลดลงทดแทน
+    fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal) if tx.type == 'ยอดค้างเก่า' else max(0.0, tx.original_principal - tx.principal)
     calculated_paid_total = sum_interest_paid + sum_principal_reduced
-    if calculated_paid_total <= 0 and tx.paid_interest > 0:
-        calculated_paid_total = tx.paid_interest
+    if calculated_paid_total <= 0:
+        calculated_paid_total = tx.paid_interest + fallback_principal_reduced
 
     if tx.type == 'ยอดค้างเก่า':
-        principal_paid_calc = max(0.0, tx.original_principal - tx.principal)
-        tx.total_paid = max(total_history_pay, principal_paid_calc)
+        tx.total_paid = max(total_history_pay, fallback_principal_reduced)
     else:
         tx.total_paid = max(total_history_pay, calculated_paid_total)
 
@@ -1834,10 +1834,11 @@ def update_payment(tx_id):
     total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
     if total_net_pay < 0: total_net_pay = 0.0
 
+    # บันทึกประวัติลงตาราง PaymentHistory ทุกครั้งที่มีการอัปเดตยอด
     db.session.add(PaymentHistory(
         transaction_id=tx.id, payment_date=thai_today, pay_amount=total_net_pay,
         fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
-        principal_reduced=actual_principal_reduced, note=note_text, admin_name=session.get('admin'),
+        principal_reduced=actual_principal_reduced, note=note_text or f"ชำระเงินประเภท: {payment_type}", admin_name=session.get('admin'),
         receiving_account=receiving_account
     ))
 
@@ -1863,11 +1864,17 @@ def payment_history(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
-    rows = ""
-    for h in histories:
-        display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
-        if display_pay < 0: display_pay = 0.0
-        rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>"
+    
+    # กรณีบิลเก่าที่ยังไม่มีประวัติใน PaymentHistory ให้สร้างประวัติจำลองชั่วคราวจากยอดที่ลดลงเพื่อไม่ให้หน้าประวัติว่างเปล่า
+    if not histories and (tx.original_principal > tx.principal or tx.paid_interest > 0):
+        dummy_principal_diff = max(0.0, tx.original_principal - tx.principal)
+        rows = f"<tr><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td class='text-primary fw-bold'>{(tx.paid_interest + dummy_principal_diff):,.2f}</td><td><span class='badge bg-info text-dark'>{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>0.00</td><td class='text-warning text-dark'>0.00</td><td>{tx.paid_interest:,.2f}</td><td>{dummy_principal_diff:,.2f}</td><td>ประวัติสะสมเดิม (ก่อนอัปเดตระบบ)</td><td><span class='badge bg-secondary'>ระบบ</span></td></tr>"
+    else:
+        rows = ""
+        for h in histories:
+            display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
+            if display_pay < 0: display_pay = 0.0
+            rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>"
     
     if not rows: rows = "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
     content = f"""<div class="card p-4 shadow-sm border-warning"><div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name}</h4><a href="/" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a></div><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
