@@ -54,7 +54,7 @@ class Transaction(db.Model):
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
     start_next_day = db.Column(db.Boolean, default=False)
-    total_fixed_amount = db.Column(db.Float, default=0.0) # สำหรับยอดจบต้นดอก (เช่น 1,440)
+    total_fixed_amount = db.Column(db.Float, default=0.0)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -283,7 +283,6 @@ def calculate_tx_values(tx):
     tx.days_passed_val = days
     
     if tx.type == 'จบต้นดอก':
-        # สำหรับยอดจบต้นดอก ดอกเบี้ยสะสมและยอดที่ต้องจ่ายคิดจากยอดรวมฟิกซ์
         total_history_pay = 0.0
         sum_principal_reduced = 0.0
         sum_interest_paid = 0.0
@@ -350,7 +349,9 @@ def index():
 
             total_fixed = 0.0
             if tx_type == 'จบต้นดอก':
-                total_fixed = float(request.form.get('total_fixed_amount', 0))
+                per_installment = float(request.form.get('per_installment', 0))
+                num_installments = float(request.form.get('num_installments', 0))
+                total_fixed = per_installment * num_installments
 
             new_tx = Transaction(
                 type=tx_type, customer_name=request.form.get('customer_name'), phone=request.form.get('phone'),
@@ -934,7 +935,7 @@ def index():
                         <option value="เงินฉุกเฉิน">เงินฉุกเฉิน (ลูกค้าใหม่)</option>
                         <option value="ผ่อนทอง">ผ่อนทอง (ลูกค้าใหม่)</option>
                         <option value="ยอดค้างเก่า">ยอดค้างเก่า (ลูกค้าเก่า)</option>
-                        <option value="จบต้นดอก">จบต้นดอก (ยอดรวมฟิกซ์ เช่น 1440)</option>
+                        <option value="จบต้นดอก">จบต้นดอก (ใส่ค่างวดและจำนวนงวด)</option>
                     </select>
                 </div>
                 <div class="col-md-3">
@@ -983,9 +984,20 @@ def index():
                     <label class="form-label">ยอดเงินต้น (ปล่อยจริง เช่น 1000)</label>
                     <input type="number" step="any" name="principal" class="form-control" required>
                 </div>
-                <div class="col-md-3" id="fixedAmountDiv" style="display: none;">
-                    <label class="form-label text-danger fw-bold">ยอดรวมสุทธิ (ต้น+ดอก เช่น 1440)</label>
-                    <input type="number" step="any" name="total_fixed_amount" class="form-control" value="0" placeholder="เช่น 1440">
+                <div class="col-md-6" id="fixedAmountDiv" style="display: none;">
+                    <div class="p-3 border rounded bg-light border-warning">
+                        <label class="form-label text-danger fw-bold mb-2">⚙️ รายละเอียดจบต้นดอก (ค่างวด × จำนวนงวด)</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small text-muted">ค่างวดต่อวัน/ครั้ง (เช่น 120)</label>
+                                <input type="number" step="any" name="per_installment" class="form-control form-control-sm" value="0" placeholder="120">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted">จำนวนงวดทั้งหมด (เช่น 12)</label>
+                                <input type="number" step="any" name="num_installments" class="form-control form-control-sm" value="0" placeholder="12">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-3" id="installmentDiv" style="display: none;">
                     <label class="form-label text-danger fw-bold">ยอดชำระต่องวด (บาท)</label>
@@ -1326,13 +1338,71 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <div class="d-flex justify-content-center gap-2">
+                <div class="d-flex justify-content-center gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                    {"<button type='button' class='btn btn-sm btn-warning fw-bold px-2 text-dark' data-bs-toggle='modal' data-bs-target='#refinanceModal" + str(tx.id) + "'>🔄 ทบยอด/รีบิล</button>" if tx.principal > 0 else ""}
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
             </td>
         </tr>
         """
+        
+        # Modal สำหรับทบยอด/รีบิล
+        refinance_modal = f"""
+        <div class="modal fade" id="refinanceModal{tx.id}" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-warning">
+                    <form action="/refinance_tx/{tx.id}" method="POST">
+                        <div class="modal-header bg-warning text-dark py-2">
+                            <h5 class="modal-title fs-6 fw-bold">🔄 ทบยอด / รีบิลใหม่: {tx.customer_name}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body py-2">
+                            <div class="p-2 mb-2 bg-light rounded border">
+                                <small class="text-muted d-block">ข้อมูลบิลเก่าปัจจุบัน:</small>
+                                <span>ยอดต้นเดิม: <b>{tx.original_principal:,.2f}</b> | ต้นคงเหลือ: <b class="text-danger">{tx.principal:,.2f} บาท</b></span>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label fw-bold text-success" style="font-size: 0.85rem;">💳 เลือกบัญชีปล่อยกู้ยอดใหม่</label>
+                                <select name="funding_source" class="form-select form-select-sm border-success" required>
+                                    <option value="กรุงศรีอยุธยา" {"selected" if tx.funding_source=='กรุงศรีอยุธยา' else ""}>🟢 กรุงศรีอยุธยา (803-931-9819)</option>
+                                    <option value="ออมสิน" {"selected" if tx.funding_source=='ออมสิน' else ""}>🩷 ออมสิน (020-409-437-819)</option>
+                                    <option value="วอลเล็ท" {"selected" if tx.funding_source=='วอลเล็ท' else ""}>🟠 TrueMoney Wallet (092-923-7819)</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label fw-bold text-primary" style="font-size: 0.85rem;">💵 ยอดเงินต้นใหม่ (ปล่อยจริง เช่น 2000)</label>
+                                <input type="number" step="any" name="new_principal" class="form-control form-control-sm border-primary" placeholder="เช่น 2000" required>
+                            </div>
+                            <div class="p-2 border rounded bg-warning bg-opacity-10 mb-2">
+                                <label class="form-label text-danger fw-bold mb-1" style="font-size: 0.85rem;">⚙️ รายละเอียดจบต้นดอกใหม่ (ค่างวด × จำนวนงวด)</label>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <input type="number" step="any" name="per_installment" class="form-control form-control-sm" placeholder="ค่างวด เช่น 120" required>
+                                    </div>
+                                    <div class="col-6">
+                                        <input type="number" step="any" name="num_installments" class="form-control form-control-sm" placeholder="จำนวนงวด เช่น 12" required>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการรีบิล</label>
+                                <input type="text" name="note" class="form-control form-control-sm" value="ทบยอดรวมบิลเก่า">
+                            </div>
+                            <div class="alert alert-info py-1 mb-1 small">
+                                ℹ️ ระบบจะปิดบิลเก่าอัตโนมัติ และหักลบเงินในกระเป๋าเฉพาะส่วนต่างเงินสดที่จ่ายเพิ่มจริง ทำให้ยอดในแอปธนาคารตรงเป๊ะ!
+                            </div>
+                        </div>
+                        <div class="modal-footer py-2">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                            <button type="submit" class="btn btn-warning btn-sm fw-bold px-3 text-dark">ยืนยันการทบยอด</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        """
+
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1402,7 +1472,7 @@ def customer_details(cust_name):
                 </div>
             </div>
         </div>
-        """
+        """ + refinance_modal
 
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
@@ -1426,6 +1496,70 @@ def customer_details(cust_name):
     """
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า {cust_name}{% endblock %}', f'รายละเอียดลูกค้า {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=f"ลูกค้า: {cust_name}", page="dashboard")
+
+@app.route('/refinance_tx/<int:tx_id>', methods=['POST'])
+def refinance_tx(tx_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    try:
+        old_tx = Transaction.query.get_or_404(tx_id)
+        current_sales = session.get('admin', 'unknown')
+        thai_today = get_thai_today()
+
+        # 1. ปิดบิลเก่า
+        old_tx.closed_date = thai_today
+        old_tx.status = 'คืนแล้ว'
+        
+        old_remaining_principal = old_tx.principal
+        db.session.add(PaymentHistory(
+            transaction_id=old_tx.id, payment_date=thai_today, pay_amount=old_remaining_principal,
+            fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
+            principal_reduced=old_remaining_principal, note="ปิดบิลเก่าเพื่อทบยอด/รีบิล", admin_name=current_sales,
+            receiving_account=old_tx.funding_source
+        ))
+        old_tx.principal = 0.0
+
+        # 2. สร้างบิลใหม่
+        new_funding = request.form.get('funding_source', 'กรุงศรีอยุธยา')
+        new_principal = float(request.form.get('new_principal', 0))
+        per_inst = float(request.form.get('per_installment', 0))
+        num_inst = float(request.form.get('num_installments', 0))
+        new_total_fixed = per_inst * num_inst
+        note_text = request.form.get('note', 'ทบยอดรวมบิลเก่า')
+
+        new_tx = Transaction(
+            type='จบต้นดอก', customer_name=old_tx.customer_name, phone=old_tx.phone,
+            sales_name=current_sales, start_date=thai_today, original_principal=new_principal, principal=new_principal,
+            daily_interest=0.0, initial_daily_interest=0.0, installment_amount=0.0,
+            schedule_type=old_tx.schedule_type, due_day_of_month=old_tx.due_day_of_month, status='ปกติ',
+            funding_source=new_funding, start_next_day=False, total_fixed_amount=new_total_fixed
+        )
+        db.session.add(new_tx)
+
+        # 3. คำนวณเงินสดส่วนต่างที่ต้องจ่ายเพิ่มจริง (ยอดใหม่ - ยอดเก่าที่เหลือ)
+        net_cash_out = new_principal - old_remaining_principal
+        if net_cash_out < 0: net_cash_out = 0.0
+
+        if net_cash_out > 0 and new_funding in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
+            adj = BankAdjustment.query.filter_by(account_name=new_funding).first()
+            if adj:
+                adj.adjustment_amount = max(0.0, adj.adjustment_amount - net_cash_out)
+            else:
+                db.session.add(BankAdjustment(account_name=new_funding, adjustment_amount=0.0))
+            
+            db.session.add(BankExpenseLog(
+                expense_date=thai_today,
+                account_name=new_funding,
+                amount=net_cash_out,
+                note=f"[ทบยอด/รีบิล] ลูกค้า {old_tx.customer_name} (ยอดใหม่ {new_principal:,.2f} หักยอดเก่า {old_remaining_principal:,.2f})",
+                admin_name=current_sales
+            ))
+
+        db.session.commit()
+    except Exception as e:
+        print("Refinance error:", e)
+        db.session.rollback()
+    db.session.remove()
+    return redirect(url_for('customer_details', cust_name=old_tx.customer_name))
 
 @app.route('/monthly_summary')
 def monthly_summary():
@@ -1820,7 +1954,6 @@ def update_payment(tx_id):
     actual_interest_paid, actual_principal_reduced = 0.0, 0.0
 
     if tx.type == 'จบต้นดอก':
-        # สำหรับจบต้นดอก แยกสัดส่วนเงินต้นและดอกเบี้ยจากยอดที่รับเข้ามาตามสัดส่วนจริง
         total_interest_pool = max(0.0, (tx.total_fixed_amount if tx.total_fixed_amount > 0 else tx.original_principal) - tx.original_principal)
         remaining_interest_pool = max(0.0, total_interest_pool - tx.paid_interest)
 
@@ -1906,7 +2039,7 @@ def update_payment(tx_id):
                         if tx.principal < 0: tx.principal = 0.0
                 else:
                     tx.paid_interest += pay_amount
-                    actual_interest_paid = pay_amount
+                    actual_interest_paid = net_acc_interest
             else:
                 actual_interest_paid = net_acc_interest
                 pay_amount = actual_interest_paid + fine_amt
