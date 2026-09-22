@@ -530,7 +530,6 @@ def index():
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
         profit_items = []
-        current_month_profit = 0.0
         for tx in all_txs_ever:
             latest_date = tx.start_date
             if tx.histories:
@@ -560,10 +559,7 @@ def index():
             if not in_current_month and latest_date and latest_date.year == current_year and latest_date.month == current_month:
                 in_current_month = True
 
-            if in_current_month:
-                current_month_profit += total_item_profit
-
-            if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+            if in_current_month and (total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0):
                 profit_items.append({
                     'customer_name': tx.customer_name,
                     'type': tx.type,
@@ -575,6 +571,7 @@ def index():
                 })
 
         profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
+        current_month_profit = sum(item['total_item_profit'] for item in profit_items)
 
         profit_card_rows = ""
         for item in profit_items:
@@ -590,12 +587,10 @@ def index():
             </tr>
             """
         
-        sum_modal_actual_profit = sum(item['total_item_profit'] for item in profit_items)
-        
         profit_card_rows += f"""
         <tr class="table-warning fw-bold">
             <td colspan="5" class="text-end">รวมกำไรสะสมทั้งระบบ (หักส่วนลดแล้ว):</td>
-            <td colspan="2" class="text-success">{sum_modal_actual_profit:,.2f} บาท</td>
+            <td colspan="2" class="text-success">{current_month_profit:,.2f} บาท</td>
         </tr>
         """
 
