@@ -216,21 +216,17 @@ BASE_LAYOUT = """
         let selectElem = document.getElementById('payType' + id);
         let amountContainer = document.getElementById('amountDiv' + id);
         let adjustContainer = document.getElementById('adjustContainer' + id);
-        let statusSelect = document.getElementById('newStatus' + id);
         
         if (selectElem) {
             if (selectElem.value === 'full') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusSelect) { statusSelect.value = 'คืนแล้ว'; }
             } else if (selectElem.value === 'adjust') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'block';
-                if (statusSelect) { statusSelect.value = 'ปกติ'; }
             } else {
                 if(amountContainer) amountContainer.style.display = 'block';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusSelect) { statusSelect.value = 'ตัดยอดบางส่วน'; }
             }
         }
     }
@@ -555,7 +551,16 @@ def index():
             tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
             total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
 
-            if latest_date and latest_date.year == current_year and latest_date.month == current_month:
+            in_current_month = False
+            if tx.histories:
+                for h in tx.histories:
+                    if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
+                        in_current_month = True
+                        break
+            if not in_current_month and latest_date and latest_date.year == current_year and latest_date.month == current_month:
+                in_current_month = True
+
+            if in_current_month:
                 current_month_profit += total_item_profit
 
             if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
@@ -603,12 +608,7 @@ def index():
             start_date_str_fmt = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
             last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
             
-            # 💡 แก้ไขให้ดึงวันที่ปัจจุบันมาเป็นค่าเริ่มต้นเสมอ (ไม่ค้างค่าเก่า)
             closed_date_str = get_thai_today().strftime('%Y-%m-%d')
-            
-            selected_normal = "selected" if tx.status == "ปกติ" else ""
-            selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
-            selected_full = "selected" if tx.status == "คืนแล้ว" else ""
 
             schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
             if tx.schedule_type == 'กำหนดจ่ายประจำเดือน' and tx.due_day_of_month:
@@ -645,9 +645,6 @@ def index():
             </tr>
             """
 
-            # 💡 เพิ่มข้อความเตือนเฉพาะบิลประเภท 'จบต้นดอก' ใน Modal
-            warning_alert_html = "<div class='alert alert-warning py-1 px-2 mb-2' style='font-size: 0.8rem;'>💡 <b>คำแนะนำ (จบต้นดอก):</b> ยอดที่ชำระเข้ามา ระบบจะนำไปตัดเข้า <b>'ดอกเบี้ยสะสม'</b> ก่อน จนกว่าจะหมด แล้วจึงจะเริ่มตัดลด <b>'เงินต้นคงเหลือ'</b> โดยอัตโนมัติ</div>" if tx.type == 'จบต้นดอก' else ""
-
             modals_html += f"""
             <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
@@ -662,8 +659,6 @@ def index():
                                     <div><small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small><b>{tx.principal:,.2f} บาท</b></div>
                                     <div class="text-end"><small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small><b class="text-danger" id="accInterestDisplay{tx.id}">{tx.accumulated_interest:,.2f} บาท</b></div>
                                 </div>
-
-                                {warning_alert_html}
 
                                 <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                     <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
@@ -711,17 +706,9 @@ def index():
                                         <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                     </div>
                                 </div>
-                                <div class="mb-2">
+                                <div class="mb-1">
                                     <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
                                     <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
-                                </div>
-                                <div class="mb-1">
-                                    <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ (อัปอัตโนมัติ)</label>
-                                    <select name="new_status" class="form-select form-select-sm border-success bg-light" id="newStatus{tx.id}">
-                                        <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอด</option>
-                                        <option value="คืนแล้ว" {selected_full}>คืนแล้ว</option>
-                                    </select>
                                 </div>
                             </div>
                             <div class="modal-footer bg-light py-2 justify-content-between">
@@ -1341,12 +1328,7 @@ def customer_details(cust_name):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         
-        # 💡 แก้ไขให้ดึงวันที่ปัจจุบันมาเป็นค่าเริ่มต้นเสมอ
         closed_date_str = get_thai_today().strftime('%Y-%m-%d')
-        
-        selected_normal = "selected" if tx.status == "ปกติ" else ""
-        selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
-        selected_full = "selected" if tx.status == "คืนแล้ว" else ""
 
         rows += f"""
         <tr>
@@ -1425,8 +1407,6 @@ def customer_details(cust_name):
         </div>
         """
 
-        warning_alert_html = "<div class='alert alert-warning py-1 px-2 mb-2' style='font-size: 0.8rem;'>💡 <b>คำแนะนำ (จบต้นดอก):</b> ยอดที่ชำระเข้ามา ระบบจะนำไปตัดเข้า <b>'ดอกเบี้ยสะสม'</b> ก่อน จนกว่าจะหมด แล้วจึงจะเริ่มตัดลด <b>'เงินต้นคงเหลือ'</b> โดยอัตโนมัติ</div>" if tx.type == 'จบต้นดอก' else ""
-
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1441,8 +1421,6 @@ def customer_details(cust_name):
                                 <div><small class="text-muted d-block" style="font-size: 0.75rem;">เงินต้นคงเหลือ</small><b>{tx.principal:,.2f} บาท</b></div>
                                 <div class="text-end"><small class="text-muted d-block" style="font-size: 0.75rem;">ดอกเบี้ยสะสม</small><b class="text-danger">{tx.accumulated_interest:,.2f} บาท</b></div>
                             </div>
-
-                            {warning_alert_html}
 
                             <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
@@ -1479,15 +1457,7 @@ def customer_details(cust_name):
                                 <div class="col-6"><label class="form-label text-danger small fw-bold mb-1">ส่วนลด</label><input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0"></div>
                                 <div class="col-6"><label class="form-label text-warning text-dark small fw-bold mb-1">ค่าปรับ</label><input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0"></div>
                             </div>
-                            <div class="mb-2"><label class="form-label text-dark fw-bold mb-1">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm"></div>
-                            <div class="mb-1">
-                                <label class="form-label text-success fw-bold mb-1">สถานะ (อัปอัตโนมัติ)</label>
-                                <select name="new_status" class="form-select form-select-sm border-success bg-light" id="newStatus{tx.id}">
-                                    <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอด</option>
-                                    <option value="คืนแล้ว" {selected_full}>คืนแล้ว</option>
-                                </select>
-                            </div>
+                            <div class="mb-1"><label class="form-label text-dark fw-bold mb-1">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm"></div>
                         </div>
                         <div class="modal-footer bg-light py-2 justify-content-between">
                             <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ประวัติ</a>
@@ -1981,7 +1951,6 @@ def update_payment(tx_id):
     
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
-    new_status = request.form.get('new_status')
     closed_date_str = request.form.get('closed_date')
     note_text = request.form.get('note', '').strip()
     
@@ -2031,7 +2000,7 @@ def update_payment(tx_id):
                 tx.principal = 0.0
                 if not tx.closed_date: tx.closed_date = thai_today
             elif tx.principal < tx.original_principal: tx.status = 'ตัดยอดบางส่วน'
-            elif new_status: tx.status = new_status
+            else: tx.status = 'ปกติ'
     else:
         calc_end_date = tx.closed_date if tx.closed_date else thai_today
         days = (calc_end_date - tx.start_date).days + 1
@@ -2086,10 +2055,7 @@ def update_payment(tx_id):
                 tx.principal = 0.0
                 if not tx.closed_date: tx.closed_date = thai_today
             elif tx.principal < tx.original_principal: tx.status = 'ตัดยอดบางส่วน'
-            elif new_status: tx.status = new_status
-
-    if new_status:
-        tx.status = new_status
+            else: tx.status = 'ปกติ'
 
     total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
     if total_net_pay < 0: total_net_pay = 0.0
