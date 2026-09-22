@@ -492,29 +492,34 @@ def index():
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
         profit_items = []
-        current_month_profit = 0.0
         for tx in all_txs_ever:
-            latest_date = tx.start_date
-            if tx.histories:
-                max_h_date = max((h.payment_date for h in tx.histories if h.payment_date), default=None)
-                if max_h_date and max_h_date > latest_date: latest_date = max_h_date
-            if tx.last_payment_date and tx.last_payment_date > latest_date:
-                latest_date = tx.last_payment_date
+            # กรองเฉพาะประวัติการชำระเงิน (PaymentHistory) ที่เกิดขึ้นใน "เดือนปัจจุบัน" เท่านั้น
+            cur_month_histories = [
+                h for h in tx.histories 
+                if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month
+            ]
+            
+            # ถ้าไม่มีการชำระเงินในเดือนนี้ ข้ามไปเลย จะได้ไม่ดึงยอดค้างเก่าหรือดอกเบี้ยในอนาคตมาเกี่ยว
+            if not cur_month_histories:
+                continue
 
+            # คำนวณเฉพาะยอดที่เกิดขึ้นในเดือนนี้จริงๆ จากประวัติการจ่าย
             if tx.type == 'ยอดค้างเก่า':
-                net_earned = max(0.0, (tx.original_principal - tx.principal))
+                net_earned = sum(h.principal_reduced for h in cur_month_histories)
+            elif tx.type == 'จบต้นดอก':
+                net_earned = sum(h.interest_paid for h in cur_month_histories)
             else:
-                hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-                net_earned = max(tx.paid_interest, hist_sum)
+                net_earned = sum(h.interest_paid for h in cur_month_histories)
                 
-            tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-            tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
+            tx_fine_sum = sum(h.fine_amount for h in cur_month_histories)
+            tx_discount_sum = sum(h.discount_amount for h in cur_month_histories)
+            
             total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
 
-            if latest_date and latest_date.year == current_year and latest_date.month == current_month:
-                current_month_profit += total_item_profit
-
             if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+                # หา วันที่ชำระล่าสุดในเดือนนี้ของบิลนั้น
+                latest_date = max((h.payment_date for h in cur_month_histories), default=tx.start_date)
+                
                 profit_items.append({
                     'customer_name': tx.customer_name,
                     'type': tx.type,
@@ -526,6 +531,9 @@ def index():
                 })
 
         profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
+
+        # ยอดรวมกำไรสะสมของเดือนนี้ จะตรงกับตารางป๊อปอัพและเก็บจริง 100%
+        current_month_profit = sum(item['total_item_profit'] for item in profit_items)
 
         profit_card_rows = ""
         for item in profit_items:
