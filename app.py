@@ -287,7 +287,6 @@ def calculate_tx_values(tx):
             sum_principal_reduced += h.principal_reduced
             sum_interest_paid += h.interest_paid
 
-    # คำนวณยอดชำระแล้วรวมจากประวัติจริง และกรณีไม่มีประวัติให้ใช้ส่วนลด/ต้นที่ลดลงทดแทน
     fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal) if tx.type == 'ยอดค้างเก่า' else max(0.0, tx.original_principal - tx.principal)
     calculated_paid_total = sum_interest_paid + sum_principal_reduced
     if calculated_paid_total <= 0:
@@ -491,41 +490,65 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
+        # ปรับการคำนวณกำไรสะสม (เดือนปัจจุบัน) ให้ยึดตามวันที่ชำระจริงใน PaymentHistory ทุกลูกค้าทุกรายชื่อ
         profit_items = []
         current_month_profit = 0.0
+        all_histories = PaymentHistory.query.all()
+        
+        # จัดกลุ่มประวัติการชำระตาม Transaction เพื่อคำนวณยอดสะสม
+        tx_histories_map = defaultdict(list)
+        for h in all_histories:
+            if h.transaction_id:
+                tx_histories_map[h.transaction_id].append(h)
+
         for tx in all_txs_ever:
-            latest_date = tx.start_date
-            if tx.histories:
-                max_h_date = max((h.payment_date for h in tx.histories if h.payment_date), default=None)
-                if max_h_date and max_h_date > latest_date: latest_date = max_h_date
-            if tx.last_payment_date and tx.last_payment_date > latest_date:
-                latest_date = tx.last_payment_date
+            hist_list = tx_histories_map.get(tx.id, [])
+            
+            # คำนวณกำไรจากประวัติที่เกิดขึ้นในเดือนปัจจุบัน (ตาม payment_date)
+            item_current_month_profit = 0.0
+            total_net_earned = 0.0
+            total_fine_sum = 0.0
+            total_discount_sum = 0.0
+            latest_h_date = tx.start_date
 
-            if tx.type == 'ยอดค้างเก่า':
-                net_earned = max(0.0, (tx.original_principal - tx.principal))
+            if hist_list:
+                for h in hist_list:
+                    h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+                    total_net_earned += h.interest_paid
+                    total_fine_sum += h.fine_amount
+                    total_discount_sum += h.discount_amount
+                    
+                    if h.payment_date:
+                        if not latest_h_date or h.payment_date > latest_h_date:
+                            latest_h_date = h.payment_date
+                        if h.payment_date.year == current_year and h.payment_date.month == current_month:
+                            current_month_profit += h_profit
+                            item_current_month_profit += h_profit
             else:
-                hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-                net_earned = max(tx.paid_interest, hist_sum)
-                
-            tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-            tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-            total_item_profit = net_earned + tx_fine_sum - tx_discount_sum
+                # กรณีไม่มีประวัติแยก ให้ใช้เกณฑ์เดิม
+                if tx.type == 'ยอดค้างเก่า':
+                    net_earned = max(0.0, (tx.original_principal - tx.principal))
+                else:
+                    net_earned = max(tx.paid_interest, 0.0)
+                total_net_earned = net_earned
+                total_item_profit = net_earned
+                if latest_h_date and latest_h_date.year == current_year and latest_h_date.month == current_month:
+                    current_month_profit += total_item_profit
+                    item_current_month_profit = total_item_profit
 
-            if latest_date and latest_date.year == current_year and latest_date.month == current_month:
-                current_month_profit += total_item_profit
-
-            if total_item_profit != 0 or net_earned > 0 or tx_fine_sum > 0 or tx_discount_sum > 0:
+            total_item_profit = total_net_earned + total_fine_sum - total_discount_sum
+            if total_item_profit != 0 or total_net_earned > 0 or total_fine_sum > 0 or total_discount_sum > 0:
                 profit_items.append({
                     'customer_name': tx.customer_name,
                     'type': tx.type,
-                    'net_earned': net_earned,
-                    'fine_amount': tx_fine_sum,
-                    'discount_amount': tx_discount_sum,
+                    'net_earned': total_net_earned,
+                    'fine_amount': total_fine_sum,
+                    'discount_amount': total_discount_sum,
                     'total_item_profit': total_item_profit,
-                    'latest_date': latest_date
+                    'latest_date': latest_h_date
                 })
 
-        profit_items.sort(key=lambda x: x['latest_date'], reverse=True)
+        profit_items.sort(key=lambda x: x['latest_date'] if x['latest_date'] else thai_today, reverse=True)
 
         profit_card_rows = ""
         for item in profit_items:
@@ -1391,32 +1414,30 @@ def customer_details(cust_name):
 @app.route('/monthly_summary')
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
-    all_txs_ever = Transaction.query.all()
-    monthly_data = defaultdict(lambda: {'count_tx': 0, 'new_investment': 0.0, 'month_profit': 0.0})
     
+    # [ปรับแก้] คำนวณยอดรายเดือนโดยอ้างอิงจาก "วันที่ชำระจริงใน PaymentHistory" หรือ "วันที่เริ่มกู้" สำหรับทุกรายชื่อ
+    all_txs_ever = Transaction.query.all()
+    all_histories = PaymentHistory.query.all()
+    
+    tx_map = {t.id: t for t in all_txs_ever}
+    monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'month_profit': 0.0})
+    
+    # 1. วนลูปประวัติการชำระเงินจริงทั้งหมด เพื่อจัดเก็บกำไรและยอดตาม "payment_date"
+    for h in all_histories:
+        if h.payment_date:
+            ym = h.payment_date.strftime('%Y-%m')
+            h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            monthly_data[ym]['month_profit'] += h_profit
+            if h.transaction_id:
+                monthly_data[ym]['count_tx'].add(h.transaction_id)
+
+    # 2. วนลูปรายการกู้ เพื่อสะสมยอดปล่อยลงทุนใหม่ตาม "start_date" ของเดือนนั้นๆ
     for tx in all_txs_ever:
-        latest_date = tx.start_date
-        if tx.histories:
-            max_h_date = max((h.payment_date for h in tx.histories if h.payment_date), default=None)
-            if max_h_date and max_h_date > latest_date: latest_date = max_h_date
-        if tx.last_payment_date and tx.last_payment_date > latest_date: latest_date = tx.last_payment_date
-        ym_target = latest_date.strftime('%Y-%m') if latest_date else '2026-09'
-
-        if tx.type == 'ยอดค้างเก่า': net_earned = max(0.0, (tx.original_principal - tx.principal))
-        else:
-            hist_sum = sum(h.interest_paid for h in tx.histories) if tx.histories else 0.0
-            net_earned = max(tx.paid_interest, hist_sum)
-            
-        tx_fine_sum = sum(h.fine_amount for h in tx.histories) if tx.histories else 0.0
-        tx_discount_sum = sum(h.discount_amount for h in tx.histories) if tx.histories else 0.0
-        item_total_profit = net_earned + tx_fine_sum - tx_discount_sum
-
-        monthly_data[ym_target]['month_profit'] += item_total_profit
-        monthly_data[ym_target]['count_tx'] += 1
-
-    for tx in all_txs_ever:
-        ym_start = tx.start_date.strftime('%Y-%m') if tx.start_date else '2026-09'
-        if tx.type != 'ยอดค้างเก่า': monthly_data[ym_start]['new_investment'] += tx.original_principal
+        if tx.start_date:
+            ym_start = tx.start_date.strftime('%Y-%m')
+            if tx.type != 'ยอดค้างเก่า':
+                monthly_data[ym_start]['new_investment'] += tx.original_principal
+            monthly_data[ym_start]['count_tx'].add(tx.id)
 
     cards_html = ""
     thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
@@ -1424,13 +1445,14 @@ def monthly_summary():
     for ym, d in sorted(monthly_data.items(), reverse=True):
         parts = ym.split('-')
         m_label = f"{thai_months.get(parts[1], parts[1])} {int(parts[0])+543}"
+        num_items = len(d['count_tx'])
         cards_html += f"""
         <div class="col-md-4 mb-3">
             <div class="card p-3 shadow-sm border-warning bg-white">
                 <h5 class="text-danger fw-bold mb-2">📁 ประจำเดือน {m_label}</h5>
-                <p class="mb-1 text-muted">จำนวนรายการ: <b class="text-dark">{d['count_tx']} รายการ</b></p>
-                <p class="mb-1 text-muted">ยอดปล่อยกู้: <b class="text-primary">{d['new_investment']:,.2f} บาท</b></p>
-                <p class="mb-3 text-muted">กำไรสุทธิ: <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
+                <p class="mb-1 text-muted">จำนวนรายการที่เกี่ยวข้อง: <b class="text-dark">{num_items} รายการ</b></p>
+                <p class="mb-1 text-muted">ยอดปล่อยกู้ (เดือนนี้): <b class="text-primary">{d['new_investment']:,.2f} บาท</b></p>
+                <p class="mb-3 text-muted">กำไรสุทธิ (ตามวันชำระ): <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
                 <a href="/monthly_details/{ym}/profit" class="btn btn-warning btn-sm fw-bold">🔍 เปิดแฟ้มดูรายละเอียด</a>
             </div>
         </div>
@@ -1447,17 +1469,20 @@ def monthly_details(ym, category):
         year_i, month_i = int(year_val), int(month_val)
     except: return redirect(url_for('monthly_summary'))
 
-    all_txs = Transaction.query.all()
-    target_tx_ids = []
-    for tx in all_txs:
-        latest_date = tx.start_date
-        if tx.histories:
-            max_h_date = max((h.payment_date for h in tx.histories if h.payment_date), default=None)
-            if max_h_date and max_h_date > latest_date: latest_date = max_h_date
-        if tx.last_payment_date and tx.last_payment_date > latest_date: latest_date = tx.last_payment_date
-        if latest_date and latest_date.year == year_i and latest_date.month == month_i: target_tx_ids.append(tx.id)
+    # [ปรับแก้] ค้นหา Transaction ที่มีประวัติการชำระเงิน หรือ วันที่เริ่มกู้ ตรงกับเดือน/ปีเป้าหมาย
+    all_histories = PaymentHistory.query.all()
+    target_tx_ids = set()
 
-    txs = Transaction.query.filter(Transaction.id.in_(target_tx_ids)).all() if target_tx_ids else []
+    for h in all_histories:
+        if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
+            if h.transaction_id:
+                target_tx_ids.add(h.transaction_id)
+
+    for tx in Transaction.query.all():
+        if tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i:
+            target_tx_ids.add(tx.id)
+
+    txs = Transaction.query.filter(Transaction.id.in_(list(target_tx_ids))).all() if target_tx_ids else []
     thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
@@ -1470,9 +1495,9 @@ def monthly_details(ym, category):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         closed_date_str = tx.closed_date.strftime('%d/%m/%Y') if tx.closed_date else '-'
         
-        actual_paid_total = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in tx.histories) if tx.histories else tx.total_paid
+        actual_paid_total = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in tx.histories if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i) if tx.histories else 0.0
         total_actual_paid_sum += actual_paid_total
-        total_inv_sum += tx.original_principal
+        total_inv_sum += tx.original_principal if (tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i) else 0.0
         total_prin_sum += tx.principal
 
         rows += f"""
@@ -1834,7 +1859,6 @@ def update_payment(tx_id):
     total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
     if total_net_pay < 0: total_net_pay = 0.0
 
-    # บันทึกประวัติลงตาราง PaymentHistory ทุกครั้งที่มีการอัปเดตยอด
     db.session.add(PaymentHistory(
         transaction_id=tx.id, payment_date=thai_today, pay_amount=total_net_pay,
         fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
@@ -1865,7 +1889,6 @@ def payment_history(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     histories = PaymentHistory.query.filter_by(transaction_id=tx.id).order_by(PaymentHistory.payment_date.desc()).all()
     
-    # กรณีบิลเก่าที่ยังไม่มีประวัติใน PaymentHistory ให้สร้างประวัติจำลองชั่วคราวจากยอดที่ลดลงเพื่อไม่ให้หน้าประวัติว่างเปล่า
     if not histories and (tx.original_principal > tx.principal or tx.paid_interest > 0):
         dummy_principal_diff = max(0.0, tx.original_principal - tx.principal)
         rows = f"<tr><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td class='text-primary fw-bold'>{(tx.paid_interest + dummy_principal_diff):,.2f}</td><td><span class='badge bg-info text-dark'>{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>0.00</td><td class='text-warning text-dark'>0.00</td><td>{tx.paid_interest:,.2f}</td><td>{dummy_principal_diff:,.2f}</td><td>ประวัติสะสมเดิม (ก่อนอัปเดตระบบ)</td><td><span class='badge bg-secondary'>ระบบ</span></td></tr>"
