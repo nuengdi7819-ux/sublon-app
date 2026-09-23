@@ -490,7 +490,7 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # ปรับการคำนวณกำไรสะสมเฉพาะเดือนปัจจุบันให้ตรงกัน 100%
+        # ปรับสูตรกำไรสะสมให้ดึงจาก PaymentHistory โดยตรงและตรงกันกับหน้ากล่องแฟ้ม
         profit_items = []
         current_month_profit = 0.0
         
@@ -1400,6 +1400,7 @@ def monthly_summary():
     for h in all_histories:
         if h.payment_date:
             ym = h.payment_date.strftime('%Y-%m')
+            # ใช้สูตรคำนวณกำไรชุดเดียวกันกับหน้า Dashboard แบบเป๊ะๆ
             h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym]['month_profit'] += h_profit
             if h.transaction_id:
@@ -1416,20 +1417,21 @@ def monthly_summary():
     thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     
     for ym, d in sorted(monthly_data.items(), reverse=True):
-        parts = ym.split('-')
-        m_label = f"{thai_months.get(parts[1], parts[1])} {int(parts[0])+543}"
-        num_items = len(d['count_tx'])
-        cards_html += f"""
-        <div class="col-md-4 mb-3">
-            <div class="card p-3 shadow-sm border-warning bg-white">
-                <h5 class="text-danger fw-bold mb-2">📁 ประจำเดือน {m_label}</h5>
-                <p class="mb-1 text-muted">จำนวนรายการที่เกี่ยวข้อง: <b class="text-dark">{num_items} รายการ</b></p>
-                <p class="mb-1 text-muted">ยอดปล่อยกู้ (เดือนนี้): <b class="text-primary">{d['new_investment']:,.2f} บาท</b></p>
-                <p class="mb-3 text-muted">กำไรสุทธิ (ตามวันชำระ): <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
-                <a href="/monthly_details/{ym}/profit" class="btn btn-warning btn-sm fw-bold">🔍 เปิดแฟ้มดูรายละเอียด</a>
+        if d['new_investment'] > 0 or d['month_profit'] > 0:
+            parts = ym.split('-')
+            m_label = f"{thai_months.get(parts[1], parts[1])} {int(parts[0])+543}"
+            num_items = len(d['count_tx'])
+            cards_html += f"""
+            <div class="col-md-4 mb-3">
+                <div class="card p-3 shadow-sm border-warning bg-white">
+                    <h5 class="text-danger fw-bold mb-2">📁 ประจำเดือน {m_label}</h5>
+                    <p class="mb-1 text-muted">จำนวนรายการที่เกี่ยวข้อง: <b class="text-dark">{num_items} รายการ</b></p>
+                    <p class="mb-1 text-muted">ยอดปล่อยกู้ (เดือนนี้): <b class="text-primary">{d['new_investment']:,.2f} บาท</b></p>
+                    <p class="mb-3 text-muted">กำไรสุทธิ (ตามวันชำระ): <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
+                    <a href="/monthly_details/{ym}/profit" class="btn btn-warning btn-sm fw-bold">🔍 เปิดแฟ้มดูรายละเอียด</a>
+                </div>
             </div>
-        </div>
-        """
+            """
     content = f"""<div class="row">{cards_html if cards_html else "<p class='text-center text-muted'>ยังไม่มีข้อมูลในกล่องแฟ้ม</p>"}</div>"""
     html = BASE_LAYOUT.replace('{% block header %}4. สรุปยอดผลประกอบการรายเดือน{% endblock %}', '📁 กล่องแฟ้มรายเดือน (Monthly Summary)').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="สรุปยอดรายเดือน", page="monthly")
