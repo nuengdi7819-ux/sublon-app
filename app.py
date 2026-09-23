@@ -167,6 +167,7 @@ BASE_LAYOUT = """
         </ul>
         <hr class="border-secondary">
         <div class="d-flex flex-column gap-1 mb-2">
+            <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;">🗑️ ตรวจสอบประวัติขยะ (740 บ.)</a>
             <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;">📥 สำรองข้อมูล (Backup)</a>
             <button type="button" class="btn btn-outline-info btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
         </div>
@@ -490,26 +491,25 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # ปรับสูตรกำไรสะสมให้ดึงจาก PaymentHistory โดยตรงและตรงกันกับหน้ากล่องแฟ้ม
+        # ปรับสูตรกำไรสะสมให้ดึงจาก PaymentHistory โดยตรงและกรองเฉพาะบิลที่มีตัวตนอยู่จริง
         profit_items = []
         current_month_profit = 0.0
         
-        current_month_histories = PaymentHistory.query.filter(
-            db.extract('year', PaymentHistory.payment_date) == current_year,
-            db.extract('month', PaymentHistory.payment_date) == current_month
-        ).all()
-
+        all_histories_for_dash = PaymentHistory.query.all()
         tx_profit_map = defaultdict(lambda: {'net_earned': 0.0, 'fine': 0.0, 'discount': 0.0, 'latest_date': None})
-        for h in current_month_histories:
-            if h.transaction_id:
-                h_profit = h.interest_paid + h.fine_amount - h.discount_amount
-                tx_profit_map[h.transaction_id]['net_earned'] += h.interest_paid
-                tx_profit_map[h.transaction_id]['fine'] += h.fine_amount
-                tx_profit_map[h.transaction_id]['discount'] += h.discount_amount
-                current_month_profit += h_profit
-                
-                if not tx_profit_map[h.transaction_id]['latest_date'] or h.payment_date > tx_profit_map[h.transaction_id]['latest_date']:
-                    tx_profit_map[h.transaction_id]['latest_date'] = h.payment_date
+        
+        for h in all_histories_for_dash:
+            if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
+                if h.transaction_id and h.transaction: 
+                    h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+                    tx_profit_map[h.transaction_id]['net_earned'] += h.interest_paid
+                    tx_profit_map[h.transaction_id]['fine'] += h.fine_amount
+                    tx_profit_map[h.transaction_id]['discount'] += h.discount_amount
+                    
+                    current_month_profit += h_profit
+                    
+                    if not tx_profit_map[h.transaction_id]['latest_date'] or h.payment_date > tx_profit_map[h.transaction_id]['latest_date']:
+                        tx_profit_map[h.transaction_id]['latest_date'] = h.payment_date
 
         for tx_id, p_data in tx_profit_map.items():
             tx_ref = Transaction.query.get(tx_id)
@@ -1398,13 +1398,12 @@ def monthly_summary():
     monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'month_profit': 0.0})
     
     for h in all_histories:
-        if h.payment_date:
+        # บังคับเช็ก h.transaction เพื่อป้องกันการดึงประวัติของบิลที่ถูกลบไปแล้วมารวม
+        if h.payment_date and h.transaction_id and h.transaction:
             ym = h.payment_date.strftime('%Y-%m')
-            # ใช้สูตรคำนวณกำไรชุดเดียวกันกับหน้า Dashboard แบบเป๊ะๆ
             h_profit = h.interest_paid + h.fine_amount - h.discount_amount
             monthly_data[ym]['month_profit'] += h_profit
-            if h.transaction_id:
-                monthly_data[ym]['count_tx'].add(h.transaction_id)
+            monthly_data[ym]['count_tx'].add(h.transaction_id)
 
     for tx in all_txs_ever:
         if tx.start_date:
@@ -1449,7 +1448,7 @@ def monthly_details(ym, category):
 
     for h in all_histories:
         if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
-            if h.transaction_id:
+            if h.transaction_id and h.transaction:
                 target_tx_ids.add(h.transaction_id)
 
     for tx in Transaction.query.all():
@@ -1510,6 +1509,61 @@ def monthly_details(ym, category):
     """
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดประจำเดือน{% endblock %}', title_str).replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=title_str, page="monthly")
+
+@app.route('/check_orphaned_payments')
+def check_orphaned_payments():
+    if 'admin' not in session: return redirect(url_for('login'))
+    
+    all_histories = PaymentHistory.query.all()
+    orphaned_rows = ""
+    
+    for h in all_histories:
+        if not h.transaction_id or not h.transaction:
+            h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            p_date_str = h.payment_date.strftime('%d/%m/%Y') if h.payment_date else '-'
+            
+            orphaned_rows += f"""
+            <tr>
+                <td>{h.id}</td>
+                <td>{h.transaction_id or 'ไม่มี ID บิล'}</td>
+                <td>{p_date_str}</td>
+                <td class="text-danger fw-bold">{h_profit:,.2f} บาท</td>
+                <td>{h.note or '-'}</td>
+                <td><span class="badge bg-secondary">{h.admin_name or '-'}</span></td>
+                <td><a href="/delete_orphaned_history/{h.id}" class="btn btn-sm btn-danger" onclick="return confirm('ยืนยันลบประวัติค้างนี้ทิ้ง?')">ลบประวัติขยะนี้</a></td>
+            </tr>
+            """
+
+    content = f"""
+    <div class="card p-4 shadow-sm border-danger">
+        <h4 class="mb-3 text-danger fw-bold">🗑️ ตรวจสอบประวัติการชำระเงินที่ตกค้าง (ไม่มีบิลหลักรองรับ)</h4>
+        <p class="text-muted">รายการเหล่านี้คือประวัติการจ่ายเงินที่ตัวบิลหลักถูกลบออกจากระบบไปแล้ว แต่ประวัติด้านในยังค้างอยู่</p>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle text-nowrap">
+                <thead class="table-dark">
+                    <tr><th>ID ประวัติ</th><th>ID บิลเดิม</th><th>วันที่ทำรายการ</th><th>ยอดเงินสุทธิ (กำไร/ค่าปรับ)</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th>จัดการ</th></tr>
+                </thead>
+                <tbody>
+                    {orphaned_rows if orphaned_rows else "<tr><td colspan='7' class='text-center text-success fw-bold'>ยอดเยี่ยม! ไม่พบประวัติการชำระเงินตกค้างในระบบ ทุกอย่างสะอาดเรียบร้อยดี</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-3">
+            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️ กลับหน้าหลัก</a>
+        </div>
+    </div>
+    """
+    html = BASE_LAYOUT.replace('{% block header %}ตรวจสอบประวัติค้าง{% endblock %}', 'ตรวจสอบประวัติค้าง').replace('{% block content %}{% endblock %}', content)
+    return render_template_string(html, title="ตรวจสอบประวัติค้าง", page="dashboard")
+
+@app.route('/delete_orphaned_history/<int:hid>')
+def delete_orphaned_history(hid):
+    if 'admin' not in session: return redirect(url_for('login'))
+    h_item = PaymentHistory.query.get_or_404(hid)
+    db.session.delete(h_item)
+    db.session.commit()
+    db.session.remove()
+    return redirect(url_for('check_orphaned_payments'))
 
 @app.route('/members')
 def members():
