@@ -493,46 +493,55 @@ def index():
         profit_items = []
         current_month_profit = 0.0
         
-        all_histories_for_dash = PaymentHistory.query.all()
-        tx_profit_map = defaultdict(lambda: {'net_earned': 0.0, 'fine': 0.0, 'discount': 0.0, 'latest_date': None})
-        
-        for h in all_histories_for_dash:
-            if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
-                if h.transaction_id and h.transaction: 
-                    if h.transaction.type == 'ยอดค้างเก่า':
-                        # สำหรับยอดค้างเก่า กำไร/ดอกเบี้ยจริงให้นับจากดอกเบี้ยที่บันทึกไว้ หรือถ้าไม่มี ให้คิดจากส่วนลด/ส่วนต่างที่เกิดจริง
-                        h_interest = h.interest_paid if h.interest_paid > 0 else 0.0
-                    else:
-                        h_interest = h.interest_paid
-                        
-                    h_profit = h_interest + h.fine_amount - h.discount_amount
-                    
-                    tx_profit_map[h.transaction_id]['net_earned'] += h_interest
-                    tx_profit_map[h.transaction_id]['fine'] += h.fine_amount
-                    tx_profit_map[h.transaction_id]['discount'] += h.discount_amount
-                    
-                    current_month_profit += h_profit
-                    
-                    if not tx_profit_map[h.transaction_id]['latest_date'] or h.payment_date > tx_profit_map[h.transaction_id]['latest_date']:
-                        tx_profit_map[h.transaction_id]['latest_date'] = h.payment_date
-
-        for tx_id, p_data in tx_profit_map.items():
-            tx_ref = Transaction.query.get(tx_id)
-            if tx_ref:
-                net_earned_val = p_data['net_earned']
-                if tx_ref.type == 'ยอดค้างเก่า' and net_earned_val > tx_ref.original_principal:
-                    net_earned_val = 0.0
-
-                total_item_profit = net_earned_val + p_data['fine'] - p_data['discount']
-                profit_items.append({
-                    'customer_name': tx_ref.customer_name,
-                    'type': tx_ref.type,
-                    'net_earned': net_earned_val,
-                    'fine_amount': p_data['fine'],
-                    'discount_amount': p_data['discount'],
-                    'total_item_profit': total_item_profit,
-                    'latest_date': p_data['latest_date']
-                })
+        all_txs_for_profit = Transaction.query.all()
+        for tx in all_txs_for_profit:
+            calculate_tx_values(tx)
+            # เช็คว่ามีประวัติหรือมีการชำระในเดือนปัจจุบันไหม หรือถ้าเป็นยอดค้างเก่าให้ดูจากยอดที่ชำระแล้ว (total_paid)
+            if tx.type == 'ยอดค้างเก่า':
+                if tx.total_paid > 0:
+                    # สำหรับยอดค้างเก่า กำไร/ยอดสะสมจริงคือยอดที่ชำระแล้ว (เงินต้นที่ลดลงจริง)
+                    item_profit = tx.total_paid
+                    profit_items.append({
+                        'customer_name': tx.customer_name,
+                        'type': tx.type,
+                        'net_earned': item_profit,
+                        'fine_amount': 0.0,
+                        'discount_amount': 0.0,
+                        'total_item_profit': item_profit,
+                        'latest_date': tx.last_payment_date if tx.last_payment_date else tx.start_date
+                    })
+                    current_month_profit += item_profit
+            else:
+                # สำหรับลูกค้าใหม่ คำนวณจากประวัติการชำระในเดือนปัจจุบัน
+                tx_net_earned = 0.0
+                tx_fine = 0.0
+                tx_discount = 0.0
+                latest_d = None
+                has_history_this_month = False
+                
+                if tx.histories:
+                    for h in tx.histories:
+                        if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
+                            has_history_this_month = True
+                            tx_net_earned += h.interest_paid
+                            tx_fine += h.fine_amount
+                            tx_discount += h.discount_amount
+                            if not latest_d or h.payment_date > latest_d:
+                                latest_d = h.payment_date
+                
+                if has_history_this_month or tx.paid_interest > 0:
+                    total_item_profit = tx_net_earned + tx_fine - tx_discount
+                    if total_item_profit > 0 or tx_net_earned > 0:
+                        profit_items.append({
+                            'customer_name': tx.customer_name,
+                            'type': tx.type,
+                            'net_earned': tx_net_earned,
+                            'fine_amount': tx_fine,
+                            'discount_amount': tx_discount,
+                            'total_item_profit': total_item_profit,
+                            'latest_date': latest_d if latest_d else tx.start_date
+                        })
+                        current_month_profit += total_item_profit
 
         profit_items.sort(key=lambda x: x['latest_date'] if x['latest_date'] else thai_today, reverse=True)
 
