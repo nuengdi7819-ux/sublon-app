@@ -499,8 +499,12 @@ def index():
         for h in all_histories_for_dash:
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction: 
-                    # กรองไม่ให้ยอดค้างเก่าดึงดอกเบี้ยซ้ำซ้อนถ้าบันทึกผิดประเภท
-                    h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else h.interest_paid
+                    # ถ้าเป็นยอดค้างเก่า กำไร/ดอกเบี้ยจริงจะดูจากส่วนต่างเงินต้นที่ลดลงหรือดอกเบี้ยที่บันทึก
+                    if h.transaction.type == 'ยอดค้างเก่า':
+                        h_interest = h.interest_paid if h.interest_paid > 0 else 0.0
+                    else:
+                        h_interest = h.interest_paid
+                        
                     h_profit = h_interest + h.fine_amount - h.discount_amount
                     
                     tx_profit_map[h.transaction_id]['net_earned'] += h_interest
@@ -515,11 +519,16 @@ def index():
         for tx_id, p_data in tx_profit_map.items():
             tx_ref = Transaction.query.get(tx_id)
             if tx_ref:
-                total_item_profit = p_data['net_earned'] + p_data['fine'] - p_data['discount']
+                # ป้องกันยอดค้างเก่าแสดงดอกเบี้ยย้อนหลังเกินจริง หากไม่มีการเก็บดอกเบี้ยจริง ให้แสดงเป็น 0 หรือตามยอดลดลง
+                net_earned_val = p_data['net_earned']
+                if tx_ref.type == 'ยอดค้างเก่า' and net_earned_val > tx_ref.original_principal:
+                    net_earned_val = 0.0
+
+                total_item_profit = net_earned_val + p_data['fine'] - p_data['discount']
                 profit_items.append({
                     'customer_name': tx_ref.customer_name,
                     'type': tx_ref.type,
-                    'net_earned': p_data['net_earned'],
+                    'net_earned': net_earned_val,
                     'fine_amount': p_data['fine'],
                     'discount_amount': p_data['discount'],
                     'total_item_profit': total_item_profit,
@@ -1382,7 +1391,7 @@ def monthly_summary():
     for h in all_histories:
         if h.payment_date and h.transaction_id and h.transaction:
             ym = h.payment_date.strftime('%Y-%m')
-            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else h.interest_paid
+            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else 0.0
             h_profit = h_interest + h.fine_amount - h.discount_amount
             monthly_data[ym]['month_profit'] += h_profit
             monthly_data[ym]['count_tx'].add(h.transaction_id)
@@ -1438,7 +1447,7 @@ def monthly_details(ym, category):
             target_tx_ids.add(tx.id)
 
     txs = Transaction.query.filter(Transaction.id.in_(list(target_tx_ids))).all() if target_tx_ids else []
-    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มิถุนายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
