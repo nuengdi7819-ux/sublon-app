@@ -277,25 +277,26 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    total_history_pay = 0.0
-    sum_principal_reduced = 0.0
-    sum_interest_paid = 0.0
-    if tx.histories:
-        for h in tx.histories:
-            sum_principal_reduced += h.principal_reduced
-            sum_interest_paid += h.interest_paid
-            total_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
-
     fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
-    actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
-
+    
     if tx.type == 'ยอดค้างเก่า':
-        tx.total_paid = actual_prin_reduced + sum_interest_paid
+        # สำหรับยอดค้างเก่า กำหนดให้ยอดชำระแล้วดึงจากยอดต้นที่ลดลงจริงโดยตรง (ไม่เอาประวัติขยะมารวมเบิ้ล)
+        tx.total_paid = fallback_principal_reduced
     else:
+        sum_history_pay = 0.0
+        sum_interest_paid = 0.0
+        sum_principal_reduced = 0.0
+        if tx.histories:
+            for h in tx.histories:
+                sum_principal_reduced += h.principal_reduced
+                sum_interest_paid += h.interest_paid
+                sum_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
+        
+        actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
         calculated_paid_total = sum_interest_paid + actual_prin_reduced
         if calculated_paid_total <= 0:
             calculated_paid_total = tx.paid_interest + fallback_principal_reduced
-        tx.total_paid = max(total_history_pay, calculated_paid_total)
+        tx.total_paid = max(sum_history_pay, calculated_paid_total)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -499,7 +500,6 @@ def index():
         for h in all_histories_for_dash:
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction: 
-                    # ถ้าเป็นยอดค้างเก่า กำไร/ดอกเบี้ยจริงจะดูจากส่วนต่างเงินต้นที่ลดลงหรือดอกเบี้ยที่บันทึก
                     if h.transaction.type == 'ยอดค้างเก่า':
                         h_interest = h.interest_paid if h.interest_paid > 0 else 0.0
                     else:
@@ -519,7 +519,6 @@ def index():
         for tx_id, p_data in tx_profit_map.items():
             tx_ref = Transaction.query.get(tx_id)
             if tx_ref:
-                # ป้องกันยอดค้างเก่าแสดงดอกเบี้ยย้อนหลังเกินจริง หากไม่มีการเก็บดอกเบี้ยจริง ให้แสดงเป็น 0 หรือตามยอดลดลง
                 net_earned_val = p_data['net_earned']
                 if tx_ref.type == 'ยอดค้างเก่า' and net_earned_val > tx_ref.original_principal:
                     net_earned_val = 0.0
