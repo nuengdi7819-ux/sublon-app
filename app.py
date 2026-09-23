@@ -282,19 +282,21 @@ def calculate_tx_values(tx):
     sum_interest_paid = 0.0
     if tx.histories:
         for h in tx.histories:
-            p_item = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
+            # นับเฉพาะยอดตัดต้น + ดอกเบี้ยที่จ่ายจริง (ไม่เอาค่าปรับมาปนในยอดชำระคืนต้น)
+            p_item = (h.interest_paid + h.principal_reduced) if (h.interest_paid > 0 or h.principal_reduced > 0) else h.pay_amount
             total_history_pay += p_item
             sum_principal_reduced += h.principal_reduced
             sum_interest_paid += h.interest_paid
 
-    fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal) if tx.type == 'ยอดค้างเก่า' else max(0.0, tx.original_principal - tx.principal)
-    calculated_paid_total = sum_interest_paid + sum_principal_reduced
-    if calculated_paid_total <= 0:
-        calculated_paid_total = tx.paid_interest + fallback_principal_reduced
-
+    fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
+    
     if tx.type == 'ยอดค้างเก่า':
-        tx.total_paid = max(total_history_pay, fallback_principal_reduced)
+        # สำหรับยอดค้างเก่า ยอดชำระแล้วที่ถูกต้องควรมาจาก (ยอดตั้งต้น - ต้นคงค้าง) + ดอกเบี้ยที่จ่ายสะสม
+        tx.total_paid = fallback_principal_reduced + sum_interest_paid
     else:
+        calculated_paid_total = sum_interest_paid + sum_principal_reduced
+        if calculated_paid_total <= 0:
+            calculated_paid_total = tx.paid_interest + fallback_principal_reduced
         tx.total_paid = max(total_history_pay, calculated_paid_total)
 
 @app.route('/', methods=['GET', 'POST'])
