@@ -496,10 +496,8 @@ def index():
         all_txs_for_profit = Transaction.query.all()
         for tx in all_txs_for_profit:
             calculate_tx_values(tx)
-            # เช็คว่ามีประวัติหรือมีการชำระในเดือนปัจจุบันไหม หรือถ้าเป็นยอดค้างเก่าให้ดูจากยอดที่ชำระแล้ว (total_paid)
             if tx.type == 'ยอดค้างเก่า':
                 if tx.total_paid > 0:
-                    # สำหรับยอดค้างเก่า กำไร/ยอดสะสมจริงคือยอดที่ชำระแล้ว (เงินต้นที่ลดลงจริง)
                     item_profit = tx.total_paid
                     profit_items.append({
                         'customer_name': tx.customer_name,
@@ -512,7 +510,6 @@ def index():
                     })
                     current_month_profit += item_profit
             else:
-                # สำหรับลูกค้าใหม่ คำนวณจากประวัติการชำระในเดือนปัจจุบัน
                 tx_net_earned = 0.0
                 tx_fine = 0.0
                 tx_discount = 0.0
@@ -1392,24 +1389,37 @@ def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
     
     all_txs_ever = Transaction.query.all()
-    all_histories = PaymentHistory.query.all()
-    
+    for tx in all_txs_ever:
+        calculate_tx_values(tx)
+        
     monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'month_profit': 0.0})
     
-    for h in all_histories:
-        if h.payment_date and h.transaction_id and h.transaction:
-            ym = h.payment_date.strftime('%Y-%m')
-            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else (h.interest_paid if h.interest_paid > 0 else 0.0)
-            h_profit = h_interest + h.fine_amount - h.discount_amount
-            monthly_data[ym]['month_profit'] += h_profit
-            monthly_data[ym]['count_tx'].add(h.transaction_id)
-
+    # คำนวณกำไรและยอดลงทุนแยกตามเดือนอย่างถูกต้องตรงกัน
     for tx in all_txs_ever:
         if tx.start_date:
             ym_start = tx.start_date.strftime('%Y-%m')
             if tx.type != 'ยอดค้างเก่า':
                 monthly_data[ym_start]['new_investment'] += tx.original_principal
             monthly_data[ym_start]['count_tx'].add(tx.id)
+
+    # คำนวณกำไรรายเดือนจากประวัติหรือยอดชำระจริง
+    for tx in all_txs_ever:
+        if tx.type == 'ยอดค้างเก่า':
+            if tx.total_paid > 0 and tx.last_payment_date:
+                ym_pay = tx.last_payment_date.strftime('%Y-%m')
+                monthly_data[ym_pay]['month_profit'] += tx.total_paid
+                monthly_data[ym_pay]['count_tx'].add(tx.id)
+            elif tx.total_paid > 0 and tx.start_date:
+                ym_start = tx.start_date.strftime('%Y-%m')
+                monthly_data[ym_start]['month_profit'] += tx.total_paid
+        else:
+            if tx.histories:
+                for h in tx.histories:
+                    if h.payment_date:
+                        ym_pay = h.payment_date.strftime('%Y-%m')
+                        h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+                        monthly_data[ym_pay]['month_profit'] += h_profit
+                        monthly_data[ym_pay]['count_tx'].add(tx.id)
 
     cards_html = ""
     thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
@@ -1425,7 +1435,7 @@ def monthly_summary():
                     <h5 class="text-danger fw-bold mb-2">📁 ประจำเดือน {m_label}</h5>
                     <p class="mb-1 text-muted">จำนวนรายการที่เกี่ยวข้อง: <b class="text-dark">{num_items} รายการ</b></p>
                     <p class="mb-1 text-muted">ยอดปล่อยกู้ (เดือนนี้): <b class="text-primary">{d['new_investment']:,.2f} บาท</b></p>
-                    <p class="mb-3 text-muted">กำไรสุทธิ (ตามวันชำระ): <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
+                    <p class="mb-3 text-muted">กำไรสุทธิ (ตามยอดจริง): <b class="text-success">{d['month_profit']:,.2f} บาท</b></p>
                     <a href="/monthly_details/{ym}/profit" class="btn btn-warning btn-sm fw-bold">🔍 เปิดแฟ้มดูรายละเอียด</a>
                 </div>
             </div>
@@ -1442,34 +1452,43 @@ def monthly_details(ym, category):
         year_i, month_i = int(year_val), int(month_val)
     except: return redirect(url_for('monthly_summary'))
 
-    all_histories = PaymentHistory.query.all()
-    target_tx_ids = set()
+    all_txs = Transaction.query.all()
+    target_txs = []
 
-    for h in all_histories:
-        if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
-            if h.transaction_id and h.transaction:
-                target_tx_ids.add(h.transaction_id)
-
-    for tx in Transaction.query.all():
+    for tx in all_txs:
+        calculate_tx_values(tx)
+        is_in_month = False
         if tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i:
-            target_tx_ids.add(tx.id)
+            is_in_month = True
+        if tx.last_payment_date and tx.last_payment_date.year == year_i and tx.last_payment_date.month == month_i:
+            is_in_month = True
+        if tx.histories:
+            for h in tx.histories:
+                if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
+                    is_in_month = True
+                    break
+        if is_in_month:
+            target_txs.append(tx)
 
-    txs = Transaction.query.filter(Transaction.id.in_(list(target_tx_ids))).all() if target_tx_ids else []
-    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มิถุนายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
     rows, total_actual_paid_sum, total_inv_sum, total_prin_sum = "", 0.0, 0.0, 0.0
-    for tx in txs:
-        calculate_tx_values(tx)
+    for tx in target_txs:
         badge_color = 'bg-success' if tx.principal <= 0 else ('bg-info text-dark' if tx.status == 'ตัดยอดบางส่วน' else 'bg-success')
         if tx.principal <= 0 or tx.status == 'คืนแล้ว': badge_color = 'bg-danger'
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         closed_date_str = tx.closed_date.strftime('%d/%m/%Y') if tx.closed_date else '-'
         
-        actual_paid_total = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in tx.histories if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i) if tx.histories else 0.0
+        # คำนวณยอดจ่ายจริงเฉพาะในเดือนนี้
+        if tx.type == 'ยอดค้างเก่า':
+            actual_paid_total = tx.total_paid if (tx.last_payment_date and tx.last_payment_date.year == year_i and tx.last_payment_date.month == month_i) or (tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i) else 0.0
+        else:
+            actual_paid_total = sum((h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)) for h in tx.histories if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i) if tx.histories else 0.0
+
         total_actual_paid_sum += actual_paid_total
-        total_inv_sum += tx.original_principal if (tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i) else 0.0
+        total_inv_sum += tx.original_principal if (tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i and tx.type != 'ยอดค้างเก่า') else 0.0
         total_prin_sum += tx.principal
 
         rows += f"""
@@ -1501,7 +1520,7 @@ def monthly_details(ym, category):
                 <thead class="table-dark">
                     <tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>วันที่ปิด/ชำระ</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว (ระบบ)</th><th>ยอดจ่ายจริงทั้งหมด</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if txs else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
+                <tbody>{rows if target_txs else "<tr><td colspan='12' class='text-center text-muted'>ไม่มีรายการในหมวดนี้สำหรับเดือนนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
