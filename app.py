@@ -280,7 +280,6 @@ def calculate_tx_values(tx):
     fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
     
     if tx.type == 'ยอดค้างเก่า':
-        # สำหรับยอดค้างเก่า กำหนดให้ยอดชำระแล้วดึงจากยอดต้นที่ลดลงจริงโดยตรง (ไม่เอาประวัติขยะมารวมเบิ้ล)
         tx.total_paid = fallback_principal_reduced
     else:
         sum_history_pay = 0.0
@@ -501,6 +500,7 @@ def index():
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction: 
                     if h.transaction.type == 'ยอดค้างเก่า':
+                        # สำหรับยอดค้างเก่า กำไร/ดอกเบี้ยจริงให้นับจากดอกเบี้ยที่บันทึกไว้ หรือถ้าไม่มี ให้คิดจากส่วนลด/ส่วนต่างที่เกิดจริง
                         h_interest = h.interest_paid if h.interest_paid > 0 else 0.0
                     else:
                         h_interest = h.interest_paid
@@ -1390,7 +1390,7 @@ def monthly_summary():
     for h in all_histories:
         if h.payment_date and h.transaction_id and h.transaction:
             ym = h.payment_date.strftime('%Y-%m')
-            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else 0.0
+            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else (h.interest_paid if h.interest_paid > 0 else 0.0)
             h_profit = h_interest + h.fine_amount - h.discount_amount
             monthly_data[ym]['month_profit'] += h_profit
             monthly_data[ym]['count_tx'].add(h.transaction_id)
