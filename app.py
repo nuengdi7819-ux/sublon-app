@@ -490,7 +490,7 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # ปรับการคำนวณกำไรสะสมบน Dashboard (เดือนปัจจุบัน) ให้ยึดตาม payment_date ใน PaymentHistory ตรงกับแฟ้มรายเดือน
+        # ปรับสูตรคำนวณกำไรสะสมบน Dashboard ให้ตรงกับหน้าแฟ้มรายเดือน (อิงตาม payment_date) แบบ 100%
         profit_items = []
         current_month_profit = 0.0
         all_histories = PaymentHistory.query.all()
@@ -503,7 +503,6 @@ def index():
         for tx in all_txs_ever:
             hist_list = tx_histories_map.get(tx.id, [])
             
-            item_current_month_profit = 0.0
             total_net_earned = 0.0
             total_fine_sum = 0.0
             total_discount_sum = 0.0
@@ -521,7 +520,6 @@ def index():
                             latest_h_date = h.payment_date
                         if h.payment_date.year == current_year and h.payment_date.month == current_month:
                             current_month_profit += h_profit
-                            item_current_month_profit += h_profit
             else:
                 if tx.type == 'ยอดค้างเก่า':
                     net_earned = max(0.0, (tx.original_principal - tx.principal))
@@ -531,7 +529,6 @@ def index():
                 total_item_profit = net_earned
                 if latest_h_date and latest_h_date.year == current_year and latest_h_date.month == current_month:
                     current_month_profit += total_item_profit
-                    item_current_month_profit = total_item_profit
 
             total_item_profit = total_net_earned + total_fine_sum - total_discount_sum
             if total_item_profit != 0 or total_net_earned > 0 or total_fine_sum > 0 or total_discount_sum > 0:
