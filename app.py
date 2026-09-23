@@ -166,16 +166,15 @@ BASE_LAYOUT = """
             <li><a href="/monthly_summary" class="nav-link sub-menu {% if page == 'monthly' %}active{% endif %}" onclick="toggleSidebar()">📅 4. สรุปยอดรายเดือน</a></li>
         </ul>
         <hr class="border-secondary">
-        <div class="d-flex flex-column gap-1 mb-2">
-            <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-2 text-start d-flex justify-content-between align-items-center" style="font-size: 0.78rem;">
+        <div class="d-flex flex-column gap-2 mb-2">
+            <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">
                 <span>🗑️ ตรวจสอบประวัติขยะ</span>
-                <span class="badge bg-danger" style="font-size: 0.7rem;">740 บ.</span>
             </a>
-            <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-2 text-start" style="font-size: 0.78rem;">📥 สำรองข้อมูล (Backup)</a>
-            <button type="button" class="btn btn-outline-info btn-sm py-1 px-2 text-start" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
+            <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">📥 สำรองข้อมูล (Backup)</a>
+            <button type="button" class="btn btn-outline-info btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
         </div>
         <div class="d-flex flex-column gap-2">
-            <a href="/logout" class="btn btn-outline-danger btn-sm w-100 d-none d-lg-block py-1" style="font-size: 0.82rem;">ออกจากระบบ</a>
+            <a href="/logout" class="btn btn-outline-danger btn-sm w-100 d-none d-lg-block py-1 rounded-pill" style="font-size: 0.82rem;">ออกจากระบบ</a>
         </div>
     </div>
 
