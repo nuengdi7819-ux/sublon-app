@@ -282,19 +282,17 @@ def calculate_tx_values(tx):
     sum_interest_paid = 0.0
     if tx.histories:
         for h in tx.histories:
-            # นับเฉพาะยอดตัดต้น + ดอกเบี้ยที่จ่ายจริง (ไม่เอาค่าปรับมาปนในยอดชำระคืนต้น)
-            p_item = (h.interest_paid + h.principal_reduced) if (h.interest_paid > 0 or h.principal_reduced > 0) else h.pay_amount
-            total_history_pay += p_item
             sum_principal_reduced += h.principal_reduced
             sum_interest_paid += h.interest_paid
+            total_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
 
     fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
-    
+    actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
+
     if tx.type == 'ยอดค้างเก่า':
-        # สำหรับยอดค้างเก่า ยอดชำระแล้วที่ถูกต้องควรมาจาก (ยอดตั้งต้น - ต้นคงค้าง) + ดอกเบี้ยที่จ่ายสะสม
-        tx.total_paid = fallback_principal_reduced + sum_interest_paid
+        tx.total_paid = actual_prin_reduced + sum_interest_paid
     else:
-        calculated_paid_total = sum_interest_paid + sum_principal_reduced
+        calculated_paid_total = sum_interest_paid + actual_prin_reduced
         if calculated_paid_total <= 0:
             calculated_paid_total = tx.paid_interest + fallback_principal_reduced
         tx.total_paid = max(total_history_pay, calculated_paid_total)
@@ -492,7 +490,6 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # ปรับสูตรคำนวณกำไรสะสมบน Dashboard ให้ตรงกับหน้าแฟ้มรายเดือน (อิงตาม payment_date) แบบ 100%
         profit_items = []
         current_month_profit = 0.0
         all_histories = PaymentHistory.query.all()
