@@ -499,8 +499,11 @@ def index():
         for h in all_histories_for_dash:
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction: 
-                    h_profit = h.interest_paid + h.fine_amount - h.discount_amount
-                    tx_profit_map[h.transaction_id]['net_earned'] += h.interest_paid
+                    # กรองไม่ให้ยอดค้างเก่าดึงดอกเบี้ยซ้ำซ้อนถ้าบันทึกผิดประเภท
+                    h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else h.interest_paid
+                    h_profit = h_interest + h.fine_amount - h.discount_amount
+                    
+                    tx_profit_map[h.transaction_id]['net_earned'] += h_interest
                     tx_profit_map[h.transaction_id]['fine'] += h.fine_amount
                     tx_profit_map[h.transaction_id]['discount'] += h.discount_amount
                     
@@ -1379,7 +1382,8 @@ def monthly_summary():
     for h in all_histories:
         if h.payment_date and h.transaction_id and h.transaction:
             ym = h.payment_date.strftime('%Y-%m')
-            h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            h_interest = h.interest_paid if h.transaction.type != 'ยอดค้างเก่า' else h.interest_paid
+            h_profit = h_interest + h.fine_amount - h.discount_amount
             monthly_data[ym]['month_profit'] += h_profit
             monthly_data[ym]['count_tx'].add(h.transaction_id)
 
@@ -1497,7 +1501,8 @@ def check_orphaned_payments():
     
     for h in all_histories:
         if not h.transaction_id or not h.transaction:
-            h_profit = h.interest_paid + h.fine_amount - h.discount_amount
+            h_interest = h.interest_paid
+            h_profit = h_interest + h.fine_amount - h.discount_amount
             p_date_str = h.payment_date.strftime('%d/%m/%Y') if h.payment_date else '-'
             
             orphaned_rows += f"""
