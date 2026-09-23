@@ -167,12 +167,15 @@ BASE_LAYOUT = """
         </ul>
         <hr class="border-secondary">
         <div class="d-flex flex-column gap-1 mb-2">
-            <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;">🗑️ ตรวจสอบประวัติขยะ (740 บ.)</a>
-            <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;">📥 สำรองข้อมูล (Backup)</a>
-            <button type="button" class="btn btn-outline-info btn-sm py-1 px-2 text-start" style="font-size: 0.82rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
+            <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-2 text-start d-flex justify-content-between align-items-center" style="font-size: 0.78rem;">
+                <span>🗑️ ตรวจสอบประวัติขยะ</span>
+                <span class="badge bg-danger" style="font-size: 0.7rem;">740 บ.</span>
+            </a>
+            <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-2 text-start" style="font-size: 0.78rem;">📥 สำรองข้อมูล (Backup)</a>
+            <button type="button" class="btn btn-outline-info btn-sm py-1 px-2 text-start" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
         </div>
         <div class="d-flex flex-column gap-2">
-            <a href="/logout" class="btn btn-outline-danger btn-sm w-100 d-none d-lg-block">ออกจากระบบ</a>
+            <a href="/logout" class="btn btn-outline-danger btn-sm w-100 d-none d-lg-block py-1" style="font-size: 0.82rem;">ออกจากระบบ</a>
         </div>
     </div>
 
@@ -216,20 +219,17 @@ BASE_LAYOUT = """
         let selectElem = document.getElementById('payType' + id);
         let amountContainer = document.getElementById('amountDiv' + id);
         let adjustContainer = document.getElementById('adjustContainer' + id);
-        let statusElem = document.getElementById('newStatus' + id);
         
         if (selectElem) {
             if (selectElem.value === 'full') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusElem) { statusElem.value = 'คืนแล้ว'; }
             } else if (selectElem.value === 'adjust') {
                 if(amountContainer) amountContainer.style.display = 'none';
                 if(adjustContainer) adjustContainer.style.display = 'block';
             } else {
                 if(amountContainer) amountContainer.style.display = 'block';
                 if(adjustContainer) adjustContainer.style.display = 'none';
-                if (statusElem) { statusElem.value = 'ตัดยอดบางส่วน'; }
             }
         }
     }
@@ -491,7 +491,6 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # ปรับสูตรกำไรสะสมให้ดึงจาก PaymentHistory โดยตรงและกรองเฉพาะบิลที่มีตัวตนอยู่จริง
         profit_items = []
         current_month_profit = 0.0
         
@@ -559,9 +558,6 @@ def index():
             start_date_str_fmt = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
             last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
             closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
-            
-            selected_normal = "selected" if tx.status == "ปกติ" else ""
-            selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
 
             schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
             if tx.schedule_type == 'กำหนดจ่ายประจำเดือน' and tx.due_day_of_month:
@@ -658,16 +654,9 @@ def index():
                                         <input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0" placeholder="0">
                                     </div>
                                 </div>
-                                <div class="mb-2">
+                                <div class="mb-1">
                                     <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
                                     <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
-                                </div>
-                                <div class="mb-1">
-                                    <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">สถานะรายการ</label>
-                                    <select name="new_status" class="form-select form-select-sm border-success" id="newStatus{tx.id}">
-                                        <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                        <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
-                                    </select>
                                 </div>
                             </div>
                             <div class="modal-footer bg-light py-2 justify-content-between">
@@ -1271,8 +1260,6 @@ def customer_details(cust_name):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
-        selected_normal = "selected" if tx.status == "ปกติ" else ""
-        selected_partial = "selected" if tx.status == "ตัดยอดบางส่วน" else ""
 
         rows += f"""
         <tr>
@@ -1343,14 +1330,7 @@ def customer_details(cust_name):
                                 <div class="col-6"><label class="form-label text-danger small fw-bold mb-1">ส่วนลด</label><input type="number" step="any" name="discount_amount" class="form-control form-control-sm" value="0"></div>
                                 <div class="col-6"><label class="form-label text-warning text-dark small fw-bold mb-1">ค่าปรับ</label><input type="number" step="any" name="fine_amount" class="form-control form-control-sm" value="0"></div>
                             </div>
-                            <div class="mb-2"><label class="form-label text-dark fw-bold mb-1">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm"></div>
-                            <div class="mb-1">
-                                <label class="form-label text-success fw-bold mb-1">สถานะ</label>
-                                <select name="new_status" class="form-select form-select-sm border-success">
-                                    <option value="ปกติ" {selected_normal}>ปกติ</option>
-                                    <option value="ตัดยอดบางส่วน" {selected_partial}>ตัดยอดบางส่วน</option>
-                                </select>
-                            </div>
+                            <div class="mb-1"><label class="form-label text-dark fw-bold mb-1">หมายเหตุ</label><input type="text" name="note" class="form-control form-control-sm"></div>
                         </div>
                         <div class="modal-footer bg-light py-2 justify-content-between">
                             <a href="/history/{tx.id}" class="btn btn-outline-info btn-sm" target="_blank">📜 ประวัติ</a>
@@ -1398,7 +1378,6 @@ def monthly_summary():
     monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'month_profit': 0.0})
     
     for h in all_histories:
-        # บังคับเช็ก h.transaction เพื่อป้องกันการดึงประวัติของบิลที่ถูกลบไปแล้วมารวม
         if h.payment_date and h.transaction_id and h.transaction:
             ym = h.payment_date.strftime('%Y-%m')
             h_profit = h.interest_paid + h.fine_amount - h.discount_amount
@@ -1821,7 +1800,6 @@ def update_payment(tx_id):
     
     discount_amt = float(request.form.get('discount_amount', 0))
     fine_amt = float(request.form.get('fine_amount', 0))
-    new_status = request.form.get('new_status')
     closed_date_str = request.form.get('closed_date')
     note_text = request.form.get('note', '').strip()
     
@@ -1881,8 +1859,8 @@ def update_payment(tx_id):
             tx.status = 'คืนแล้ว'
             tx.principal = 0.0
             if not tx.closed_date: tx.closed_date = thai_today
-        elif tx.principal < tx.original_principal: tx.status = 'ตัดยอดบางส่วน'
-        elif new_status: tx.status = new_status
+        elif tx.principal < tx.original_principal:
+            tx.status = 'ตัดยอดบางส่วน'
 
     total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
     if total_net_pay < 0: total_net_pay = 0.0
