@@ -490,7 +490,6 @@ def index():
         new_principal_txs = [tx for tx in all_txs_ever if tx.type != 'ยอดค้างเก่า' and tx.principal > 0]
         new_principal_rows = "".join([f"<tr><td><a href='/customer_details/{tx.customer_name}' class='text-dark fw-bold text-decoration-none'>{tx.customer_name}</a></td><td><span class='badge bg-secondary'>{tx.type}</span></td><td>{tx.phone or '-'}</td><td>{tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'}</td><td>{tx.original_principal:,.2f}</td><td class='text-danger fw-bold'>{tx.principal:,.2f}</td></tr>" for tx in new_principal_txs])
 
-        # คำนวณกำไรสะสมเดือนปัจจุบันจาก PaymentHistory ให้ตรงกับหน้าแฟ้มรายเดือนเป๊ะๆ
         current_month_profit = 0.0
         all_histories_for_dash = PaymentHistory.query.all()
         tx_profit_map = defaultdict(lambda: {'net_earned': 0.0, 'fine': 0.0, 'discount': 0.0, 'latest_date': None})
@@ -628,7 +627,7 @@ def index():
                                             <option value="" disabled selected>-- กรุณาเลือกประเภทการชำระ --</option>
                                             <option value="partial">จ่ายบางส่วน</option>
                                             <option value="full">คืนครบทั้งหมด</option>
-                                            <option value="adjust">ปรับปรุงยอด</option>
+                                            <option value="adjust">ปรับปรุงยอด (เพิ่ม/ลดต้นโดยไม่อ้างอิงเงินสด)</option>
                                         </select>
                                     </div>
                                     <div class="mb-1" id="amountDiv{tx.id}">
@@ -639,7 +638,7 @@ def index():
                                     <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
                                         <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                         <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
-                                        <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด</small>
+                                        <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด (บันทึกเป็นประวัติปรับปรุงโดยไม่กระทบยอดรับชำระเดิม)</small>
                                     </div>
                                 </div>
 
@@ -655,7 +654,7 @@ def index():
                                 </div>
                                 <div class="mb-1">
                                     <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📝 หมายเหตุการชำระ</label>
-                                    <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น จ่ายเฉพาะค่าปรับ, โอนผ่าน KTB">
+                                    <input type="text" name="note" class="form-control form-control-sm" placeholder="เช่น ปรับลดยอดต้นเพราะลงข้อมูลเกิน">
                                 </div>
                             </div>
                             <div class="modal-footer bg-light py-2 justify-content-between">
@@ -1109,7 +1108,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
                         <div class="table-responsive">
@@ -1313,7 +1312,7 @@ def customer_details(cust_name):
                                         <option value="" disabled selected>-- กรุณาเลือกประเภทการชำระ --</option>
                                         <option value="partial">จ่ายบางส่วน</option>
                                         <option value="full">คืนครบทั้งหมด</option>
-                                        <option value="adjust">ปรับปรุงยอด</option>
+                                        <option value="adjust">ปรับปรุงยอด (เพิ่ม/ลดต้นโดยไม่อ้างอิงเงินสด)</option>
                                     </select>
                                 </div>
                                 <div class="mb-1" id="amountDiv{tx.id}">
@@ -1829,9 +1828,22 @@ def update_payment(tx_id):
         adjust_amount = float(request.form.get('adjust_amount', 0))
         tx.principal += adjust_amount
         if tx.principal < 0: tx.principal = 0.0
-        actual_principal_reduced = -adjust_amount
-        if pay_amount <= 0: pay_amount = abs(adjust_amount)
+        
+        # บันทึกเป็นการปรับปรุงยอดโดยยอดจ่ายจริงเป็น 0 และไม่ไปหักประวัติการชำระเดิม
+        total_net_pay = 0.0
+        actual_interest_paid = 0.0
+        actual_principal_reduced = 0.0
         if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
+
+        db.session.add(PaymentHistory(
+            transaction_id=tx.id, payment_date=thai_today, pay_amount=0.0,
+            fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
+            principal_reduced=0.0, note=note_text, admin_name=session.get('admin'),
+            receiving_account=receiving_account
+        ))
+        db.session.commit()
+        db.session.remove()
+        return redirect(request.referrer or url_for('index'))
 
     elif payment_type == 'full':
         net_interest_earned = total_acc_interest - discount_amt
@@ -1911,12 +1923,26 @@ def payment_history(tx_id):
         for h in histories:
             display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
             if display_pay < 0: display_pay = 0.0
-            rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td></tr>"
+            
+            # ปุ่มลบประวัติเฉพาะแถว
+            del_btn = f"<a href='/delete_history_item/{h.id}' class='btn btn-sm btn-danger py-0 px-2' style='font-size: 0.75rem;' onclick=\"return confirm('ยืนยันลบประวัติรายการนี้?')\">ลบ</a>"
+            
+            rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td>{del_btn}</td></tr>"
     
-    if not rows: rows = "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
-    content = f"""<div class="card p-4 shadow-sm border-warning"><div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name}</h4><a href="/" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a></div><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
+    if not rows: rows = "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
+    content = f"""<div class="card p-4 shadow-sm border-warning"><div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name}</h4><a href="/" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a></div><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th>จัดการ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}ประวัติการชำระเงิน{% endblock %}', 'ประวัติการชำระเงิน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ประวัติการชำระเงิน", page="dashboard")
+
+@app.route('/delete_history_item/<int:hid>')
+def delete_history_item(hid):
+    if 'admin' not in session: return redirect(url_for('login'))
+    h_item = PaymentHistory.query.get_or_404(hid)
+    tx_id = h_item.transaction_id
+    db.session.delete(h_item)
+    db.session.commit()
+    db.session.remove()
+    return redirect(url_for('payment_history', tx_id=tx_id))
 
 @app.route('/sales_members')
 def sales_members():
@@ -1935,7 +1961,7 @@ def sales_members():
             <div class="card-body"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{sub_rows}</tbody></table></div></div>
         </div>
         """
-    html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted">ยังไม่มีข้อมูล</p>')
+    html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted'>ยังไม่มีข้อมูล</p>')
     return render_template_string(html, title="สมาชิกภายใต้เซลล์", page="sales")
 
 @app.route('/customer_summary')
@@ -1984,5 +2010,5 @@ def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
+if __name__ == 'main':
     app.run(debug=True)
