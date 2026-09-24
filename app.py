@@ -277,20 +277,20 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
+    # คำนวณยอดชำระแล้วจากประวัติการชำระจริง (PaymentHistory) เท่านั้น เพื่อไม่ให้โดนกระทบจากการปรับปรุงยอดต้น
+    sum_history_pay = 0.0
+    sum_interest_paid = 0.0
+    sum_principal_reduced = 0.0
+    if tx.histories:
+        for h in tx.histories:
+            sum_principal_reduced += h.principal_reduced
+            sum_interest_paid += h.interest_paid
+            sum_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
     
     if tx.type == 'ยอดค้างเก่า':
-        tx.total_paid = fallback_principal_reduced
+        tx.total_paid = sum_history_pay if sum_history_pay > 0 else max(0.0, tx.original_principal - tx.principal)
     else:
-        sum_history_pay = 0.0
-        sum_interest_paid = 0.0
-        sum_principal_reduced = 0.0
-        if tx.histories:
-            for h in tx.histories:
-                sum_principal_reduced += h.principal_reduced
-                sum_interest_paid += h.interest_paid
-                sum_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
-        
+        fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
         actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
         calculated_paid_total = sum_interest_paid + actual_prin_reduced
         if calculated_paid_total <= 0:
