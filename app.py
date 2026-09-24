@@ -1829,7 +1829,6 @@ def update_payment(tx_id):
         tx.principal += adjust_amount
         if tx.principal < 0: tx.principal = 0.0
         
-        # บันทึกเป็นการปรับปรุงยอดโดยยอดจ่ายจริงเป็น 0 และไม่ไปหักประวัติการชำระเดิม
         total_net_pay = 0.0
         actual_interest_paid = 0.0
         actual_principal_reduced = 0.0
@@ -1924,7 +1923,6 @@ def payment_history(tx_id):
             display_pay = h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced + h.fine_amount - h.discount_amount)
             if display_pay < 0: display_pay = 0.0
             
-            # ปุ่มลบประวัติเฉพาะแถว
             del_btn = f"<a href='/delete_history_item/{h.id}' class='btn btn-sm btn-danger py-0 px-2' style='font-size: 0.75rem;' onclick=\"return confirm('ยืนยันลบประวัติรายการนี้?')\">ลบ</a>"
             
             rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td>{del_btn}</td></tr>"
@@ -1961,7 +1959,7 @@ def sales_members():
             <div class="card-body"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>ประเภท</th><th>บัญชีปล่อย</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>สถานะ</th></tr></thead><tbody>{sub_rows}</tbody></table></div></div>
         </div>
         """
-    html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted'>ยังไม่มีข้อมูล</p>')
+    html = BASE_LAYOUT.replace('{% block header %}2. สมาชิกภายใต้เซลล์{% endblock %}', 'สมาชิกแยกตามเซลล์').replace('{% block content %}{% endblock %}', sales_content or '<p class="text-center text-muted">ยังไม่มีข้อมูล</p>')
     return render_template_string(html, title="สมาชิกภายใต้เซลล์", page="sales")
 
 @app.route('/customer_summary')
@@ -2010,5 +2008,5 @@ def logout():
     session.pop('admin', None)
     return redirect(url_for('login'))
 
-if __name__ == 'main':
+if __name__ == '__main__':
     app.run(debug=True)
