@@ -114,8 +114,23 @@ BASE_LAYOUT = """
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
+        /* จัดการตารางให้มี scrollbar ในตัวและล็อกหัวตาราง */
+        .table-scroll-container {
+            max-height: 600px;
+            overflow-y: auto;
+            position: relative;
+        }
+        .table-scroll-container thead th {
+            position: sticky;
+            top: 0;
+            background-color: #212529 !important;
+            color: #fff;
+            z-index: 5;
+            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
+        }
+
         .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-responsive::-webkit-scrollbar { height: 10px; }
+        .table-responsive::-webkit-scrollbar { height: 10px; width: 10px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
         .table-responsive::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 6px; }
 
@@ -277,7 +292,6 @@ def calculate_tx_values(tx):
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
-    # คำนวณยอดชำระแล้วจากประวัติการชำระจริง (PaymentHistory) เท่านั้น เพื่อไม่ให้โดนกระทบจากการปรับปรุงยอดต้น
     sum_history_pay = 0.0
     sum_interest_paid = 0.0
     sum_principal_reduced = 0.0
@@ -1056,11 +1070,11 @@ def index():
                 </form>
             </div>
             
-            <div class="table-responsive">
-                <table class="table table-striped align-middle text-nowrap">
-                    <thead class="table-dark">
+            <div class="table-responsive table-scroll-container">
+                <table class="table table-striped align-middle text-nowrap mb-0">
+                    <thead>
                         <tr>
-                            <th style="position: sticky; left: 0; background-color: #212529; z-index: 3; box-shadow: 2px 0 5px rgba(0,0,0,0.2);">ชื่อลูกค้า</th>
+                            <th style="position: sticky; left: 0; background-color: #212529; z-index: 6; box-shadow: 2px 0 5px rgba(0,0,0,0.2);">ชื่อลูกค้า</th>
                             <th>เบอร์โทร</th>
                             <th>ประเภทการชำระ</th>
                             <th>บัญชีปล่อยกู้</th>
@@ -1073,7 +1087,7 @@ def index():
                             <th>เวลาผ่านไป</th>
                             <th>ดอกเบี้ยสะสม</th>
                             <th>สถานะ</th>
-                            <th style="position: sticky; right: 0; background-color: #212529; z-index: 3; text-align: center; box-shadow: -2px 0 5px rgba(0,0,0,0.2);">จัดการ</th>
+                            <th style="position: sticky; right: 0; background-color: #212529; z-index: 6; text-align: center; box-shadow: -2px 0 5px rgba(0,0,0,0.2);">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
