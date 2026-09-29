@@ -5,12 +5,10 @@ from collections import defaultdict
 import os
 import io
 import csv
-from PIL import Image, ImageDraw, ImageFont
-import urllib.request
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:[YOUR-PASSWORD]@db.xxxxxxx.supabase.co:5432/postgres')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:[YOUR-PASSWORD]@db.xxxxxxx.supabase.co:5432/postgres?sslmode=require')
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
@@ -22,7 +20,9 @@ app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
 
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
-    "pool_recycle": 300,
+    "pool_recycle": 180,
+    "pool_size": 5,
+    "max_overflow": 10,
 }
 
 db = SQLAlchemy(app)
@@ -120,7 +120,7 @@ BASE_LAYOUT = """
 
         .modal-dialog { max-height: 90vh; margin: 1.5vh auto; }
         .modal-dialog-scrollable .modal-content { max-height: 88vh; display: flex; flex-direction: column; }
-        .modal-body { overflow-y: auto; flex: 1 1 auto; padding: 12px 16px !important; }
+        .modal-body { overflow-y: auto; flex: 1 1 auto; padding: 10px 14px !important; }
 
         .table-scroll-container { max-height: 600px; overflow-y: auto; position: relative; }
         .table-scroll-container thead th { position: sticky; top: 0; background-color: #212529 !important; color: #fff; z-index: 5; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2); }
@@ -270,11 +270,11 @@ BASE_LAYOUT = """
     function updateBillModalCalc(txId, baseAmt, dailyInt) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let displayTitle = "🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱";
+        let displayTitle = "🔱 ทรัพย์ล้น.com 🔱";
         
         if (isAdvance) {
             finalAmt += dailyInt;
-            displayTitle = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+            displayTitle = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
         }
         
         document.getElementById('billTotalDisplay' + txId).innerText = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
@@ -288,7 +288,7 @@ BASE_LAYOUT = """
         
         if (isAdvance) {
             finalAmt += dailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
         }
         let formattedAmt = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
@@ -328,7 +328,7 @@ BASE_LAYOUT = """
         
         if (isAdvance) {
             finalTotal += totalDailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระรวมล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
         }
 
         document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
@@ -372,7 +372,7 @@ BASE_LAYOUT = """
         let titleHeader = "🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱";
         if (isAdvance) {
             finalTotal += totalDailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระรวมล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
         }
 
         let formattedTotal = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
@@ -380,7 +380,7 @@ BASE_LAYOUT = """
 
         let textToCopy = `${titleHeader}\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 รายการ: ${typesStr} (${checkboxes.length} บิล)\\n` +
+                         `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\\n` +
                          `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
@@ -946,7 +946,7 @@ def index():
                 <div class="modal-content border-danger">
                     <form action="/update_bank_adjustment" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
-                            <h5 class="modal-title fw-bold fs-6">⚙️ ตั้งค่าปรับยอดเงินตั้งต้นกระเป๋าจริง</h5>
+                            <h5 class="modal-title fw-bold fs-6">⚙ ตั้งค่าปรับยอดเงินตั้งต้นกระเป๋าจริง</h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
@@ -1490,47 +1490,40 @@ def customer_details(cust_name):
                         <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body bg-light p-3">
-                        <div class="text-center mb-2 border-bottom pb-2">
-                            <h5 class="text-danger fw-bold mb-1" id="billTitleDisplay{tx.id}">🔱 ทรัพย์ล้น.com 🔱</h5>
-                            <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระเงิน / สแกนจ่ายผ่าน QR Code</p>
+                    <div class="modal-body bg-light p-2">
+                        <div class="text-center mb-1">
+                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">🔱 ทรัพย์ล้น.com 🔱</h6>
+                            <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
                         
-                        <div class="mb-2 p-2 bg-warning bg-opacity-20 rounded border border-warning">
-                            <div class="form-check">
+                        <div class="mb-1 px-2 py-1 bg-warning bg-opacity-20 rounded border border-warning text-center">
+                            <div class="form-check d-inline-block m-0">
                                 <input class="form-check-input border-warning" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
-                                <label class="form-check-label fw-bold text-dark small" for="advanceChk{tx.id}">
-                                    ⌛ แจ้งล่วงหน้า 1 วัน (คิดดอกเบี้ยเผื่อวันพรุ่งนี้ +{tx.daily_interest:,.2f} บาท)
+                                <label class="form-check-label fw-bold text-dark" style="font-size: 0.85rem;" for="advanceChk{tx.id}">
+                                    ✅ แจ้งยอดพรุ่งนี้
                                 </label>
                             </div>
                         </div>
 
-                        <div class="mb-2 small">
-                            <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
-                            <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
-                            <p class="mb-1"><b>📋 รายการ:</b> <span class="badge bg-secondary">{tx.type}</span></p>
+                        <!-- 🌟 จุดเน้นที่ 1: ยอดรวมที่ต้องชำระ (เด่นชัดที่สุด) -->
+                        <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
+                            <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมที่ต้องชำระสุทธิ</span>
+                            <h3 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h3>
                         </div>
-                        <div class="card p-2 mb-2 border-warning bg-white text-center">
-                            <span class="text-muted small mb-1" style="font-size: 0.75rem;">ยอดรวมที่ต้องชำระรายการนี้</span>
-                            <h4 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h4>
-                        </div>
-                        <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
-                            <p class="fw-bold text-success mb-1" style="font-size: 0.85rem;">📱 สแกน QR Code เพื่อชำระเงิน</p>
+
+                        <!-- 🌟 จุดเน้นที่ 2: QR Code พร้อมเพย์ และช่องทางโอนเงิน -->
+                        <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
                             <div class="bg-light p-1 d-inline-block rounded border mb-1">
-                                <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 110px; height: 110px; object-fit: contain;">
+                                <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
                             </div>
-                            <p class="small text-muted mb-0" style="font-size: 0.75rem;">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
-                            <div class="text-secondary small mt-1 pt-1 border-top" style="font-size: 0.72rem;">
-                                <span class="d-inline-block mx-1">🟡 กรุงศรี: 803-931-9819</span> | 
-                                <span class="d-inline-block mx-1">🩷 ออมสิน: 020-409-437-819</span>
+                            <div class="text-secondary small" style="font-size: 0.72rem; line-height: 1.3;">
+                                🟡 <b>กรุงศรี:</b> 803-931-9819 | 🩷 <b>ออมสิน:</b> 020-409-437-819<br>
+                                <span class="text-muted">* โอนแล้วส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</span>
                             </div>
-                        </div>
-                        <div class="text-center">
-                            <small class="text-muted" style="font-size: 0.72rem;">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                         </div>
                     </div>
-                    <div class="modal-footer bg-white py-2 justify-content-between">
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                    <div class="modal-footer bg-white py-1 justify-content-between">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
                         <button type="button" class="btn btn-primary btn-sm fw-bold px-3" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', {base_bill_amt}, {tx.daily_interest}, {tx.id})">📋 คัดลอกข้อความส่งแชท</button>
                     </div>
                 </div>
@@ -1546,48 +1539,40 @@ def customer_details(cust_name):
                     <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body bg-light p-3">
-                    <div class="text-center mb-2 border-bottom pb-2">
-                        <h5 class="text-danger fw-bold mb-1" id="selectedBillTitleDisplay">🔱 ทรัพย์ล้น.com 🔱</h5>
-                        <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระรวม / สแกนจ่ายผ่าน QR Code</p>
+                <div class="modal-body bg-light p-2">
+                    <div class="text-center mb-1">
+                        <h6 class="text-danger fw-bold mb-0" id="selectedBillTitleDisplay">🔱 ทรัพย์ล้น.com 🔱</h6>
+                        <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{cust_name}</b> | รวม <span class="badge bg-danger" id="selectedBillsCount">0 บิล</span></span>
                     </div>
 
-                    <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
-                        <div class="form-check">
+                    <div class="mb-1 px-2 py-1 bg-success bg-opacity-10 rounded border border-success text-center">
+                        <div class="form-check d-inline-block m-0">
                             <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
-                            <label class="form-check-label fw-bold text-success small" for="selectedAdvanceChk">
-                                ⌛ แจ้งล่วงหน้า 1 วัน (คิดดอกเบี้ยรวมเผื่อวันพรุ่งนี้ทุกบิลที่เลือก)
+                            <label class="form-check-label fw-bold text-success" style="font-size: 0.85rem;" for="selectedAdvanceChk">
+                                ✅ แจ้งยอดพรุ่งนี้
                             </label>
                         </div>
                     </div>
 
-                    <div class="mb-2 small">
-                        <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
-                        <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{cust_name}</span></p>
-                        <p class="mb-1"><b>📋 รวมบิลทั้งหมด:</b> <span class="badge bg-danger" id="selectedBillsCount">0 บิล (รวมชำระ)</span></p>
-                        <p class="mb-1"><b>📝 รายการ:</b> <span class="text-dark fw-bold" id="selectedBillsTypes">-</span></p>
-                    </div>
-                    <div class="card p-2 mb-2 border-success bg-white text-center shadow-sm">
-                        <span class="text-muted small mb-1" style="font-size: 0.75rem;">ยอดรวมสุทธิที่ต้องชำระ (รวมทุกบิลที่เลือก)</span>
+                    <!-- 🌟 จุดเน้นที่ 1: ยอดรวมสุทธิทุกบิล (เด่นชัดที่สุด) -->
+                    <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
+                        <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
                         <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
-                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
-                        <p class="fw-bold text-success mb-1" style="font-size: 0.85rem;">📱 สแกน QR Code เพื่อชำระเงินรวม</p>
+
+                    <!-- 🌟 จุดเน้นที่ 2: QR Code พร้อมเพย์ และช่องทางโอนเงิน -->
+                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
                         <div class="bg-light p-1 d-inline-block rounded border mb-1">
-                            <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 110px; height: 110px; object-fit: contain;">
+                            <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
                         </div>
-                        <p class="small text-muted mb-0" style="font-size: 0.75rem;">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
-                        <div class="text-secondary small mt-1 pt-1 border-top" style="font-size: 0.72rem;">
-                            <span class="d-inline-block mx-1">🟡 กรุงศรี: 803-931-9819</span> | 
-                            <span class="d-inline-block mx-1">🩷 ออมสิน: 020-409-437-819</span>
+                        <div class="text-secondary small" style="font-size: 0.72rem; line-height: 1.3;">
+                            🟡 <b>กรุงศรี:</b> 803-931-9819 | 🩷 <b>ออมสิน:</b> 020-409-437-819<br>
+                            <span class="text-muted">* โอนแล้วส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</span>
                         </div>
-                    </div>
-                    <div class="text-center">
-                        <small class="text-muted" style="font-size: 0.72rem;">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                     </div>
                 </div>
-                <div class="modal-footer bg-white py-2 justify-content-between">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                <div class="modal-footer bg-white py-1 justify-content-between">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
                     <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" style="font-size: 0.85rem;" onclick="copySelectedBillsText('{cust_name}')">📋 คัดลอกข้อความส่งแชท</button>
                 </div>
             </div>
