@@ -291,6 +291,51 @@ BASE_LAYOUT = """
         let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
         myModal.show();
     }
+
+    // 📋 ฟังก์ชันคัดลอกข้อความบิลเดี่ยวส่งแชททันที
+    function copyBillText(customerName, typeName, totalAmtStr) {
+        let textToCopy = `🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱\\n` +
+                         `👤 ลูกค้า: ${customerName}\\n` +
+                         `📋 ประเภท: ${typeName}\\n` +
+                         `💰 ยอดรวมที่ต้องชำระ: ${totalAmtStr}\\n\\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
+                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `*โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            alert('คัดลอกข้อความบิลเรียบร้อย! คุณสามารถกด วาง (Paste) ส่งให้ลูกค้าทาง Facebook ได้เลยครับ');
+        }).catch(err => {
+            alert('ไม่สามารถคัดลอกอัตโนมัติได้ กรุณาลองใหม่อีกครั้ง');
+        });
+    }
+
+    // 📋 ฟังก์ชันคัดลอกข้อความบิลรวมส่งแชททันที
+    function copySelectedBillsText(customerName) {
+        let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert('กรุณาติ๊กเลือกรายการก่อนครับ');
+            return;
+        }
+        let totalAmt = 0;
+        checkboxes.forEach(chk => {
+            totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+        });
+        let formattedTotal = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+
+        let textToCopy = `🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱\\n` +
+                         `👤 ลูกค้า: ${customerName}\\n` +
+                         `📋 จำนวน ${checkboxes.length} รายการที่เลือก\\n` +
+                         `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
+                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `*โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
+
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            alert('คัดลอกข้อความบิลรวมเรียบร้อย! กด วาง (Paste) ส่งให้ลูกค้าได้ทันทีครับ');
+        });
+    }
     </script>
 </body>
 </html>
@@ -1302,7 +1347,6 @@ def customer_details(cust_name):
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
 
-        # 🌟 เพิ่ม checkbox เลือกบิล และเปลี่ยนคำปุ่มเป็น "ออกบิล"
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{tx.principal + tx.accumulated_interest}" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
         rows += f"""
@@ -1393,7 +1437,8 @@ def customer_details(cust_name):
         </div>
         """
 
-        # Modal ออกบิลเดี่ยว (รวมยอดเป็นก้อนเดียว ปลอดภัยเรื่องกฎหมาย)
+        # Modal ออกบิลเดี่ยว (อัปเดตปุ่มเป็นคำว่า "📥 โหลด PDF" กระทัดรัด)
+        single_bill_total_str = f"{(tx.principal + tx.accumulated_interest):,.2f} บาท"
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1414,7 +1459,7 @@ def customer_details(cust_name):
                         </div>
                         <div class="card p-3 mb-3 border-warning bg-white text-center">
                             <span class="text-muted small mb-1">ยอดรวมที่ต้องชำระรายการนี้</span>
-                            <h3 class="text-success fw-bold mb-0">{(tx.principal + tx.accumulated_interest):,.2f} บาท</h3>
+                            <h3 class="text-success fw-bold mb-0">{single_bill_total_str}</h3>
                         </div>
                         <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
                             <p class="fw-bold text-success mb-2">📱 สแกน QR Code เพื่อชำระเงิน</p>
@@ -1428,19 +1473,22 @@ def customer_details(cust_name):
                             </div>
                         </div>
                         <div class="text-center mt-3">
-                            <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชท Facebook นี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                            <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                         </div>
                     </div>
                     <div class="modal-footer bg-white py-2 justify-content-between">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                        <button type="button" class="btn btn-warning btn-sm fw-bold px-3 text-dark" onclick="alert('คุณสามารถแคปหน้าจอ (Screenshot) บิลนี้ส่งให้ลูกค้าทาง Facebook ได้ทันทีครับ!')">📸 วิธีส่งให้ลูกค้า</button>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-primary btn-sm fw-bold px-3" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
+                            <a href="/download_bill_pdf/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลด PDF</a>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
         """
 
-    # 🌟 Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
+    # Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
     modals_html += f"""
     <div class="modal fade" id="selectedBillsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
@@ -1475,12 +1523,12 @@ def customer_details(cust_name):
                         </div>
                     </div>
                     <div class="text-center mt-3">
-                        <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชท Facebook นี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                        <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                     </div>
                 </div>
                 <div class="modal-footer bg-white py-2 justify-content-between">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" onclick="alert('คุณสามารถแคปหน้าจอ (Screenshot) บิลรวมนี้ส่งให้ลูกค้าทาง Facebook ได้ทันทีครับ!')">📸 วิธีส่งให้ลูกค้า</button>
+                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" onclick="copySelectedBillsText('{cust_name}')">📋 คัดลอกข้อความส่งแชท</button>
                 </div>
             </div>
         </div>
@@ -1495,7 +1543,6 @@ def customer_details(cust_name):
                 <small class="text-muted">ลูกค้ารายนี้มีทั้งหมด <b>{len(txs)}</b> รายการในระบบ (ติ๊กเลือกบิลที่ต้องการรวมยอดด้านล่าง)</small>
             </div>
             <div class="d-flex gap-2">
-                <!-- 🌟 ปุ่มกดออกบิลรวมเฉพาะบิลที่เลือก -->
                 <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
                     📄 ออกบิลรวมที่เลือก
                 </button>
@@ -1515,6 +1562,38 @@ def customer_details(cust_name):
     """
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า {cust_name}{% endblock %}', f'รายละเอียดลูกค้า {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=f"ลูกค้า: {cust_name}", page="dashboard")
+
+@app.route('/download_bill_pdf/<int:tx_id>')
+def download_bill_pdf(tx_id):
+    if 'admin' not in session: return redirect(url_for('login'))
+    tx = Transaction.query.get_or_404(tx_id)
+    calculate_tx_values(tx)
+    total_amt = tx.principal + tx.accumulated_interest
+
+    bill_content = f"""=====================================
+      ใบแจ้งยอดชำระ - ทรัพย์ล้น.com
+=====================================
+วันที่ออกบิล: {get_thai_today().strftime('%d/%m/%Y')}
+ชื่อลูกค้า: {tx.customer_name}
+ประเภท: {tx.type}
+-------------------------------------
+ยอดเงินต้นคงเหลือ: {tx.principal:,.2f} บาท
+ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท
+-------------------------------------
+ยอดรวมสุทธิที่ต้องชำระ: {total_amt:,.2f} บาท
+=====================================
+ช่องทางโอนเงิน / พร้อมเพย์:
+- กรุงศรีอยุธยา: 803-931-9819
+- ออมสิน: 020-409-437-819
+- TrueMoney Wallet: 092-923-7819
+=====================================
+* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏
+"""
+    output = io.BytesIO()
+    output.write(bill_content.encode('utf-8-sig'))
+    output.seek(0)
+    filename = f"bill_{tx.customer_name}_{get_thai_today().strftime('%Y%m%d')}.txt"
+    return send_file(output, mimetype='text/plain', as_attachment=True, download_name=filename)
 
 @app.route('/monthly_summary')
 def monthly_summary():
