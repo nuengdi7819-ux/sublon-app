@@ -118,24 +118,12 @@ BASE_LAYOUT = """
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
-        /* ปรับแต่ง Modal ให้พอดีกับหน้าจอมือถือและไม่บังปุ่มด้านล่าง */
         .modal-dialog { max-height: 90vh; margin: 1.5vh auto; }
         .modal-dialog-scrollable .modal-content { max-height: 88vh; display: flex; flex-direction: column; }
         .modal-body { overflow-y: auto; flex: 1 1 auto; padding: 12px 16px !important; }
 
-        .table-scroll-container {
-            max-height: 600px;
-            overflow-y: auto;
-            position: relative;
-        }
-        .table-scroll-container thead th {
-            position: sticky;
-            top: 0;
-            background-color: #212529 !important;
-            color: #fff;
-            z-index: 5;
-            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2);
-        }
+        .table-scroll-container { max-height: 600px; overflow-y: auto; position: relative; }
+        .table-scroll-container thead th { position: sticky; top: 0; background-color: #212529 !important; color: #fff; z-index: 5; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2); }
 
         .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-responsive::-webkit-scrollbar { height: 8px; width: 8px; }
@@ -279,34 +267,35 @@ BASE_LAYOUT = """
         document.body.style.paddingRight = '';
     }
 
-    function openSelectedBillsModal() {
-        let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
-        if (checkboxes.length === 0) {
-            alert('กรุณาติ๊กเลือกอย่างน้อย 1 รายการที่ต้องการออกบิลรวมครับ');
-            return;
+    function updateBillModalCalc(txId, baseAmt, dailyInt) {
+        let isAdvance = document.getElementById('advanceChk' + txId).checked;
+        let finalAmt = baseAmt;
+        let displayTitle = "🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱";
+        
+        if (isAdvance) {
+            finalAmt += dailyInt;
+            displayTitle = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
         }
-
-        let totalAmt = 0;
-        let typesSet = new Set();
-        checkboxes.forEach(chk => {
-            totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
-            let tName = chk.getAttribute('data-type');
-            if (tName) typesSet.add(tName);
-        });
-
-        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
-        document.getElementById('selectedBillsTypes').innerText = Array.from(typesSet).join(', ');
-        document.getElementById('selectedBillsTotalAmount').innerText = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
-
-        let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
-        myModal.show();
+        
+        document.getElementById('billTotalDisplay' + txId).innerText = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        document.getElementById('billTitleDisplay' + txId).innerText = displayTitle;
     }
 
-    function copyBillText(customerName, typeName, totalAmtStr) {
-        let textToCopy = `🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱\\n` +
+    function copyBillText(customerName, typeName, baseAmt, dailyInt, txId) {
+        let isAdvance = document.getElementById('advanceChk' + txId).checked;
+        let finalAmt = baseAmt;
+        let titleHeader = "🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱";
+        
+        if (isAdvance) {
+            finalAmt += dailyInt;
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+        }
+        let formattedAmt = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+
+        let textToCopy = `${titleHeader}\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
                          `📋 ประเภท: ${typeName}\\n` +
-                         `💰 ยอดรวมที่ต้องชำระ: ${totalAmtStr}\\n\\n` +
+                         `💰 ยอดที่ต้องชำระ: ${formattedAmt}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
                          `- ออมสิน: 020-409-437-819\\n\\n` +
@@ -319,23 +308,77 @@ BASE_LAYOUT = """
         });
     }
 
+    function updateSelectedBillsCalc() {
+        let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
+        let isAdvance = document.getElementById('selectedAdvanceChk').checked;
+        
+        let totalAmt = 0;
+        let totalDailyInt = 0;
+        let typesSet = new Set();
+        
+        checkboxes.forEach(chk => {
+            totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+            totalDailyInt += parseFloat(chk.getAttribute('data-daily-int') || 0);
+            let tName = chk.getAttribute('data-type');
+            if (tName) typesSet.add(tName);
+        });
+
+        let finalTotal = totalAmt;
+        let titleHeader = "🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱";
+        
+        if (isAdvance) {
+            finalTotal += totalDailyInt;
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระรวมล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+        }
+
+        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
+        document.getElementById('selectedBillsTypes').innerText = Array.from(typesSet).join(', ');
+        document.getElementById('selectedBillsTotalAmount').innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        document.getElementById('selectedBillTitleDisplay').innerText = titleHeader;
+    }
+
+    function openSelectedBillsModal() {
+        let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert('กรุณาติ๊กเลือกอย่างน้อย 1 รายการที่ต้องการออกบิลรวมครับ');
+            return;
+        }
+        document.getElementById('selectedAdvanceChk').checked = false;
+        updateSelectedBillsCalc();
+
+        let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
+        myModal.show();
+    }
+
     function copySelectedBillsText(customerName) {
         let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
         if (checkboxes.length === 0) {
             alert('กรุณาติ๊กเลือกรายการก่อนครับ');
             return;
         }
+        let isAdvance = document.getElementById('selectedAdvanceChk').checked;
         let totalAmt = 0;
+        let totalDailyInt = 0;
         let typesSet = new Set();
+        
         checkboxes.forEach(chk => {
             totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+            totalDailyInt += parseFloat(chk.getAttribute('data-daily-int') || 0);
             let tName = chk.getAttribute('data-type');
             if (tName) typesSet.add(tName);
         });
-        let formattedTotal = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        
+        let finalTotal = totalAmt;
+        let titleHeader = "🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱";
+        if (isAdvance) {
+            finalTotal += totalDailyInt;
+            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระรวมล่วงหน้า (สำหรับวันพรุ่งนี้) - ทรัพย์ล้น.com 🔱";
+        }
+
+        let formattedTotal = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
         let typesStr = Array.from(typesSet).join(', ');
 
-        let textToCopy = `🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱\\n` +
+        let textToCopy = `${titleHeader}\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
                          `📋 รายการ: ${typesStr} (${checkboxes.length} บิล)\\n` +
                          `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
@@ -1349,7 +1392,8 @@ def customer_details(cust_name):
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
 
-        checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{tx.principal + tx.accumulated_interest}" data-type="{tx.type}" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
+        base_bill_amt = tx.principal + tx.accumulated_interest
+        checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
         rows += f"""
         <tr>
@@ -1438,8 +1482,6 @@ def customer_details(cust_name):
         </div>
         """
 
-        single_bill_total_str = f"{(tx.principal + tx.accumulated_interest):,.2f} บาท"
-        
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
@@ -1450,9 +1492,19 @@ def customer_details(cust_name):
                     </div>
                     <div class="modal-body bg-light p-3">
                         <div class="text-center mb-2 border-bottom pb-2">
-                            <h5 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h5>
+                            <h5 class="text-danger fw-bold mb-1" id="billTitleDisplay{tx.id}">🔱 ทรัพย์ล้น.com 🔱</h5>
                             <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระเงิน / สแกนจ่ายผ่าน QR Code</p>
                         </div>
+                        
+                        <div class="mb-2 p-2 bg-warning bg-opacity-20 rounded border border-warning">
+                            <div class="form-check">
+                                <input class="form-check-input border-warning" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
+                                <label class="form-check-label fw-bold text-dark small" for="advanceChk{tx.id}">
+                                    ⌛ แจ้งล่วงหน้า 1 วัน (คิดดอกเบี้ยเผื่อวันพรุ่งนี้ +{tx.daily_interest:,.2f} บาท)
+                                </label>
+                            </div>
+                        </div>
+
                         <div class="mb-2 small">
                             <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                             <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
@@ -1460,7 +1512,7 @@ def customer_details(cust_name):
                         </div>
                         <div class="card p-2 mb-2 border-warning bg-white text-center">
                             <span class="text-muted small mb-1" style="font-size: 0.75rem;">ยอดรวมที่ต้องชำระรายการนี้</span>
-                            <h4 class="text-success fw-bold mb-0">{single_bill_total_str}</h4>
+                            <h4 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h4>
                         </div>
                         <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                             <p class="fw-bold text-success mb-1" style="font-size: 0.85rem;">📱 สแกน QR Code เพื่อชำระเงิน</p>
@@ -1479,7 +1531,7 @@ def customer_details(cust_name):
                     </div>
                     <div class="modal-footer bg-white py-2 justify-content-between">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                        <button type="button" class="btn btn-primary btn-sm fw-bold px-3" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
+                        <button type="button" class="btn btn-primary btn-sm fw-bold px-3" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', {base_bill_amt}, {tx.daily_interest}, {tx.id})">📋 คัดลอกข้อความส่งแชท</button>
                     </div>
                 </div>
             </div>
@@ -1496,9 +1548,19 @@ def customer_details(cust_name):
                 </div>
                 <div class="modal-body bg-light p-3">
                     <div class="text-center mb-2 border-bottom pb-2">
-                        <h5 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h5>
+                        <h5 class="text-danger fw-bold mb-1" id="selectedBillTitleDisplay">🔱 ทรัพย์ล้น.com 🔱</h5>
                         <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระรวม / สแกนจ่ายผ่าน QR Code</p>
                     </div>
+
+                    <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
+                        <div class="form-check">
+                            <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
+                            <label class="form-check-label fw-bold text-success small" for="selectedAdvanceChk">
+                                ⌛ แจ้งล่วงหน้า 1 วัน (คิดดอกเบี้ยรวมเผื่อวันพรุ่งนี้ทุกบิลที่เลือก)
+                            </label>
+                        </div>
+                    </div>
+
                     <div class="mb-2 small">
                         <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                         <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{cust_name}</span></p>
