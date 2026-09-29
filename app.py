@@ -114,7 +114,6 @@ BASE_LAYOUT = """
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
-        /* จัดการตารางให้มี scrollbar ในตัวและล็อกหัวตาราง */
         .table-scroll-container {
             max-height: 600px;
             overflow-y: auto;
@@ -600,12 +599,14 @@ def index():
                 <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">
                     <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
                         <button type="button" class="btn btn-sm btn-success-light w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning w-100 text-dark fw-bold" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิล</button>
                         <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger w-100" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                     </div>
                 </td>
             </tr>
             """
 
+            # Modal สำหรับชำระเงิน
             modals_html += f"""
             <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
@@ -684,6 +685,60 @@ def index():
             </div>
             """
 
+            # 🌟 Modal สำหรับออกบิลส่ง Facebook
+            modals_html += f"""
+            <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-warning shadow-lg">
+                        <div class="modal-header bg-warning text-dark py-2">
+                            <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body bg-light p-4" id="billContent{tx.id}">
+                            <div class="text-center mb-3 border-bottom pb-2">
+                                <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
+                                <p class="text-muted small mb-0">ใบแจ้งยอดชำระเงิน / ทวงถามหนี้</p>
+                            </div>
+                            <div class="mb-3">
+                                <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
+                                <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
+                                <p class="mb-1"><b>📞 เบอร์โทร:</b> {tx.phone or '-'}</p>
+                                <p class="mb-1"><b>📋 ประเภท:</b> <span class="badge bg-secondary">{tx.type}</span></p>
+                            </div>
+                            <div class="card p-3 mb-3 border-warning bg-white">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>เงินต้นคงเหลือ:</span>
+                                    <b>{tx.principal:,.2f} บาท</b>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>ดอกเบี้ยสะสม:</span>
+                                    <b class="text-danger">{tx.accumulated_interest:,.2f} บาท</b>
+                                </div>
+                                <hr class="my-1">
+                                <div class="d-flex justify-content-between text-success fw-bold fs-5">
+                                    <span>รวมยอดที่ต้องชำระวันนี้:</span>
+                                    <span>{(tx.principal + tx.accumulated_interest):,.2f} บาท</span>
+                                </div>
+                            </div>
+                            <div class="p-3 rounded border border-success bg-success bg-opacity-10 text-center">
+                                <p class="fw-bold text-success mb-1">📥 ช่องทางโอนเงินชำระ</p>
+                                <p class="mb-1">🟡 <b>กรุงศรีอยุธยา:</b> 803-931-9819</p>
+                                <p class="mb-1">🩷 <b>ออมสิน:</b> 020-409-437-819</p>
+                                <p class="mb-0">🟠 <b>TrueMoney Wallet:</b> 092-923-7819</p>
+                            </div>
+                            <div class="text-center mt-3">
+                                <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชท Facebook นี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer bg-white py-2 justify-content-between">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                            <button type="button" class="btn btn-warning btn-sm fw-bold px-3 text-dark" onclick="alert('คุณสามารถแคปหน้าจอ (Screenshot) บิลนี้ส่งให้ลูกค้าทาง Facebook ได้ทันทีครับ!')">📸 วิธีส่งให้ลูกค้า</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+
         if start_date_str and end_date_str:
             table_title = f"📋 รายการช่วงวันที่: {start_date_str} ถึง {end_date_str}"
             view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
@@ -691,7 +746,7 @@ def index():
             table_title = f"📋 รายการความเคลื่อนไหววันที่: {start_date_str}"
             view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         elif search_query:
-            table_title = f"📋 ผลการค้นหา: \"{search_query}\""
+            table_title = f'📋 ผลการค้นหา: "{search_query}"'
             view_today_btn = '<a href="/" class="btn btn-sm btn-success fw-bold">🟢 แสดงรายการแจ้งเตือนวันนี้</a>'
         else:
             table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
