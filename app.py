@@ -334,9 +334,13 @@ BASE_LAYOUT = """
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
         }
 
-        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล';
-        document.getElementById('selectedBillsTotalAmount').innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
-        document.getElementById('selectedBillTitleDisplay').innerText = titleHeader;
+        let countElem = document.getElementById('selectedBillsCount');
+        let totalElem = document.getElementById('selectedBillsTotalAmount');
+        let titleElem = document.getElementById('selectedBillTitleDisplay');
+
+        if (countElem) countElem.innerText = checkboxes.length + ' บิล';
+        if (totalElem) totalElem.innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        if (titleElem) titleElem.innerText = titleHeader;
     }
 
     function openSelectedBillsModal() {
