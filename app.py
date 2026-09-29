@@ -118,6 +118,11 @@ BASE_LAYOUT = """
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
+        /* จัดการความสูงและระบบเลื่อนของ Modal ให้พอดีจอและไม่บังปุ่ม */
+        .modal-dialog-scrollable { max-height: calc(100vh - 3.5rem); }
+        .modal-dialog-scrollable .modal-content { max-height: calc(100vh - 3.5rem); display: flex; flex-direction: column; }
+        .modal-body { overflow-y: auto; flex: 1 1 auto; }
+
         .table-scroll-container {
             max-height: 600px;
             overflow-y: auto;
@@ -139,7 +144,6 @@ BASE_LAYOUT = """
 
         @media (max-width: 768px) {
             .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
-            .modal-body { max-height: 70vh; overflow-y: auto; }
         }
 
         @media (max-width: 992px) {
@@ -286,7 +290,7 @@ BASE_LAYOUT = """
             totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
         });
 
-        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' รายการที่เลือก';
+        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
         document.getElementById('selectedBillsTotalAmount').innerText = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
         let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
@@ -324,7 +328,7 @@ BASE_LAYOUT = """
 
         let textToCopy = `🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 จำนวน ${checkboxes.length} รายการที่เลือก\\n` +
+                         `📋 รวมบิลทั้งหมด: ${checkboxes.length} บิล\\n` +
                          `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
@@ -673,7 +677,7 @@ def index():
 
             modals_html += f"""
             <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
-                <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                     <div class="modal-content border-warning">
                         <form action="/update_payment/{tx.id}" method="POST">
                             <div class="modal-header bg-danger text-white py-2">
@@ -843,7 +847,7 @@ def index():
         </div>
 
         <div class="modal fade" id="transferBankModal" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-primary">
                     <form action="/transfer_bank_money" method="POST">
                         <div class="modal-header bg-primary text-white py-2">
@@ -886,7 +890,7 @@ def index():
         </div>
 
         <div class="modal fade" id="adjustBankModal" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-danger">
                     <form action="/update_bank_adjustment" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
@@ -917,7 +921,7 @@ def index():
         </div>
 
         <div class="modal fade" id="withdrawModal" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-danger">
                     <form action="/withdraw_bank_money" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
@@ -1058,13 +1062,13 @@ def index():
         </div>
 
         <div class="modal fade" id="todayHistoryModal" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการเก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="table-responsive">
                             <table class="table table-striped align-middle text-nowrap">
                                 <thead class="table-dark">
@@ -1080,13 +1084,13 @@ def index():
         </div>
 
         <div class="modal fade" id="todayActionsModal" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-info">
                     <div class="modal-header bg-info text-dark py-2">
                         <h5 class="modal-title fs-6 fw-bold">⚡ สรุปธุรกรรมและความเคลื่อนไหวทั้งหมด ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="mb-4">
                             <h6 class="text-primary fw-bold border-bottom pb-2">➕ หมวดที่ 1: รายการเพิ่มเงินลงทุนใหม่วันนี้ ({today_new_count} รายการ)</h6>
                             <div class="table-responsive">
@@ -1151,13 +1155,13 @@ def index():
         </div>
 
         <div class="modal fade" id="debtModal" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-warning">
                     <div class="modal-header bg-warning text-dark py-2">
                         <h5 class="modal-title fw-bold fs-6">📂 รายละเอียด: ยอดค้างเก่าคงเหลือทั้งหมด ({total_debt_principal:,.2f} บาท)</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="table-responsive">
                             <table class="table table-striped align-middle text-nowrap">
                                 <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>วันที่ตั้งต้น</th><th>ยอดตั้งต้น</th><th>ยอดคงเหลือ</th></tr></thead>
@@ -1171,13 +1175,13 @@ def index():
         </div>
 
         <div class="modal fade" id="principalModal" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="table-responsive">
                             <table class="table table-striped align-middle text-nowrap">
                                 <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>เบอร์โทร</th><th>วันที่กู้</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th></tr></thead>
@@ -1191,13 +1195,13 @@ def index():
         </div>
 
         <div class="modal fade" id="profitModal" tabindex="-1">
-            <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💰 รายละเอียด: กำไรสะสมทั้งหมด เดือนปัจจุบัน ({current_month_profit:,.2f} บาท)</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                    <div class="modal-body">
                         <div class="table-responsive">
                             <table class="table table-striped align-middle text-nowrap">
                                 <thead class="table-dark"><tr><th>ชื่อลูกค้า</th><th>ประเภท</th><th>กำไร/ดอกเบี้ย</th><th>ค่าปรับจริง</th><th>ส่วนลด</th><th>รวมสุทธิ</th><th>วันที่ชำระล่าสุด</th></tr></thead>
@@ -1359,7 +1363,7 @@ def customer_details(cust_name):
         
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-warning">
                     <form action="/update_payment/{tx.id}" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
@@ -1425,7 +1429,7 @@ def customer_details(cust_name):
         
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-warning shadow-lg">
                     <div class="modal-header bg-warning text-dark py-2">
                         <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
@@ -1474,10 +1478,10 @@ def customer_details(cust_name):
 
     modals_html += f"""
     <div class="modal fade" id="selectedBillsModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-success shadow-lg">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม (บิลที่เลือก) - ทรัพย์ล้น.com</h5>
+                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-light p-4">
@@ -1488,10 +1492,10 @@ def customer_details(cust_name):
                     <div class="mb-3">
                         <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                         <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{cust_name}</span></p>
-                        <p class="mb-1"><b>📋 รายการที่เลือก:</b> <span class="badge bg-danger" id="selectedBillsCount">0 รายการ</span></p>
+                        <p class="mb-1"><b>📋 รวมบิลทั้งหมด:</b> <span class="badge bg-danger" id="selectedBillsCount">0 บิล (รวมชำระ)</span></p>
                     </div>
                     <div class="card p-3 mb-3 border-success bg-white text-center shadow-sm">
-                        <span class="text-muted small mb-1">ยอดรวมสุทธิที่ต้องชำระ (ตามบิลที่เลือก)</span>
+                        <span class="text-muted small mb-1">ยอดรวมสุทธิที่ต้องชำระ (รวมทุกบิลที่เลือก)</span>
                         <h2 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h2>
                     </div>
                     <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
@@ -1558,10 +1562,10 @@ def download_bill_jpeg(tx_id):
     image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240))
     draw = ImageDraw.Draw(image)
 
-    # ค้นหาฟอนต์ภาษาไทยในโปรเจกต์ (รองรับทั้งไฟล์ .ttf ที่อัปโหลด หรือฟอนต์ระบบ Linux)
     font_paths = [
+        "Kanit-Bold.ttf", "Kanit-Regular.ttf",
         "Prompt-Bold.ttf", "Prompt-Regular.ttf", 
-        "fonts/Prompt-Bold.ttf", "fonts/Prompt-Regular.ttf",
+        "fonts/Kanit-Bold.ttf", "fonts/Kanit-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
