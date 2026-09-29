@@ -271,6 +271,26 @@ BASE_LAYOUT = """
         document.body.style.overflow = '';
         document.body.style.paddingRight = '';
     }
+
+    // ฟังก์ชันคำนวณและเปิด Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
+    function openSelectedBillsModal() {
+        let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert('กรุณาติ๊กเลือกอย่างน้อย 1 รายการที่ต้องการออกบิลรวมครับ');
+            return;
+        }
+
+        let totalAmt = 0;
+        checkboxes.forEach(chk => {
+            totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+        });
+
+        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' รายการที่เลือก';
+        document.getElementById('selectedBillsTotalAmount').innerText = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+
+        let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
+        myModal.show();
+    }
     </script>
 </body>
 </html>
@@ -1282,8 +1302,12 @@ def customer_details(cust_name):
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
 
+        # 🌟 เพิ่ม checkbox เลือกบิล และเปลี่ยนคำปุ่มเป็น "ออกบิล"
+        checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{tx.principal + tx.accumulated_interest}" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
+
         rows += f"""
         <tr>
+            <td class="text-center">{checkbox_elem}</td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str}</td>
@@ -1297,7 +1321,7 @@ def customer_details(cust_name):
             <td class="text-center">
                 <div class="d-flex flex-column gap-2" style="width: 100px; margin: 0 auto;">
                     <button type="button" class="btn btn-sm btn-success-light fw-bold w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                    <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold w-100" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิลเดี่ยว</button>
+                    <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold w-100" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิล</button>
                     <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold w-100" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
             </td>
@@ -1416,28 +1440,28 @@ def customer_details(cust_name):
         </div>
         """
 
-    # Modal ออกบิลรวมทุกรายการที่ค้างอยู่ของลูกค้ารายนี้
+    # 🌟 Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
     modals_html += f"""
-    <div class="modal fade" id="allBillsModal" tabindex="-1">
+    <div class="modal fade" id="selectedBillsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-success shadow-lg">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวมทุกรายการ - ทรัพย์ล้น.com</h5>
+                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม (บิลที่เลือก) - ทรัพย์ล้น.com</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-light p-4">
                     <div class="text-center mb-3 border-bottom pb-2">
                         <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
-                        <p class="text-muted small mb-0">ใบแจ้งยอดชำระรวมทุกบิล / สแกนจ่ายผ่าน QR Code</p>
+                        <p class="text-muted small mb-0">ใบแจ้งยอดชำระรวม / สแกนจ่ายผ่าน QR Code</p>
                     </div>
                     <div class="mb-3">
                         <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                         <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{cust_name}</span></p>
-                        <p class="mb-1"><b>📋 จำนวนบิลที่รวม:</b> <span class="badge bg-danger">{active_txs_count} รายการที่ค้างอยู่</span></p>
+                        <p class="mb-1"><b>📋 รายการที่เลือก:</b> <span class="badge bg-danger" id="selectedBillsCount">0 รายการ</span></p>
                     </div>
                     <div class="card p-3 mb-3 border-success bg-white text-center shadow-sm">
-                        <span class="text-muted small mb-1">ยอดรวมสุทธิที่ต้องชำระทั้งหมด (ทุกบิล)</span>
-                        <h2 class="text-success fw-bold mb-0">{total_combined_amount:,.2f} บาท</h2>
+                        <span class="text-muted small mb-1">ยอดรวมสุทธิที่ต้องชำระ (ตามบิลที่เลือก)</span>
+                        <h2 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h2>
                     </div>
                     <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
                         <p class="fw-bold text-success mb-2">📱 สแกน QR Code เพื่อชำระเงินรวม</p>
@@ -1468,11 +1492,12 @@ def customer_details(cust_name):
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h4 class="mb-0 fs-5 text-danger fw-bold">👤 รายละเอียดบัญชีทั้งหมดของ: {cust_name}</h4>
-                <small class="text-muted">ลูกค้ารายนี้มีทั้งหมด <b>{len(txs)}</b> รายการในระบบ</small>
+                <small class="text-muted">ลูกค้ารายนี้มีทั้งหมด <b>{len(txs)}</b> รายการในระบบ (ติ๊กเลือกบิลที่ต้องการรวมยอดด้านล่าง)</small>
             </div>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-success fw-bold px-3" data-bs-toggle="modal" data-bs-target="#allBillsModal">
-                    📄 ออกบิลรวมทุกบิล ({total_combined_amount:,.2f} บ.)
+                <!-- 🌟 ปุ่มกดออกบิลรวมเฉพาะบิลที่เลือก -->
+                <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
+                    📄 ออกบิลรวมที่เลือก
                 </button>
                 <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับหน้าหลัก</a>
             </div>
@@ -1480,9 +1505,9 @@ def customer_details(cust_name):
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
+                    <tr><th class="text-center" style="width: 50px;">เลือก</th><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='11' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
