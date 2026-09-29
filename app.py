@@ -290,18 +290,18 @@ BASE_LAYOUT = """
         if (isAdvance) {
             finalAmt += dailyInt;
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
-            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\n\n";
         }
         let formattedAmt = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
-        let textToCopy = `${titleHeader}\\n` +
-                         `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 ประเภท: ${typeName}\\n` +
+        let textToCopy = `${titleHeader}\n` +
+                         `👤 ลูกค้า: ${customerName}\n` +
+                         `📋 ประเภท: ${typeName}\n` +
                          `${advanceNote}` +
-                         `💰 ยอดที่ต้องชำระ: ${formattedAmt}\\n\\n` +
-                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
-                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
-                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `💰 ยอดที่ต้องชำระ: ${formattedAmt}\n\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\n` +
+                         `- ออมสิน: 020-409-437-819\n\n` +
                          `*โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
         
         navigator.clipboard.writeText(textToCopy).then(() => {
@@ -377,20 +377,20 @@ BASE_LAYOUT = """
         if (isAdvance) {
             finalTotal += totalDailyInt;
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
-            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\n\n";
         }
 
         let formattedTotal = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
         let typesStr = Array.from(typesSet).join(', ');
 
-        let textToCopy = `${titleHeader}\\n` +
-                         `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\\n` +
+        let textToCopy = `${titleHeader}\n` +
+                         `👤 ลูกค้า: ${customerName}\n` +
+                         `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\n` +
                          `${advanceNote}` +
-                         `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
-                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
-                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
-                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `💰 ยอดรวมสุทธิ: ${formattedTotal}\n\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\n` +
+                         `- ออมสิน: 020-409-437-819\n\n` +
                          `*โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
 
         navigator.clipboard.writeText(textToCopy).then(() => {
@@ -1306,7 +1306,7 @@ def transfer_bank_money():
             else: db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=transfer_amt))
 
             db.session.add(BankExpenseLog(
-                expense_date=get_thai_today(), account_name=f"{from_acc} ➡️️ {to_acc}",
+                expense_date=get_thai_today(), account_name=f"{from_acc} ➡ {to_acc}",
                 amount=transfer_amt, note=f"[โยกเงินพักบัญชี] {note_text}", admin_name=session.get('admin')
             ))
             db.session.commit()
@@ -1357,7 +1357,7 @@ def withdraw_bank_money():
 def delete_expense(exp_id):
     if 'admin' not in session: return redirect(url_for('login'))
     exp = BankExpenseLog.query.get_or_404(exp_id)
-    if "➡️️" in exp.account_name:
+    if "➡" in exp.account_name:
         parts = exp.account_name.split(" ➡️ ")
         if len(parts) == 2:
             from_acc, to_acc = parts[0], parts[1]
@@ -1493,7 +1493,7 @@ def customer_details(cust_name):
             <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-success shadow-lg">
                     <div class="modal-header bg-success text-white py-2">
-                        <h5 class="modal-title fw-bold fs-6">ใบแจ้งยอดชำระ</h5>
+                        <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body bg-light p-2">
@@ -1543,7 +1543,7 @@ def customer_details(cust_name):
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-success shadow-lg">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">ใบแจ้งยอดชำระรวม</h5>
+                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-light p-2">
