@@ -1188,7 +1188,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -1327,7 +1327,11 @@ def delete_expense(exp_id):
 @app.route('/customer_details/<path:cust_name>')
 def customer_details(cust_name):
     if 'admin' not in session: return redirect(url_for('login'))
-    txs = Transaction.query.filter_by(customer_name=cust_name).order_by(Transaction.start_date.desc()).all()
+    clean_name = cust_name.strip()
+    txs = Transaction.query.filter(db.func.lower(Transaction.customer_name) == clean_name.lower()).order_by(Transaction.start_date.desc()).all()
+    if not txs:
+        txs = Transaction.query.filter(Transaction.customer_name.ilike(f"%{clean_name}%")).order_by(Transaction.start_date.desc()).all()
+    
     for tx in txs: calculate_tx_values(tx)
 
     total_combined_amount = 0.0
