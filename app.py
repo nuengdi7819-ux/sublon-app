@@ -562,7 +562,7 @@ def index():
         </tr>
         """
 
-        rows, cards, modals_html = "", "", ""
+        rows, modals_html = "", ""
         for tx in transactions:
             badge_color = 'bg-success'
             if tx.status == 'ตัดยอดบางส่วน': badge_color = 'bg-info text-dark'
@@ -601,14 +601,13 @@ def index():
                 <td style="position: sticky; right: 0; background-color: #fff; z-index: 2; text-align: center; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">
                     <div class="d-flex flex-column gap-2" style="width: 90px; margin: 0 auto;">
                         <button type="button" class="btn btn-sm btn-success-light w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                        <button type="button" class="btn btn-sm btn-outline-warning w-100 text-dark fw-bold" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิล</button>
                         <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger w-100" onclick="return confirm('ยืนยันการลบ?')">ลบ</a>
                     </div>
                 </td>
             </tr>
             """
 
-            # Modal สำหรับชำระเงิน
+            # Modal สำหรับชำระเงิน (บน Dashboard)
             modals_html += f"""
             <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
@@ -682,60 +681,6 @@ def index():
                                 </div>
                             </div>
                         </form>
-                    </div>
-                </div>
-            </div>
-            """
-
-            # 🌟 Modal สำหรับออกบิลส่ง Facebook
-            modals_html += f"""
-            <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content border-warning shadow-lg">
-                        <div class="modal-header bg-warning text-dark py-2">
-                            <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body bg-light p-4" id="billContent{tx.id}">
-                            <div class="text-center mb-3 border-bottom pb-2">
-                                <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
-                                <p class="text-muted small mb-0">ใบแจ้งยอดชำระเงิน / ทวงถามหนี้</p>
-                            </div>
-                            <div class="mb-3">
-                                <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
-                                <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
-                                <p class="mb-1"><b>📞 เบอร์โทร:</b> {tx.phone or '-'}</p>
-                                <p class="mb-1"><b>📋 ประเภท:</b> <span class="badge bg-secondary">{tx.type}</span></p>
-                            </div>
-                            <div class="card p-3 mb-3 border-warning bg-white">
-                                <div class="d-flex justify-content-between mb-2">
-                                    <span>เงินต้นคงเหลือ:</span>
-                                    <b>{tx.principal:,.2f} บาท</b>
-                                </div>
-                                <div class="d-flex justify-content-between mb-2">
-                                    <span>ดอกเบี้ยสะสม:</span>
-                                    <b class="text-danger">{tx.accumulated_interest:,.2f} บาท</b>
-                                </div>
-                                <hr class="my-1">
-                                <div class="d-flex justify-content-between text-success fw-bold fs-5">
-                                    <span>รวมยอดที่ต้องชำระวันนี้:</span>
-                                    <span>{(tx.principal + tx.accumulated_interest):,.2f} บาท</span>
-                                </div>
-                            </div>
-                            <div class="p-3 rounded border border-success bg-success bg-opacity-10 text-center">
-                                <p class="fw-bold text-success mb-1">📥 ช่องทางโอนเงินชำระ</p>
-                                <p class="mb-1">🟡 <b>กรุงศรีอยุธยา:</b> 803-931-9819</p>
-                                <p class="mb-1">🩷 <b>ออมสิน:</b> 020-409-437-819</p>
-                                <p class="mb-0">🟠 <b>TrueMoney Wallet:</b> 092-923-7819</p>
-                            </div>
-                            <div class="text-center mt-3">
-                                <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชท Facebook นี้ได้เลยครับ ขอบคุณครับ 🙏</small>
-                            </div>
-                        </div>
-                        <div class="modal-footer bg-white py-2 justify-content-between">
-                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                            <button type="button" class="btn btn-warning btn-sm fw-bold px-3 text-dark" onclick="alert('คุณสามารถแคปหน้าจอ (Screenshot) บิลนี้ส่งให้ลูกค้าทาง Facebook ได้ทันทีครับ!')">📸 วิธีส่งให้ลูกค้า</button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1330,6 +1275,7 @@ def customer_details(cust_name):
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
 
+        # 🌟 ปุ่มออกบิลในหน้าหน้ารายละเอียดลูกค้า แยกตามรายการ
         rows += f"""
         <tr>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
@@ -1343,13 +1289,16 @@ def customer_details(cust_name):
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
-                <div class="d-flex justify-content-center gap-2">
-                    <button type="button" class="btn btn-sm btn-success-light fw-bold px-2" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                    <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold px-2" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
+                <div class="d-flex flex-column gap-2" style="width: 100px; margin: 0 auto;">
+                    <button type="button" class="btn btn-sm btn-success-light fw-bold w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                    <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold w-100" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิล</button>
+                    <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold w-100" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                 </div>
             </td>
         </tr>
         """
+        
+        # Modal จัดการยอด
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1409,6 +1358,67 @@ def customer_details(cust_name):
                             </div>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+        """
+
+        # 🌟 Modal ออกบิล (ตัดเบอร์โทรออก + ใส่ QR Code จากไฟล์ GSB.jpg บน GitHub)
+        modals_html += f"""
+        <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-warning shadow-lg">
+                    <div class="modal-header bg-warning text-dark py-2">
+                        <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body bg-light p-4" id="billContent{tx.id}">
+                        <div class="text-center mb-3 border-bottom pb-2">
+                            <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
+                            <p class="text-muted small mb-0">ใบแจ้งยอดชำระเงิน / สแกนจ่ายผ่าน QR Code</p>
+                        </div>
+                        <div class="mb-3">
+                            <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
+                            <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
+                            <p class="mb-1"><b>📋 ประเภท:</b> <span class="badge bg-secondary">{tx.type}</span></p>
+                        </div>
+                        <div class="card p-3 mb-3 border-warning bg-white">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>เงินต้นคงเหลือ:</span>
+                                <b>{tx.principal:,.2f} บาท</b>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>ดอกเบี้ยสะสม:</span>
+                                <b class="text-danger">{tx.accumulated_interest:,.2f} บาท</b>
+                            </div>
+                            <hr class="my-1">
+                            <div class="d-flex justify-content-between text-success fw-bold fs-5">
+                                <span>รวมยอดที่ต้องชำระวันนี้:</span>
+                                <span>{(tx.principal + tx.accumulated_interest):,.2f} บาท</span>
+                            </div>
+                        </div>
+
+                        <!-- 🌟 QR Code จริงจาก GSB.jpg บน GitHub -->
+                        <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
+                            <p class="fw-bold text-success mb-2">📱 สแกน QR Code เพื่อชำระเงิน</p>
+                            <div class="bg-light p-2 d-inline-block rounded border mb-2">
+                                <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 140px; height: 140px; object-fit: contain;">
+                            </div>
+                            <p class="small text-muted mb-1">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
+                            <div class="text-secondary small mt-1 pt-1 border-top">
+                                <span class="d-inline-block mx-1">🟡 กรุงศรี: 803-931-9819</span> | 
+                                <span class="d-inline-block mx-1">🩷 ออมสิน: 020-409-437-819</span>
+                            </div>
+                        </div>
+
+                        <div class="text-center mt-3">
+                            <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชท Facebook นี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-white py-2 justify-content-between">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+                        <button type="button" class="btn btn-warning btn-sm fw-bold px-3 text-dark" onclick="alert('คุณสามารถแคปหน้าจอ (Screenshot) บิลนี้ส่งให้ลูกค้าทาง Facebook ได้ทันทีครับ!')">📸 วิธีส่งให้ลูกค้า</button>
+                    </div>
                 </div>
             </div>
         </div>
