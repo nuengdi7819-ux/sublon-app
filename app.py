@@ -270,11 +270,11 @@ BASE_LAYOUT = """
     function updateBillModalCalc(txId, baseAmt, dailyInt) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let displayTitle = "🔱 ทรัพย์ล้น.com 🔱";
+        let displayTitle = "ใบแจ้งยอดชำระ";
         
         if (isAdvance) {
             finalAmt += dailyInt;
-            displayTitle = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
+            displayTitle = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
         }
         
         document.getElementById('billTotalDisplay' + txId).innerText = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
@@ -284,17 +284,20 @@ BASE_LAYOUT = """
     function copyBillText(customerName, typeName, baseAmt, dailyInt, txId) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let titleHeader = "🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱";
+        let titleHeader = "ใบแจ้งยอดชำระ";
+        let advanceNote = "";
         
         if (isAdvance) {
             finalAmt += dailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
+            titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
         }
         let formattedAmt = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
         let textToCopy = `${titleHeader}\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
                          `📋 ประเภท: ${typeName}\\n` +
+                         `${advanceNote}` +
                          `💰 ยอดที่ต้องชำระ: ${formattedAmt}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
@@ -324,11 +327,11 @@ BASE_LAYOUT = """
         });
 
         let finalTotal = totalAmt;
-        let titleHeader = "🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱";
+        let titleHeader = "ใบแจ้งยอดชำระรวม";
         
         if (isAdvance) {
             finalTotal += totalDailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
+            titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
         }
 
         document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล';
@@ -368,10 +371,13 @@ BASE_LAYOUT = """
         });
         
         let finalTotal = totalAmt;
-        let titleHeader = "🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱";
+        let titleHeader = "ใบแจ้งยอดชำระรวม";
+        let advanceNote = "";
+        
         if (isAdvance) {
             finalTotal += totalDailyInt;
-            titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
+            titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
         }
 
         let formattedTotal = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
@@ -380,6 +386,7 @@ BASE_LAYOUT = """
         let textToCopy = `${titleHeader}\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
                          `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\\n` +
+                         `${advanceNote}` +
                          `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
@@ -770,7 +777,7 @@ def index():
                                     </div>
 
                                     <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
-                                        <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                        <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                         <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
                                         <small class="text-muted d-block" style="font-size: 0.72rem;">* (+) เพิ่มยอดต้น | (-) ลด/แก้ชื่อยอดผิด (บันทึกเป็นประวัติปรับปรุงโดยไม่กระทบยอดรับชำระเดิม)</small>
                                     </div>
@@ -1299,7 +1306,7 @@ def transfer_bank_money():
             else: db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=transfer_amt))
 
             db.session.add(BankExpenseLog(
-                expense_date=get_thai_today(), account_name=f"{from_acc} ➡️ {to_acc}",
+                expense_date=get_thai_today(), account_name=f"{from_acc} ➡️️ {to_acc}",
                 amount=transfer_amt, note=f"[โยกเงินพักบัญชี] {note_text}", admin_name=session.get('admin')
             ))
             db.session.commit()
@@ -1350,7 +1357,7 @@ def withdraw_bank_money():
 def delete_expense(exp_id):
     if 'admin' not in session: return redirect(url_for('login'))
     exp = BankExpenseLog.query.get_or_404(exp_id)
-    if "➡️" in exp.account_name:
+    if "➡️️" in exp.account_name:
         parts = exp.account_name.split(" ➡️ ")
         if len(parts) == 2:
             from_acc, to_acc = parts[0], parts[1]
@@ -1484,34 +1491,25 @@ def customer_details(cust_name):
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-                <div class="modal-content border-warning shadow-lg">
-                    <div class="modal-header bg-warning text-dark py-2">
-                        <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-content border-success shadow-lg">
+                    <div class="modal-header bg-success text-white py-2">
+                        <h5 class="modal-title fw-bold fs-6">ใบแจ้งยอดชำระ</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body bg-light p-2">
                         <div class="text-center mb-1">
-                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">🔱 ทรัพย์ล้น.com 🔱</h6>
+                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">ใบแจ้งยอดชำระ</h6>
                             <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
-                        
-                        <div class="mb-1 px-2 py-1 bg-warning bg-opacity-20 rounded border border-warning text-center">
-                            <div class="form-check d-inline-block m-0">
-                                <input class="form-check-input border-warning" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
-                                <label class="form-check-label fw-bold text-dark" style="font-size: 0.85rem;" for="advanceChk{tx.id}">
-                                    ✅ แจ้งยอดพรุ่งนี้
-                                </label>
-                            </div>
-                        </div>
 
-                        <!-- 🌟 ยอดรวมสุทธิ -->
-                        <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
-                            <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมที่ต้องชำระสุทธิ</span>
+                        <!-- 🌟 ยอดรวมสุทธิ (กรอบสีเขียวเข้มบนพื้นหลังสีขาว กระตุ้นการจ่าย) -->
+                        <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
+                            <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ</span>
                             <h3 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h3>
                         </div>
 
                         <!-- 🌟 QR Code พร้อมเพย์ -->
-                        <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
+                        <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                             <div class="bg-light p-1 d-inline-block rounded border mb-1">
                                 <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
                             </div>
@@ -1520,10 +1518,20 @@ def customer_details(cust_name):
                                 <span class="text-muted">* โอนแล้วส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</span>
                             </div>
                         </div>
+
+                        <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
+                        <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
+                            <div class="form-check d-inline-block m-0">
+                                <input class="form-check-input border-success" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
+                                <label class="form-check-label fw-bold text-success" style="font-size: 0.85rem;" for="advanceChk{tx.id}">
+                                    แจ้งยอดพรุ่งนี้
+                                </label>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer bg-white py-1 justify-content-between">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
-                        <button type="button" class="btn btn-primary btn-sm fw-bold px-3" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', {base_bill_amt}, {tx.daily_interest}, {tx.id})">📋 คัดลอกข้อความส่งแชท</button>
+                        <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', {base_bill_amt}, {tx.daily_interest}, {tx.id})">📋 คัดลอกข้อความส่งแชท</button>
                     </div>
                 </div>
             </div>
@@ -1535,38 +1543,39 @@ def customer_details(cust_name):
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-success shadow-lg">
                 <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com</h5>
+                    <h5 class="modal-title fw-bold fs-6">ใบแจ้งยอดชำระรวม</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-light p-2">
                     <div class="text-center mb-1">
-                        <h6 class="text-danger fw-bold mb-0" id="selectedBillTitleDisplay">🔱 ทรัพย์ล้น.com 🔱</h6>
+                        <h6 class="text-danger fw-bold mb-0" id="selectedBillTitleDisplay">ใบแจ้งยอดชำระรวม</h6>
                         <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{cust_name}</b> | รวม <span class="badge bg-danger" id="selectedBillsCount">0 บิล</span></span>
                     </div>
 
-                    <div class="mb-1 px-2 py-1 bg-success bg-opacity-10 rounded border border-success text-center">
-                        <div class="form-check d-inline-block m-0">
-                            <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
-                            <label class="form-check-label fw-bold text-success" style="font-size: 0.85rem;" for="selectedAdvanceChk">
-                                ✅ แจ้งยอดพรุ่งนี้
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- 🌟 ยอดรวมสุทธิทุกบิล -->
-                    <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
-                        <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
+                    <!-- 🌟 ยอดรวมสุทธิทุกบิล (กรอบสีเขียวเข้มบนพื้นหลังสีขาว) -->
+                    <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
+                        <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
                         <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
 
                     <!-- 🌟 QR Code พร้อมเพย์ -->
-                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
+                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                         <div class="bg-light p-1 d-inline-block rounded border mb-1">
                             <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
                         </div>
                         <div class="text-secondary small" style="font-size: 0.72rem; line-height: 1.3;">
                             🟡 <b>กรุงศรี:</b> 803-931-9819 | 🩷 <b>ออมสิน:</b> 020-409-437-819<br>
                             <span class="text-muted">* โอนแล้วส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</span>
+                        </div>
+                    </div>
+
+                    <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
+                    <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
+                        <div class="form-check d-inline-block m-0">
+                            <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
+                            <label class="form-check-label fw-bold text-success" style="font-size: 0.85rem;" for="selectedAdvanceChk">
+                                แจ้งยอดพรุ่งนี้
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -1763,7 +1772,7 @@ def check_orphaned_payments():
 
     content = f"""
     <div class="card p-4 shadow-sm border-danger">
-        <h4 class="mb-3 text-danger fw-bold">🗑️️ ตรวจสอบประวัติการชำระเงินที่ตกค้าง (ไม่มีบิลหลักรองรับ)</h4>
+        <h4 class="mb-3 text-danger fw-bold">🗑 ตรวจสอบประวัติการชำระเงินที่ตกค้าง (ไม่มีบิลหลักรองรับ)</h4>
         <p class="text-muted">รายการเหล่านี้คือประวัติการจ่ายเงินที่ตัวบิลหลักถูกลบออกจากระบบไปแล้ว แต่ประวัติด้านในยังค้างอยู่</p>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
