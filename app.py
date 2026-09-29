@@ -274,7 +274,6 @@ BASE_LAYOUT = """
         document.body.style.paddingRight = '';
     }
 
-    // ฟังก์ชันคำนวณและเปิด Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
     function openSelectedBillsModal() {
         let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
         if (checkboxes.length === 0) {
@@ -294,7 +293,6 @@ BASE_LAYOUT = """
         myModal.show();
     }
 
-    // 📋 ฟังก์ชันคัดลอกข้อความบิลเดี่ยวส่งแชททันที
     function copyBillText(customerName, typeName, totalAmtStr) {
         let textToCopy = `🔱 แจ้งยอดชำระ - ทรัพย์ล้น.com 🔱\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
@@ -312,7 +310,6 @@ BASE_LAYOUT = """
         });
     }
 
-    // 📋 ฟังก์ชันคัดลอกข้อความบิลรวมส่งแชททันที
     function copySelectedBillsText(customerName) {
         let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
         if (checkboxes.length === 0) {
@@ -674,7 +671,6 @@ def index():
             </tr>
             """
 
-            # Modal สำหรับชำระเงิน (บน Dashboard)
             modals_html += f"""
             <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
@@ -767,7 +763,6 @@ def index():
             view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
 
         content = f"""
-        <!-- 4 กล่องสรุป -->
         <div class="row mb-4">
             <div class="col-md-3 mb-3 mb-md-0">
                 <div class="card p-3 shadow-sm text-white h-100" style="background: linear-gradient(135deg, #d97706, #f59e0b); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#debtModal" title="คลิกเพื่อเช็กรายละเอียด">
@@ -795,7 +790,6 @@ def index():
             </div>
         </div>
 
-        <!-- สถานะกระเป๋าเงินจริงในมือถือ -->
         <div class="card p-3 mb-4 shadow-sm border-warning bg-white">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
@@ -848,7 +842,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal โยกเงิน -->
         <div class="modal fade" id="transferBankModal" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-primary">
@@ -892,7 +885,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal ปรับยอดเงิน -->
         <div class="modal fade" id="adjustBankModal" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
@@ -924,7 +916,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal ถอนเงิน -->
         <div class="modal fade" id="withdrawModal" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content border-danger">
@@ -960,7 +951,6 @@ def index():
             </div>
         </div>
 
-        <!-- ฟอร์มเพิ่มรายการใหม่ -->
         <div class="card p-4 shadow-sm mb-4 border-warning">
             <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
             <form method="POST" class="row g-3">
@@ -1042,7 +1032,6 @@ def index():
             </form>
         </div>
 
-        <!-- สรุปผลงานวันนี้ -->
         <div class="row mb-4">
             <div class="col-md-6 mb-3">
                 <div class="card p-3 shadow-sm text-white border-success" style="background: linear-gradient(135deg, #198754, #20c997); cursor: pointer;" data-bs-toggle="modal" data-bs-target="#todayHistoryModal" title="คลิกเพื่อดูรายละเอียด">
@@ -1068,7 +1057,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal ยอดเก็บสด -->
         <div class="modal fade" id="todayHistoryModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-success">
@@ -1091,7 +1079,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal ธุรกรรมวันนี้ -->
         <div class="modal fade" id="todayActionsModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-info">
@@ -1124,7 +1111,6 @@ def index():
             </div>
         </div>
 
-        <!-- ตารางรายการทวงวันนี้ -->
         <div class="card p-4 shadow-sm border-warning mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -1164,7 +1150,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal ยอดค้างเก่า -->
         <div class="modal fade" id="debtModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-warning">
@@ -1185,7 +1170,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal เงินต้นคงค้าง -->
         <div class="modal fade" id="principalModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-danger">
@@ -1206,7 +1190,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modal กำไรสะสม -->
         <div class="modal fade" id="profitModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content border-success">
@@ -1374,7 +1357,6 @@ def customer_details(cust_name):
         </tr>
         """
         
-        # Modal จัดการยอด
         modals_html += f"""
         <div class="modal fade" id="payModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1439,8 +1421,9 @@ def customer_details(cust_name):
         </div>
         """
 
-        # Modal ออกบิลเดี่ยว (เปลี่ยนปุ่มโหลดเป็นไฟล์ภาพ JPEG)
         single_bill_total_str = f"{(tx.principal + tx.accumulated_interest):,.2f} บาท"
+        
+        # เปลี่ยนชื่อปุ่มดาวน์โหลดเป็น "📥 โหลดบิล" ที่นี่ครับ
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1482,7 +1465,7 @@ def customer_details(cust_name):
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-primary btn-sm fw-bold px-3" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
-                            <a href="/download_bill_jpeg/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลดรูป JPEG</a>
+                            <a href="/download_bill_jpeg/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลดบิล</a>
                         </div>
                     </div>
                 </div>
@@ -1490,7 +1473,6 @@ def customer_details(cust_name):
         </div>
         """
 
-    # Modal ออกบิลรวมเฉพาะบิลที่ติ๊กเลือก
     modals_html += f"""
     <div class="modal fade" id="selectedBillsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
@@ -1572,13 +1554,11 @@ def download_bill_jpeg(tx_id):
     calculate_tx_values(tx)
     total_amt = tx.principal + tx.accumulated_interest
 
-    # สร้างภาพ JPEG ขนาดกะทัดรัด (กว้าง 600px)
     img_width = 600
     img_height = 800
-    image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240)) # สีพื้นหลังครีมสว่าง
+    image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240))
     draw = ImageDraw.Draw(image)
 
-    # โหลดฟอนต์ (ใช้ฟอนต์มาตรฐานหรือฟอนต์ระบบ)
     try:
         font_title = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
         font_header = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
@@ -1587,16 +1567,13 @@ def download_bill_jpeg(tx_id):
     except:
         font_title = font_header = font_body = font_bold = ImageFont.load_default()
 
-    # วาดกรอบขอบใบเสร็จ
     draw.rectangle([20, 20, img_width - 20, img_height - 20], outline=(212, 175, 55), width=3)
 
-    # ข้อความหัวบิล
     draw.text((img_width / 2, 45), "🔱 ทรัพย์ล้น.com 🔱", fill=(179, 0, 0), font=font_title, anchor="mm")
     draw.text((img_width / 2, 75), "ใบแจ้งยอดชำระเงิน", fill=(100, 100, 100), font=font_header, anchor="mm")
     
     draw.line([50, 100, img_width - 50, 100], fill=(212, 175, 55), width=2)
 
-    # ข้อมูลลูกค้า
     y_offset = 120
     draw.text((50, y_offset), f"📅 วันที่ออกบิล: {get_thai_today().strftime('%d/%m/%Y')}", fill=(50, 50, 50), font=font_body)
     y_offset += 35
@@ -1605,13 +1582,11 @@ def download_bill_jpeg(tx_id):
     draw.text((50, y_offset), f"📋 ประเภทบัญชี: {tx.type}", fill=(50, 50, 50), font=font_body)
     
     y_offset += 50
-    # กล่องยอดเงินรวม
     draw.rectangle([50, y_offset, img_width - 50, y_offset + 90], fill=(255, 245, 230), outline=(212, 175, 55))
     draw.text((img_width / 2, y_offset + 25), "ยอดรวมสุทธิที่ต้องชำระ", fill=(100, 100, 100), font=font_body, anchor="mm")
     draw.text((img_width / 2, y_offset + 60), f"{total_amt:,.2f} บาท", fill=(0, 128, 0), font=font_title, anchor="mm")
 
     y_offset += 120
-    # ดึง QR Code จาก GitHub มาแปะในภาพ
     try:
         qr_url = "https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg"
         req = urllib.request.Request(qr_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -1632,7 +1607,6 @@ def download_bill_jpeg(tx_id):
     y_offset += 25
     draw.text((img_width / 2, y_offset), "* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ 🙏", fill=(150, 50, 50), font=font_body, anchor="mm")
 
-    # บันทึกเป็นไฟล์ภาพ JPEG ส่งให้ผู้ใช้ดาวน์โหลดทันที
     output = io.BytesIO()
     image.save(output, format='JPEG', quality=95)
     output.seek(0)
