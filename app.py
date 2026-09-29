@@ -331,8 +331,7 @@ BASE_LAYOUT = """
             titleHeader = "🔱 ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้ - ทรัพย์ล้น.com 🔱";
         }
 
-        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
-        document.getElementById('selectedBillsTypes').innerText = Array.from(typesSet).join(', ');
+        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล';
         document.getElementById('selectedBillsTotalAmount').innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
         document.getElementById('selectedBillTitleDisplay').innerText = titleHeader;
     }
@@ -1505,13 +1504,13 @@ def customer_details(cust_name):
                             </div>
                         </div>
 
-                        <!-- 🌟 จุดเน้นที่ 1: ยอดรวมที่ต้องชำระ (เด่นชัดที่สุด) -->
+                        <!-- 🌟 ยอดรวมสุทธิ -->
                         <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
                             <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมที่ต้องชำระสุทธิ</span>
                             <h3 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h3>
                         </div>
 
-                        <!-- 🌟 จุดเน้นที่ 2: QR Code พร้อมเพย์ และช่องทางโอนเงิน -->
+                        <!-- 🌟 QR Code พร้อมเพย์ -->
                         <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
                             <div class="bg-light p-1 d-inline-block rounded border mb-1">
                                 <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1554,13 +1553,13 @@ def customer_details(cust_name):
                         </div>
                     </div>
 
-                    <!-- 🌟 จุดเน้นที่ 1: ยอดรวมสุทธิทุกบิล (เด่นชัดที่สุด) -->
+                    <!-- 🌟 ยอดรวมสุทธิทุกบิล -->
                     <div class="card p-2 mb-1 border-success bg-white text-center shadow-sm">
                         <span class="text-muted" style="font-size: 0.72rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
                         <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
 
-                    <!-- 🌟 จุดเน้นที่ 2: QR Code พร้อมเพย์ และช่องทางโอนเงิน -->
+                    <!-- 🌟 QR Code พร้อมเพย์ -->
                     <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-1">
                         <div class="bg-light p-1 d-inline-block rounded border mb-1">
                             <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1764,7 +1763,7 @@ def check_orphaned_payments():
 
     content = f"""
     <div class="card p-4 shadow-sm border-danger">
-        <h4 class="mb-3 text-danger fw-bold">🗑️ ตรวจสอบประวัติการชำระเงินที่ตกค้าง (ไม่มีบิลหลักรองรับ)</h4>
+        <h4 class="mb-3 text-danger fw-bold">🗑️️ ตรวจสอบประวัติการชำระเงินที่ตกค้าง (ไม่มีบิลหลักรองรับ)</h4>
         <p class="text-muted">รายการเหล่านี้คือประวัติการจ่ายเงินที่ตัวบิลหลักถูกลบออกจากระบบไปแล้ว แต่ประวัติด้านในยังค้างอยู่</p>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
