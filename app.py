@@ -118,10 +118,10 @@ BASE_LAYOUT = """
         .btn-success-light { background-color: #28a745; border-color: #28a745; color: #fff; font-weight: 600; }
         .btn-success-light:hover { background-color: #218838; border-color: #1e7e34; color: #fff; }
 
-        /* จัดการความสูงและระบบเลื่อนของ Modal ให้พอดีจอและไม่บังปุ่ม */
-        .modal-dialog-scrollable { max-height: calc(100vh - 3.5rem); }
-        .modal-dialog-scrollable .modal-content { max-height: calc(100vh - 3.5rem); display: flex; flex-direction: column; }
-        .modal-body { overflow-y: auto; flex: 1 1 auto; }
+        /* ปรับแต่ง Modal ให้พอดีกับหน้าจอมือถือและไม่บังปุ่มด้านล่าง */
+        .modal-dialog { max-height: 90vh; margin: 1.5vh auto; }
+        .modal-dialog-scrollable .modal-content { max-height: 88vh; display: flex; flex-direction: column; }
+        .modal-body { overflow-y: auto; flex: 1 1 auto; padding: 12px 16px !important; }
 
         .table-scroll-container {
             max-height: 600px;
@@ -138,12 +138,13 @@ BASE_LAYOUT = """
         }
 
         .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-responsive::-webkit-scrollbar { height: 10px; width: 10px; }
+        .table-responsive::-webkit-scrollbar { height: 8px; width: 8px; }
         .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 6px; }
         .table-responsive::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 6px; }
 
         @media (max-width: 768px) {
-            .modal-dialog { margin: 10px; max-width: calc(100% - 20px); }
+            .modal-dialog { margin: 8px; max-width: calc(100% - 16px); max-height: 94vh; }
+            .modal-dialog-scrollable .modal-content { max-height: 92vh; }
         }
 
         @media (max-width: 992px) {
@@ -202,20 +203,20 @@ BASE_LAYOUT = """
 
     <!-- Modal นำเข้าข้อมูล -->
     <div class="modal fade" id="importModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <form action="/import_data" method="POST" enctype="multipart/form-data">
-                    <div class="modal-header bg-info text-dark">
-                        <h5 class="modal-title fw-bold">📤 นำเข้าข้อมูลสำรอง (Restore CSV)</h5>
+                    <div class="modal-header bg-info text-dark py-2">
+                        <h5 class="modal-title fw-bold fs-6">📤 นำเข้าข้อมูลสำรอง (Restore CSV)</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <p class="text-muted small">เลือกไฟล์ CSV ที่เคยสำรองข้อมูลไว้เพื่อดึงข้อมูลกลับเข้าสู่ระบบ</p>
-                        <div class="mb-3"><input type="file" name="file" class="form-control" accept=".csv" required></div>
+                        <div class="mb-3"><input type="file" name="file" class="form-control form-control-sm" accept=".csv" required></div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-                        <button type="submit" class="btn btn-info fw-bold" onclick="return confirm('ยืนยันการนำเข้าข้อมูล?')">อัปโหลดและกู้คืน</button>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" class="btn btn-info btn-sm fw-bold" onclick="return confirm('ยืนยันการนำเข้าข้อมูล?')">อัปโหลดและกู้คืน</button>
                     </div>
                 </form>
             </div>
@@ -286,11 +287,15 @@ BASE_LAYOUT = """
         }
 
         let totalAmt = 0;
+        let typesSet = new Set();
         checkboxes.forEach(chk => {
             totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+            let tName = chk.getAttribute('data-type');
+            if (tName) typesSet.add(tName);
         });
 
         document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล (รวมชำระ)';
+        document.getElementById('selectedBillsTypes').innerText = Array.from(typesSet).join(', ');
         document.getElementById('selectedBillsTotalAmount').innerText = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
         let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
@@ -321,14 +326,18 @@ BASE_LAYOUT = """
             return;
         }
         let totalAmt = 0;
+        let typesSet = new Set();
         checkboxes.forEach(chk => {
             totalAmt += parseFloat(chk.getAttribute('data-amount') || 0);
+            let tName = chk.getAttribute('data-type');
+            if (tName) typesSet.add(tName);
         });
         let formattedTotal = totalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        let typesStr = Array.from(typesSet).join(', ');
 
         let textToCopy = `🔱 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com 🔱\\n` +
                          `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 รวมบิลทั้งหมด: ${checkboxes.length} บิล\\n` +
+                         `📋 รายการ: ${typesStr} (${checkboxes.length} บิล)\\n` +
                          `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
                          `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
                          `- กรุงศรีอยุธยา: 803-931-9819\\n` +
@@ -955,7 +964,7 @@ def index():
             </div>
         </div>
 
-        <div class="card p-4 shadow-sm mb-4 border-warning">
+        <div class="card p-4 shadow-sm border-warning mb-4">
             <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
             <form method="POST" class="row g-3">
                 <div class="col-md-3">
@@ -1336,7 +1345,7 @@ def customer_details(cust_name):
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         closed_date_str = tx.closed_date.strftime('%Y-%m-%d') if tx.closed_date else ''
 
-        checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{tx.principal + tx.accumulated_interest}" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
+        checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{tx.principal + tx.accumulated_interest}" data-type="{tx.type}" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
         rows += f"""
         <tr>
@@ -1435,41 +1444,38 @@ def customer_details(cust_name):
                         <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body bg-light p-4">
-                        <div class="text-center mb-3 border-bottom pb-2">
-                            <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
-                            <p class="text-muted small mb-0">ใบแจ้งยอดชำระเงิน / สแกนจ่ายผ่าน QR Code</p>
+                    <div class="modal-body bg-light p-3">
+                        <div class="text-center mb-2 border-bottom pb-2">
+                            <h5 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h5>
+                            <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระเงิน / สแกนจ่ายผ่าน QR Code</p>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-2 small">
                             <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                             <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{tx.customer_name}</span></p>
-                            <p class="mb-1"><b>📋 ประเภท:</b> <span class="badge bg-secondary">{tx.type}</span></p>
+                            <p class="mb-1"><b>📋 รายการ:</b> <span class="badge bg-secondary">{tx.type}</span></p>
                         </div>
-                        <div class="card p-3 mb-3 border-warning bg-white text-center">
-                            <span class="text-muted small mb-1">ยอดรวมที่ต้องชำระรายการนี้</span>
-                            <h3 class="text-success fw-bold mb-0">{single_bill_total_str}</h3>
+                        <div class="card p-2 mb-2 border-warning bg-white text-center">
+                            <span class="text-muted small mb-1" style="font-size: 0.75rem;">ยอดรวมที่ต้องชำระรายการนี้</span>
+                            <h4 class="text-success fw-bold mb-0">{single_bill_total_str}</h4>
                         </div>
-                        <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
-                            <p class="fw-bold text-success mb-2">📱 สแกน QR Code เพื่อชำระเงิน</p>
-                            <div class="bg-light p-2 d-inline-block rounded border mb-2">
-                                <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 140px; height: 140px; object-fit: contain;">
+                        <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
+                            <p class="fw-bold text-success mb-1" style="font-size: 0.85rem;">📱 สแกน QR Code เพื่อชำระเงิน</p>
+                            <div class="bg-light p-1 d-inline-block rounded border mb-1">
+                                <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 110px; height: 110px; object-fit: contain;">
                             </div>
-                            <p class="small text-muted mb-1">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
-                            <div class="text-secondary small mt-1 pt-1 border-top">
+                            <p class="small text-muted mb-0" style="font-size: 0.75rem;">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
+                            <div class="text-secondary small mt-1 pt-1 border-top" style="font-size: 0.72rem;">
                                 <span class="d-inline-block mx-1">🟡 กรุงศรี: 803-931-9819</span> | 
                                 <span class="d-inline-block mx-1">🩷 ออมสิน: 020-409-437-819</span>
                             </div>
                         </div>
-                        <div class="text-center mt-3">
-                            <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                        <div class="text-center">
+                            <small class="text-muted" style="font-size: 0.72rem;">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                         </div>
                     </div>
                     <div class="modal-footer bg-white py-2 justify-content-between">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-primary btn-sm fw-bold px-3" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
-                            <a href="/download_bill_jpeg/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลดบิล</a>
-                        </div>
+                        <button type="button" class="btn btn-primary btn-sm fw-bold px-3" style="font-size: 0.85rem;" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
                     </div>
                 </div>
             </div>
@@ -1484,38 +1490,39 @@ def customer_details(cust_name):
                     <h5 class="modal-title fw-bold fs-6">📄 ใบแจ้งยอดชำระรวม - ทรัพย์ล้น.com</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body bg-light p-4">
-                    <div class="text-center mb-3 border-bottom pb-2">
-                        <h4 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h4>
-                        <p class="text-muted small mb-0">ใบแจ้งยอดชำระรวม / สแกนจ่ายผ่าน QR Code</p>
+                <div class="modal-body bg-light p-3">
+                    <div class="text-center mb-2 border-bottom pb-2">
+                        <h5 class="text-danger fw-bold mb-1">🔱 ทรัพย์ล้น.com 🔱</h5>
+                        <p class="text-muted small mb-0" style="font-size: 0.8rem;">ใบแจ้งยอดชำระรวม / สแกนจ่ายผ่าน QR Code</p>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-2 small">
                         <p class="mb-1"><b>📅 วันที่ออกบิล:</b> {get_thai_today().strftime('%d/%m/%Y')}</p>
                         <p class="mb-1"><b>👤 ชื่อลูกค้า:</b> <span class="text-danger fw-bold">{cust_name}</span></p>
                         <p class="mb-1"><b>📋 รวมบิลทั้งหมด:</b> <span class="badge bg-danger" id="selectedBillsCount">0 บิล (รวมชำระ)</span></p>
+                        <p class="mb-1"><b>📝 รายการ:</b> <span class="text-dark fw-bold" id="selectedBillsTypes">-</span></p>
                     </div>
-                    <div class="card p-3 mb-3 border-success bg-white text-center shadow-sm">
-                        <span class="text-muted small mb-1">ยอดรวมสุทธิที่ต้องชำระ (รวมทุกบิลที่เลือก)</span>
-                        <h2 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h2>
+                    <div class="card p-2 mb-2 border-success bg-white text-center shadow-sm">
+                        <span class="text-muted small mb-1" style="font-size: 0.75rem;">ยอดรวมสุทธิที่ต้องชำระ (รวมทุกบิลที่เลือก)</span>
+                        <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
-                    <div class="p-3 rounded border border-success bg-white text-center shadow-sm mb-3">
-                        <p class="fw-bold text-success mb-2">📱 สแกน QR Code เพื่อชำระเงินรวม</p>
-                        <div class="bg-light p-2 d-inline-block rounded border mb-2">
-                            <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 140px; height: 140px; object-fit: contain;">
+                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
+                        <p class="fw-bold text-success mb-1" style="font-size: 0.85rem;">📱 สแกน QR Code เพื่อชำระเงินรวม</p>
+                        <div class="bg-light p-1 d-inline-block rounded border mb-1">
+                            <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 110px; height: 110px; object-fit: contain;">
                         </div>
-                        <p class="small text-muted mb-1">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
-                        <div class="text-secondary small mt-1 pt-1 border-top">
+                        <p class="small text-muted mb-0" style="font-size: 0.75rem;">พร้อมเพย์ / บัญชีกลาง: <b>ทรัพย์ล้น.com</b></p>
+                        <div class="text-secondary small mt-1 pt-1 border-top" style="font-size: 0.72rem;">
                             <span class="d-inline-block mx-1">🟡 กรุงศรี: 803-931-9819</span> | 
                             <span class="d-inline-block mx-1">🩷 ออมสิน: 020-409-437-819</span>
                         </div>
                     </div>
-                    <div class="text-center mt-3">
-                        <small class="text-muted">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
+                    <div class="text-center">
+                        <small class="text-muted" style="font-size: 0.72rem;">* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</small>
                     </div>
                 </div>
                 <div class="modal-footer bg-white py-2 justify-content-between">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" onclick="copySelectedBillsText('{cust_name}')">📋 คัดลอกข้อความส่งแชท</button>
+                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" style="font-size: 0.85rem;" onclick="copySelectedBillsText('{cust_name}')">📋 คัดลอกข้อความส่งแชท</button>
                 </div>
             </div>
         </div>
@@ -1549,90 +1556,6 @@ def customer_details(cust_name):
     """
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า {cust_name}{% endblock %}', f'รายละเอียดลูกค้า {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=f"ลูกค้า: {cust_name}", page="dashboard")
-
-@app.route('/download_bill_jpeg/<int:tx_id>')
-def download_bill_jpeg(tx_id):
-    if 'admin' not in session: return redirect(url_for('login'))
-    tx = Transaction.query.get_or_404(tx_id)
-    calculate_tx_values(tx)
-    total_amt = tx.principal + tx.accumulated_interest
-
-    img_width = 600
-    img_height = 800
-    image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240))
-    draw = ImageDraw.Draw(image)
-
-    font_paths = [
-        "Kanit-Bold.ttf", "Kanit-Regular.ttf",
-        "Prompt-Bold.ttf", "Prompt-Regular.ttf", 
-        "fonts/Kanit-Bold.ttf", "fonts/Kanit-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
-    ]
-    
-    font_title_path = font_body_path = None
-    for path in font_paths:
-        if os.path.exists(path):
-            font_title_path = font_body_path = path
-            break
-
-    try:
-        if font_title_path:
-            font_title = ImageFont.truetype(font_title_path, 24)
-            font_header = ImageFont.truetype(font_title_path, 18)
-            font_body = ImageFont.truetype(font_body_path, 16)
-            font_bold = ImageFont.truetype(font_title_path, 16)
-        else:
-            font_title = font_header = font_body = font_bold = ImageFont.load_default()
-    except:
-        font_title = font_header = font_body = font_bold = ImageFont.load_default()
-
-    draw.rectangle([20, 20, img_width - 20, img_height - 20], outline=(212, 175, 55), width=3)
-
-    draw.text((img_width / 2, 45), "🔱 ทรัพย์ล้น.com 🔱", fill=(179, 0, 0), font=font_title, anchor="mm")
-    draw.text((img_width / 2, 75), "ใบแจ้งยอดชำระเงิน", fill=(100, 100, 100), font=font_header, anchor="mm")
-    
-    draw.line([50, 100, img_width - 50, 100], fill=(212, 175, 55), width=2)
-
-    y_offset = 120
-    draw.text((50, y_offset), f"📅 วันที่ออกบิล: {get_thai_today().strftime('%d/%m/%Y')}", fill=(50, 50, 50), font=font_body)
-    y_offset += 35
-    draw.text((50, y_offset), f"👤 ชื่อลูกค้า: {tx.customer_name}", fill=(50, 50, 50), font=font_bold)
-    y_offset += 35
-    draw.text((50, y_offset), f"📋 ประเภทบัญชี: {tx.type}", fill=(50, 50, 50), font=font_body)
-    
-    y_offset += 50
-    draw.rectangle([50, y_offset, img_width - 50, y_offset + 90], fill=(255, 245, 230), outline=(212, 175, 55))
-    draw.text((img_width / 2, y_offset + 25), "ยอดรวมสุทธิที่ต้องชำระ", fill=(100, 100, 100), font=font_body, anchor="mm")
-    draw.text((img_width / 2, y_offset + 60), f"{total_amt:,.2f} บาท", fill=(0, 128, 0), font=font_title, anchor="mm")
-
-    y_offset += 120
-    try:
-        qr_url = "https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg"
-        req = urllib.request.Request(qr_url, headers={'User-Agent': 'Mozilla/5.0'})
-        qr_stream = io.BytesIO(urllib.request.urlopen(req).read())
-        qr_img = Image.open(qr_stream).resize((130, 130))
-        image.paste(qr_img, (int((img_width - 130) / 2), y_offset))
-    except Exception as e:
-        print("QR load error:", e)
-
-    y_offset += 145
-    draw.text((img_width / 2, y_offset), "สแกน QR Code พร้อมเพย์: ทรัพย์ล้น.com", fill=(50, 50, 50), font=font_bold, anchor="mm")
-    y_offset += 25
-    draw.text((img_width / 2, y_offset), "🟡 กรุงศรี: 803-931-9819 | 🩷 ออมสิน: 020-409-437-819", fill=(100, 100, 100), font=font_body, anchor="mm")
-
-    y_offset += 45
-    draw.line([50, y_offset, img_width - 50, y_offset], fill=(212, 175, 55), width=1)
-    
-    y_offset += 25
-    draw.text((img_width / 2, y_offset), "* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ 🙏", fill=(150, 50, 50), font=font_body, anchor="mm")
-
-    output = io.BytesIO()
-    image.save(output, format='JPEG', quality=95)
-    output.seek(0)
-    filename = f"bill_{tx.customer_name}_{get_thai_today().strftime('%Y%m%d')}.jpg"
-    return send_file(output, mimetype='image/jpeg', as_attachment=True, download_name=filename)
 
 @app.route('/monthly_summary')
 def monthly_summary():
