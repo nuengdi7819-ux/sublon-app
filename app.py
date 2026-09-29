@@ -5,6 +5,8 @@ from collections import defaultdict
 import os
 import io
 import csv
+from PIL import Image, ImageDraw, ImageFont
+import urllib.request
 
 app = Flask(__name__)
 
@@ -1437,7 +1439,7 @@ def customer_details(cust_name):
         </div>
         """
 
-        # Modal ออกบิลเดี่ยว (อัปเดตปุ่มเป็นคำว่า "📥 โหลด PDF" กระทัดรัด)
+        # Modal ออกบิลเดี่ยว (เปลี่ยนปุ่มโหลดเป็นไฟล์ภาพ JPEG)
         single_bill_total_str = f"{(tx.principal + tx.accumulated_interest):,.2f} บาท"
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
@@ -1480,7 +1482,7 @@ def customer_details(cust_name):
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-primary btn-sm fw-bold px-3" onclick="copyBillText('{tx.customer_name}', '{tx.type}', '{single_bill_total_str}')">📋 คัดลอกข้อความส่งแชท</button>
-                            <a href="/download_bill_pdf/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลด PDF</a>
+                            <a href="/download_bill_jpeg/{tx.id}" class="btn btn-success btn-sm fw-bold px-3" target="_blank">📥 โหลดรูป JPEG</a>
                         </div>
                     </div>
                 </div>
@@ -1563,37 +1565,79 @@ def customer_details(cust_name):
     html = BASE_LAYOUT.replace('{% block header %}รายละเอียดลูกค้า {cust_name}{% endblock %}', f'รายละเอียดลูกค้า {cust_name}').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title=f"ลูกค้า: {cust_name}", page="dashboard")
 
-@app.route('/download_bill_pdf/<int:tx_id>')
-def download_bill_pdf(tx_id):
+@app.route('/download_bill_jpeg/<int:tx_id>')
+def download_bill_jpeg(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
     tx = Transaction.query.get_or_404(tx_id)
     calculate_tx_values(tx)
     total_amt = tx.principal + tx.accumulated_interest
 
-    bill_content = f"""=====================================
-      ใบแจ้งยอดชำระ - ทรัพย์ล้น.com
-=====================================
-วันที่ออกบิล: {get_thai_today().strftime('%d/%m/%Y')}
-ชื่อลูกค้า: {tx.customer_name}
-ประเภท: {tx.type}
--------------------------------------
-ยอดเงินต้นคงเหลือ: {tx.principal:,.2f} บาท
-ดอกเบี้ยสะสม: {tx.accumulated_interest:,.2f} บาท
--------------------------------------
-ยอดรวมสุทธิที่ต้องชำระ: {total_amt:,.2f} บาท
-=====================================
-ช่องทางโอนเงิน / พร้อมเพย์:
-- กรุงศรีอยุธยา: 803-931-9819
-- ออมสิน: 020-409-437-819
-- TrueMoney Wallet: 092-923-7819
-=====================================
-* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏
-"""
+    # สร้างภาพ JPEG ขนาดกะทัดรัด (กว้าง 600px)
+    img_width = 600
+    img_height = 800
+    image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240)) # สีพื้นหลังครีมสว่าง
+    draw = ImageDraw.Draw(image)
+
+    # โหลดฟอนต์ (ใช้ฟอนต์มาตรฐานหรือฟอนต์ระบบ)
+    try:
+        font_title = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_header = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+        font_body = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        font_bold = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+    except:
+        font_title = font_header = font_body = font_bold = ImageFont.load_default()
+
+    # วาดกรอบขอบใบเสร็จ
+    draw.rectangle([20, 20, img_width - 20, img_height - 20], outline=(212, 175, 55), width=3)
+
+    # ข้อความหัวบิล
+    draw.text((img_width / 2, 45), "🔱 ทรัพย์ล้น.com 🔱", fill=(179, 0, 0), font=font_title, anchor="mm")
+    draw.text((img_width / 2, 75), "ใบแจ้งยอดชำระเงิน", fill=(100, 100, 100), font=font_header, anchor="mm")
+    
+    draw.line([50, 100, img_width - 50, 100], fill=(212, 175, 55), width=2)
+
+    # ข้อมูลลูกค้า
+    y_offset = 120
+    draw.text((50, y_offset), f"📅 วันที่ออกบิล: {get_thai_today().strftime('%d/%m/%Y')}", fill=(50, 50, 50), font=font_body)
+    y_offset += 35
+    draw.text((50, y_offset), f"👤 ชื่อลูกค้า: {tx.customer_name}", fill=(50, 50, 50), font=font_bold)
+    y_offset += 35
+    draw.text((50, y_offset), f"📋 ประเภทบัญชี: {tx.type}", fill=(50, 50, 50), font=font_body)
+    
+    y_offset += 50
+    # กล่องยอดเงินรวม
+    draw.rectangle([50, y_offset, img_width - 50, y_offset + 90], fill=(255, 245, 230), outline=(212, 175, 55))
+    draw.text((img_width / 2, y_offset + 25), "ยอดรวมสุทธิที่ต้องชำระ", fill=(100, 100, 100), font=font_body, anchor="mm")
+    draw.text((img_width / 2, y_offset + 60), f"{total_amt:,.2f} บาท", fill=(0, 128, 0), font=font_title, anchor="mm")
+
+    y_offset += 120
+    # ดึง QR Code จาก GitHub มาแปะในภาพ
+    try:
+        qr_url = "https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg"
+        req = urllib.request.Request(qr_url, headers={'User-Agent': 'Mozilla/5.0'})
+        qr_stream = io.BytesIO(urllib.request.urlopen(req).read())
+        qr_img = Image.open(qr_stream).resize((130, 130))
+        image.paste(qr_img, (int((img_width - 130) / 2), y_offset))
+    except Exception as e:
+        print("QR load error:", e)
+
+    y_offset += 145
+    draw.text((img_width / 2, y_offset), "สแกน QR Code พร้อมเพย์: ทรัพย์ล้น.com", fill=(50, 50, 50), font=font_bold, anchor="mm")
+    y_offset += 25
+    draw.text((img_width / 2, y_offset), "🟡 กรุงศรี: 803-931-9819 | 🩷 ออมสิน: 020-409-437-819", fill=(100, 100, 100), font=font_body, anchor="mm")
+
+    y_offset += 45
+    draw.line([50, y_offset, img_width - 50, y_offset], fill=(212, 175, 55), width=1)
+    
+    y_offset += 25
+    draw.text((img_width / 2, y_offset), "* โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ 🙏", fill=(150, 50, 50), font=font_body, anchor="mm")
+
+    # บันทึกเป็นไฟล์ภาพ JPEG ส่งให้ผู้ใช้ดาวน์โหลดทันที
     output = io.BytesIO()
-    output.write(bill_content.encode('utf-8-sig'))
+    image.save(output, format='JPEG', quality=95)
     output.seek(0)
-    filename = f"bill_{tx.customer_name}_{get_thai_today().strftime('%Y%m%d')}.txt"
-    return send_file(output, mimetype='text/plain', as_attachment=True, download_name=filename)
+    filename = f"bill_{tx.customer_name}_{get_thai_today().strftime('%Y%m%d')}.jpg"
+    return send_file(output, mimetype='image/jpeg', as_attachment=True, download_name=filename)
 
 @app.route('/monthly_summary')
 def monthly_summary():
