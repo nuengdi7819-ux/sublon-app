@@ -1423,7 +1423,6 @@ def customer_details(cust_name):
 
         single_bill_total_str = f"{(tx.principal + tx.accumulated_interest):,.2f} บาท"
         
-        # เปลี่ยนชื่อปุ่มดาวน์โหลดเป็น "📥 โหลดบิล" ที่นี่ครับ
         modals_html += f"""
         <div class="modal fade" id="billModal{tx.id}" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
@@ -1559,11 +1558,29 @@ def download_bill_jpeg(tx_id):
     image = Image.new('RGB', (img_width, img_height), color=(255, 252, 240))
     draw = ImageDraw.Draw(image)
 
+    # ค้นหาฟอนต์ภาษาไทยในโปรเจกต์ (รองรับทั้งไฟล์ .ttf ที่อัปโหลด หรือฟอนต์ระบบ Linux)
+    font_paths = [
+        "Prompt-Bold.ttf", "Prompt-Regular.ttf", 
+        "fonts/Prompt-Bold.ttf", "fonts/Prompt-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansThai-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+    ]
+    
+    font_title_path = font_body_path = None
+    for path in font_paths:
+        if os.path.exists(path):
+            font_title_path = font_body_path = path
+            break
+
     try:
-        font_title = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_header = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-        font_body = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-        font_bold = ImageFont.truetype("usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        if font_title_path:
+            font_title = ImageFont.truetype(font_title_path, 24)
+            font_header = ImageFont.truetype(font_title_path, 18)
+            font_body = ImageFont.truetype(font_body_path, 16)
+            font_bold = ImageFont.truetype(font_title_path, 16)
+        else:
+            font_title = font_header = font_body = font_bold = ImageFont.load_default()
     except:
         font_title = font_header = font_body = font_bold = ImageFont.load_default()
 
