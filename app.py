@@ -277,7 +277,7 @@ BASE_LAYOUT = """
     function updateBillModalCalc(txId, baseAmt, dailyInt) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let displayTitle = "ใบแจ้งยอดชำระ";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         
         if (isAdvance) {
             finalAmt += dailyInt;
@@ -291,7 +291,7 @@ BASE_LAYOUT = """
     function copyBillText(customerName, typeName, baseAmt, dailyInt, txId) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let titleHeader = "ใบแจ้งยอดชำระ";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         let advanceNote = "";
         
         if (isAdvance) {
@@ -334,7 +334,7 @@ BASE_LAYOUT = """
         });
 
         let finalTotal = totalAmt;
-        let titleHeader = "ใบแจ้งยอดชำระรวม";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         
         if (isAdvance) {
             finalTotal += totalDailyInt;
@@ -378,7 +378,7 @@ BASE_LAYOUT = """
         });
         
         let finalTotal = totalAmt;
-        let titleHeader = "ใบแจ้งยอดชำระรวม";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         let advanceNote = "";
         
         if (isAdvance) {
