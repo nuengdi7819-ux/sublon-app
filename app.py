@@ -1506,7 +1506,7 @@ def customer_details(cust_name):
                     </div>
                     <div class="modal-body bg-light p-2">
                         <div class="text-center mb-1">
-                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">ใบแจ้งยอดชำระ</h6>
+                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h6>
                             <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
 
