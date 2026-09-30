@@ -277,7 +277,7 @@ BASE_LAYOUT = """
     function updateBillModalCalc(txId, baseAmt, dailyInt) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let displayTitle = "ใบแจ้งยอดชำระ";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         
         if (isAdvance) {
             finalAmt += dailyInt;
@@ -291,7 +291,7 @@ BASE_LAYOUT = """
     function copyBillText(customerName, typeName, baseAmt, dailyInt, txId) {
         let isAdvance = document.getElementById('advanceChk' + txId).checked;
         let finalAmt = baseAmt;
-        let titleHeader = "ใบแจ้งยอดชำระ";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         let advanceNote = "";
         
         if (isAdvance) {
@@ -334,7 +334,7 @@ BASE_LAYOUT = """
         });
 
         let finalTotal = totalAmt;
-        let titleHeader = "ใบแจ้งยอดชำระรวม";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         
         if (isAdvance) {
             finalTotal += totalDailyInt;
@@ -378,7 +378,7 @@ BASE_LAYOUT = """
         });
         
         let finalTotal = totalAmt;
-        let titleHeader = "ใบแจ้งยอดชำระรวม";
+        let titleHeader = "📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com";
         let advanceNote = "";
         
         if (isAdvance) {
@@ -1506,7 +1506,7 @@ def customer_details(cust_name):
                     </div>
                     <div class="modal-body bg-light p-2">
                         <div class="text-center mb-1">
-                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">ใบแจ้งยอดชำระ</h6>
+                            <h6 class="text-danger fw-bold mb-0" id="billTitleDisplay{tx.id}">📄 ใบแจ้งยอดชำระ - ทรัพย์ล้น.com</h6>
                             <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
 
