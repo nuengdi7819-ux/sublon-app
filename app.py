@@ -14,6 +14,12 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
+# บังคับ sslmode=require ผ่าน connect_args ป้องกันปัญหา SSL connection
+if DATABASE_URL and "?" not in DATABASE_URL:
+    DATABASE_URL += "?sslmode=require"
+elif DATABASE_URL and "sslmode=" not in DATABASE_URL:
+    DATABASE_URL += "&sslmode=require"
+
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
@@ -23,6 +29,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_recycle": 180,
     "pool_size": 5,
     "max_overflow": 10,
+    "connect_args": {"sslmode": "require"}
 }
 
 db = SQLAlchemy(app)
@@ -639,7 +646,8 @@ def index():
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction:
                     earned = h.principal_reduced + h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else h.interest_paid
-                    h_profit = earned + h.fine_amount - h.discount_amount
+                    # 🛠️ จุดที่แก้ไข: ตัด - h.discount_amount ออก ไม่ให้หักซ้ำซ้อน
+                    h_profit = earned + h.fine_amount 
                     current_month_profit += h_profit
 
                     tx_profit_map[h.transaction_id]['net_earned'] += earned
@@ -652,7 +660,7 @@ def index():
         for tx_id, p_data in tx_profit_map.items():
             tx_ref = Transaction.query.get(tx_id)
             if tx_ref:
-                total_item_profit = p_data['net_earned'] + p_data['fine'] - p_data['discount']
+                total_item_profit = p_data['net_earned'] + p_data['fine']
                 profit_items.append({
                     'customer_name': tx_ref.customer_name,
                     'type': tx_ref.type,
@@ -683,7 +691,7 @@ def index():
         
         profit_card_rows += f"""
         <tr class="table-warning fw-bold">
-            <td colspan="5" class="text-end">รวมกำไรสะสมทั้งระบบ (หักส่วนลดแล้ว):</td>
+            <td colspan="5" class="text-end">รวมกำไรสะสมทั้งระบบ (อิงจากยอดจริง):</td>
             <td colspan="2" class="text-success">{sum_modal_actual_profit:,.2f} บาท</td>
         </tr>
         """
@@ -1306,7 +1314,7 @@ def transfer_bank_money():
             else: db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=transfer_amt))
 
             db.session.add(BankExpenseLog(
-                expense_date=get_thai_today(), account_name=f"{from_acc} ➡️️ {to_acc}",
+                expense_date=get_thai_today(), account_name=f"{from_acc} ➡ {to_acc}",
                 amount=transfer_amt, note=f"[โยกเงินพักบัญชี] {note_text}", admin_name=session.get('admin')
             ))
             db.session.commit()
@@ -1357,7 +1365,7 @@ def withdraw_bank_money():
 def delete_expense(exp_id):
     if 'admin' not in session: return redirect(url_for('login'))
     exp = BankExpenseLog.query.get_or_404(exp_id)
-    if "➡️️" in exp.account_name:
+    if "➡" in exp.account_name:
         parts = exp.account_name.split(" ➡️ ")
         if len(parts) == 2:
             from_acc, to_acc = parts[0], parts[1]
@@ -1502,13 +1510,11 @@ def customer_details(cust_name):
                             <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
 
-                        <!-- 🌟 ยอดรวมสุทธิ (กรอบสีเขียวเข้มบนพื้นหลังสีขาว กระตุ้นการจ่าย) -->
                         <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
                             <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ</span>
                             <h3 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h3>
                         </div>
 
-                        <!-- 🌟 QR Code พร้อมเพย์ -->
                         <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                             <div class="bg-light p-1 d-inline-block rounded border mb-1">
                                 <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1519,7 +1525,6 @@ def customer_details(cust_name):
                             </div>
                         </div>
 
-                        <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
                         <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
                             <div class="form-check d-inline-block m-0">
                                 <input class="form-check-input border-success" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
@@ -1552,13 +1557,11 @@ def customer_details(cust_name):
                         <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{cust_name}</b> | รวม <span class="badge bg-danger" id="selectedBillsCount">0 บิล</span></span>
                     </div>
 
-                    <!-- 🌟 ยอดรวมสุทธิทุกบิล (กรอบสีเขียวเข้มบนพื้นหลังสีขาว) -->
                     <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
                         <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
                         <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
 
-                    <!-- 🌟 QR Code พร้อมเพย์ -->
                     <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                         <div class="bg-light p-1 d-inline-block rounded border mb-1">
                             <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1569,7 +1572,6 @@ def customer_details(cust_name):
                         </div>
                     </div>
 
-                    <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
                     <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
                         <div class="form-check d-inline-block m-0">
                             <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
@@ -1599,7 +1601,7 @@ def customer_details(cust_name):
                 <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
                     📄 ออกบิลรวมที่เลือก
                 </button>
-                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับหน้าหลัก</a>
+                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️️ กลับหน้าหลัก</a>
             </div>
         </div>
         <div class="table-responsive">
@@ -1638,7 +1640,8 @@ def monthly_summary():
         if h.payment_date and h.transaction_id and h.transaction:
             ym_pay = h.payment_date.strftime('%Y-%m')
             earned = h.principal_reduced + h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else h.interest_paid
-            h_profit = earned + h.fine_amount - h.discount_amount
+            # 🛠️ จุดที่แก้ไขในหน้าสรุปรายเดือนด้วยเช่นกัน ไม่หัก discount ซ้ำซ้อน
+            h_profit = earned + h.fine_amount
             monthly_data[ym_pay]['month_profit'] += h_profit
             monthly_data[ym_pay]['count_tx'].add(h.transaction_id)
 
@@ -1755,7 +1758,7 @@ def check_orphaned_payments():
     for h in all_histories:
         if not h.transaction_id or not h.transaction:
             h_interest = h.interest_paid
-            h_profit = h_interest + h.fine_amount - h.discount_amount
+            h_profit = h_interest + h.fine_amount
             p_date_str = h.payment_date.strftime('%d/%m/%Y') if h.payment_date else '-'
             
             orphaned_rows += f"""
