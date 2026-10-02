@@ -545,7 +545,7 @@ def index():
                     Transaction.start_date == thai_today,
                     Transaction.last_payment_date == thai_today
                 )
-            )
+            ).distinct()
 
         pagination = query.order_by(Transaction.customer_name.asc()).paginate(page=page, per_page=per_page, error_out=False)
         transactions = pagination.items
@@ -1718,7 +1718,7 @@ def monthly_details(ym, category):
         if is_in_month:
             target_txs.append(tx)
 
-    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มีนาคม", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
