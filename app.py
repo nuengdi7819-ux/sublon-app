@@ -64,7 +64,6 @@ class Transaction(db.Model):
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
     start_next_day = db.Column(db.Boolean, default=False)
-    is_fixed_interest = db.Column(db.Boolean, default=False)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -420,11 +419,8 @@ def calculate_tx_values(tx):
     tx.days_passed_val = days
     
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
-        if tx.is_fixed_interest:
-            tx.daily_interest = tx.initial_daily_interest
-        else:
-            current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
-            tx.daily_interest = current_daily_interest
+        current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
+        tx.daily_interest = current_daily_interest
     
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
@@ -462,7 +458,6 @@ def index():
             tx_type = request.form.get('type')
             funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
             start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
-            is_fixed_val = True if request.form.get('is_fixed_interest') == 'on' else False
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
@@ -476,7 +471,7 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source, start_next_day=start_next_day_val, is_fixed_interest=is_fixed_val
+                funding_source=funding_source, start_next_day=start_next_day_val
             )
             db.session.add(new_tx)
 
@@ -506,6 +501,9 @@ def index():
     search_query = request.args.get('search', '').strip()
     start_date_str = request.args.get('start_date', '').strip()
     end_date_str = request.args.get('end_date', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+
     thai_today = get_thai_today()
     today_day = thai_today.day
     current_year, current_month = thai_today.year, thai_today.month
@@ -533,30 +531,24 @@ def index():
             if today_day >= 29 or today_day <= 2: current_match_codes.append("2")
 
             all_active_txs = Transaction.query.filter(Transaction.principal > 0).all()
-            scheduled_today = []
+            scheduled_today_ids = []
             for t in all_active_txs:
                 if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
                     saved_codes = t.due_day_of_month.split(',')
                     if any(code in current_match_codes for code in saved_codes):
-                        scheduled_today.append(t)
+                        scheduled_today_ids.append(t.id)
 
-            other_txs = Transaction.query.filter(
-                Transaction.principal > 0,
+            query = query.filter(
                 db.or_(
+                    Transaction.id.in_(scheduled_today_ids) if scheduled_today_ids else False,
                     Transaction.schedule_type == 'จ่ายทุกวัน',
                     Transaction.start_date == thai_today,
                     Transaction.last_payment_date == thai_today
                 )
-            ).all()
+            )
 
-            seen_ids = set()
-            transactions = []
-            for t in scheduled_today + other_txs:
-                if t.id not in seen_ids:
-                    seen_ids.add(t.id)
-                    transactions.append(t)
-        else:
-            transactions = query.order_by(Transaction.customer_name.asc()).all()
+        pagination = query.order_by(Transaction.customer_name.asc()).paginate(page=page, per_page=per_page, error_out=False)
+        transactions = pagination.items
 
         for tx in transactions:
             calculate_tx_values(tx)
@@ -708,7 +700,6 @@ def index():
             start_date_str_fmt = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
             last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
             
-            # 💡 บังคับให้วันที่ปิดยอดแสดงผลเป็นวันปัจจุบัน (thai_today) อัตโนมัติทุกครั้งที่เปิด modal
             closed_date_str = thai_today.strftime('%Y-%m-%d')
 
             schedule_badge = f'<span class="badge bg-dark">{tx.schedule_type}</span>'
@@ -836,6 +827,32 @@ def index():
         else:
             table_title = f"🔔 รายการที่ต้องทวงวันนี้ (ประจำวันที่ {today_day})"
             view_today_btn = '<a href="/all_transactions" class="btn btn-sm btn-outline-danger fw-bold">📂 ดูรายการทั้งหมด</a>'
+
+        pagination_html = ""
+        if pagination.pages > 1:
+            pagination_html += '<nav class="mt-3"><ul class="pagination justify-content-center mb-0">'
+            if pagination.has_prev:
+                prev_url = url_for('index', page=pagination.prev_num, search=search_query, start_date=start_date_str, end_date=end_date_str)
+                pagination_html += f'<li class="page-item"><a class="page-link text-dark" href="{prev_url}">« ก่อนหน้า</a></li>'
+            else:
+                pagination_html += '<li class="page-item disabled"><span class="page-link">« ก่อนหน้า</span></li>'
+                
+            for p_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2):
+                if p_num:
+                    if p_num == pagination.page:
+                        pagination_html += f'<li class="page-item active"><span class="page-link bg-danger border-danger">{p_num}</span></li>'
+                    else:
+                        p_url = url_for('index', page=p_num, search=search_query, start_date=start_date_str, end_date=end_date_str)
+                        pagination_html += f'<li class="page-item"><a class="page-link text-dark" href="{p_url}">{p_num}</a></li>'
+                else:
+                    pagination_html += '<li class="page-item disabled"><span class="page-link">...</span></li>'
+            
+            if pagination.has_next:
+                next_url = url_for('index', page=pagination.next_num, search=search_query, start_date=start_date_str, end_date=end_date_str)
+                pagination_html += f'<li class="page-item"><a class="page-link text-dark" href="{next_url}">ถัดไป »</a></li>'
+            else:
+                pagination_html += '<li class="page-item disabled"><span class="page-link">ถัดไป »</span></li>'
+            pagination_html += '</ul></nav>'
 
         content = f"""
         <div class="row mb-4">
@@ -1099,12 +1116,6 @@ def index():
                             ⌛ เริ่มคิดดอกเบี้ยวันถัดไป (พรุ่งนี้)
                         </label>
                     </div>
-                    <div class="form-check">
-                        <input class="form-check-input border-danger" type="checkbox" name="is_fixed_interest" id="fixedInterestChk">
-                        <label class="form-check-label fw-bold text-danger" for="fixedInterestChk">
-                            📌 ดอกเบี้ยคงที่ (ไม่ลดตามต้น)
-                        </label>
-                    </div>
                 </div>
 
                 <div class="col-md-3 d-flex align-items-end">
@@ -1229,6 +1240,7 @@ def index():
                     <tbody>{rows if rows else "<tr><td colspan='14' class='text-center text-muted'>ไม่มีรายการที่ต้องทวงในวันนี้</td></tr>"}</tbody>
                 </table>
             </div>
+            {pagination_html}
         </div>
 
         <div class="modal fade" id="debtModal" tabindex="-1">
@@ -1417,7 +1429,6 @@ def customer_details(cust_name):
         start_date_str = tx.start_date.strftime('%d/%m/%Y') if tx.start_date else '-'
         last_pay_str = tx.last_payment_date.strftime('%d/%m/%Y') if tx.last_payment_date else '-'
         
-        # 💡 บังคับให้วันที่ปิดยอดในหน้ารายละเอียดลูกค้าแสดงผลเป็นวันปัจจุบัน (thai_today) อัตโนมัติ
         closed_date_str = thai_today.strftime('%Y-%m-%d')
 
         base_bill_amt = tx.principal + tx.accumulated_interest
@@ -1707,7 +1718,7 @@ def monthly_details(ym, category):
         if is_in_month:
             target_txs.append(tx)
 
-    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
@@ -1989,7 +2000,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay', 'IsFixedInterest'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -2001,7 +2012,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day, t.is_fixed_interest
+            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day
         ])
         
     output = io.BytesIO()
@@ -2032,7 +2043,6 @@ def import_data():
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
                 s_next_day = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
-                is_fixed_val = True if str(row.get('IsFixedInterest', '')).lower() in ['true', '1', 'yes'] else False
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -2042,7 +2052,7 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding, start_next_day=s_next_day, is_fixed_interest=is_fixed_val
+                    funding_source=funding, start_next_day=s_next_day
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -2084,10 +2094,7 @@ def update_payment(tx_id):
         days -= 1
     if days < 0: days = 0
         
-    if tx.is_fixed_interest:
-        current_effective_daily = tx.initial_daily_interest
-    else:
-        current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
+    current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
 
     total_acc_interest = (current_effective_daily * days) - tx.paid_interest
     if total_acc_interest < 0: total_acc_interest = 0.0
