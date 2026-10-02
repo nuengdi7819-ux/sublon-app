@@ -64,6 +64,7 @@ class Transaction(db.Model):
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
     start_next_day = db.Column(db.Boolean, default=False)
+    is_fixed_interest = db.Column(db.Boolean, default=False)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -418,9 +419,12 @@ def calculate_tx_values(tx):
     if days < 0: days = 0
     tx.days_passed_val = days
     
-    if tx.original_principal > 0 and tx.initial_daily_interest > 0:
-        current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
-        tx.daily_interest = current_daily_interest
+    if tx.is_fixed_interest:
+        tx.daily_interest = tx.initial_daily_interest
+    else:
+        if tx.original_principal > 0 and tx.initial_daily_interest > 0:
+            current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
+            tx.daily_interest = current_daily_interest
     
     acc = (tx.daily_interest * days) - tx.paid_interest
     tx.accumulated_interest = acc if acc > 0 else 0.0
@@ -458,6 +462,7 @@ def index():
             tx_type = request.form.get('type')
             funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
             start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
+            is_fixed_val = True if request.form.get('is_fixed_interest') == 'on' else False
             
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
@@ -471,7 +476,7 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source, start_next_day=start_next_day_val
+                funding_source=funding_source, start_next_day=start_next_day_val, is_fixed_interest=is_fixed_val
             )
             db.session.add(new_tx)
 
@@ -707,6 +712,9 @@ def index():
                 code_map = {"2": "29-2", "6": "4-6", "12": "9-12", "16": "14-16", "23": "20-23", "26": "24-26"}
                 labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
                 schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
+
+            if tx.is_fixed_interest:
+                schedule_badge += ' <span class="badge bg-warning text-dark">ดอกคงที่</span>'
 
             active_cnt = customer_active_counts.get(tx.customer_name, 1)
             count_badge = f' <a href="/customer_details/{tx.customer_name}" class="badge bg-danger text-decoration-none" title="คลิกเพื่อดูทุกรายการของลูกค้ารายนี้">🔥 {active_cnt} รายการ</a>'
@@ -1109,11 +1117,17 @@ def index():
                     <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
                 </div>
 
-                <div class="col-md-6 d-flex align-items-center gap-4">
+                <div class="col-md-12 d-flex align-items-center gap-4 flex-wrap">
                     <div class="form-check">
                         <input class="form-check-input border-warning" type="checkbox" name="start_next_day" id="startNextDayChk">
                         <label class="form-check-label fw-bold text-dark" for="startNextDayChk">
                             ⌛ เริ่มคิดดอกเบี้ยวันถัดไป (พรุ่งนี้)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input border-danger" type="checkbox" name="is_fixed_interest" id="isFixedInterestChk">
+                        <label class="form-check-label fw-bold text-danger" for="isFixedInterestChk">
+                            🔒 ล็อคดอกเบี้ยคงที่ (ดอกเบี้ยไม่ลดตามเงินต้นที่จ่าย)
                         </label>
                     </div>
                 </div>
@@ -1718,7 +1732,7 @@ def monthly_details(ym, category):
         if is_in_month:
             target_txs.append(tx)
 
-    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มีนาคม", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+    thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
     title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
@@ -1875,6 +1889,9 @@ def all_transactions():
                 labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
                 schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
 
+            if tx.is_fixed_interest:
+                schedule_badge += ' <span class="badge bg-warning text-dark">ดอกคงที่</span>'
+
             res += f"""
             <tr>
                 <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500; box-shadow: 2px 0 5px rgba(0,0,0,0.05);">
@@ -2000,7 +2017,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay', 'IsFixedInterest'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -2012,7 +2029,7 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day
+            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day, t.is_fixed_interest
         ])
         
     output = io.BytesIO()
@@ -2043,6 +2060,7 @@ def import_data():
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
                 s_next_day = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
+                is_fixed_val = True if str(row.get('IsFixedInterest', '')).lower() in ['true', '1', 'yes'] else False
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -2052,7 +2070,7 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding, start_next_day=s_next_day
+                    funding_source=funding, start_next_day=s_next_day, is_fixed_interest=is_fixed_val
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -2094,7 +2112,10 @@ def update_payment(tx_id):
         days -= 1
     if days < 0: days = 0
         
-    current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
+    if tx.is_fixed_interest:
+        current_effective_daily = tx.initial_daily_interest
+    else:
+        current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
 
     total_acc_interest = (current_effective_daily * days) - tx.paid_interest
     if total_acc_interest < 0: total_acc_interest = 0.0
