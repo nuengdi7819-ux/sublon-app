@@ -695,7 +695,7 @@ def index():
             <td colspan="2" class="text-success">{sum_modal_actual_profit:,.2f} บาท</td>
         </tr>
         """
-
+        
         rows, modals_html = "", ""
         for tx in transactions:
             badge_color = 'bg-success'
@@ -1826,7 +1826,7 @@ def check_orphaned_payments():
             </table>
         </div>
         <div class="mt-3">
-            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️ กลับหน้าหลัก</a>
+            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️️ กลับหน้าหลัก</a>
         </div>
     </div>
     """
@@ -2309,16 +2309,3 @@ def logout():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    app.run(debug=True)
-
-<script>
-    function handleScheduleChange() {
-        let val = document.getElementById('scheduleTypeSelect').value;
-        let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { 
-            dayDiv.style.display = 'block'; 
-        } else { 
-            dayDiv.style.display = 'none'; 
-        }
-    }
-</script>
