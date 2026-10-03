@@ -257,9 +257,10 @@ BASE_LAYOUT = """
         if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
     }
 
-    function handleScheduleChange(selectObj) {
+    function handleScheduleChange() {
+        let selectElem = document.getElementById('scheduleTypeSelect');
         let dayDiv = document.getElementById('dueDayDiv');
-        if (selectObj && selectObj.value === 'กำหนดจ่ายประจำเดือน') { 
+        if (selectElem && selectElem.value === 'กำหนดจ่ายประจำเดือน') { 
             dayDiv.style.display = 'block'; 
         } else { 
             dayDiv.style.display = 'none'; 
@@ -898,7 +899,7 @@ def index():
                 <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
                 <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferBankModal">🔄 โยกเงิน</button>
-                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙ ตั้งค่า/ปรับยอด</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอด</button>
                     <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก</button>
                 </div>
             </div>
@@ -1079,8 +1080,8 @@ def index():
                     <input type="date" name="start_date" class="form-control" value="{thai_today.strftime('%Y-%m-%d')}" required>
                 </div>
                 
-                <div class="col-md-3">
-                    <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี:</label>
+                <div class="col-md-4">
+                    <label class="form-label text-success fw-bold">💳 โอนเงินออกจากบัญชี / แหล่งทุน:</label>
                     <select name="funding_source" class="form-select border-success" required>
                         <option value="กรุงศรีอยุธยา">🟡 กรุงศรีอยุธยา (803-931-9819)</option>
                         <option value="ออมสิน">🩷 ออมสิน (020-409-437-819)</option>
@@ -1090,41 +1091,34 @@ def index():
 
                 <div class="col-md-3">
                     <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
-                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeMain" onchange="handleScheduleChange(this)" required>
+                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
                         <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
                         <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                     </select>
                 </div>
-
-                <div class="col-md-3">
-                    <label class="form-label">ยอดเงินต้น/ยอดค้าง (บาท)</label>
-                    <input type="number" step="any" name="principal" class="form-control" required>
-                </div>
-
-                <div class="col-md-3">
-                    <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
-                    <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
-                </div>
-
-                <!-- กล่องเลือกวันที่จะแสดงเฉพาะเมื่อเลือกกำหนดจ่ายประจำเดือน -->
-                <div class="col-12" id="dueDayDiv" style="display: none;">
-                    <div class="p-3 border border-primary rounded bg-light">
-                        <label class="form-label text-primary fw-bold mb-2">📌 กรุณาเลือกช่วงรอบวันที่ต้องจ่าย (เลือกได้หลายรอบ)</label>
-                        <div class="d-flex flex-wrap gap-4">
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label fw-bold" for="chk_d2">29-2</label></div>
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label fw-bold" for="chk_d6">4-6</label></div>
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label fw-bold" for="chk_d12">9-12</label></div>
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label fw-bold" for="chk_d16">14-16</label></div>
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label fw-bold" for="chk_d23">20-23</label></div>
-                            <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label fw-bold" for="chk_d26">24-26</label></div>
-                        </div>
+                <div class="col-md-5" id="dueDayDiv" style="display: block;">
+                    <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
+                    <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="16" id="chk_d16"><label class="form-check-label small" for="chk_d16">14-16</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="23" id="chk_d23"><label class="form-check-label small" for="chk_d23">20-23</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="26" id="chk_d26"><label class="form-check-label small" for="chk_d26">24-26</label></div>
                     </div>
                 </div>
-
+                <div class="col-md-3">
+                    <label class="form-label">ยอดเงินต้น/ยอดค้างทั้งหมด (บาท)</label>
+                    <input type="number" step="any" name="principal" class="form-control" required>
+                </div>
                 <div class="col-md-3" id="installmentDiv" style="display: none;">
                     <label class="form-label text-danger fw-bold">ยอดชำระต่องวด (บาท)</label>
                     <input type="number" step="any" name="installment_amount" class="form-control" value="0" placeholder="เช่น 150">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
+                    <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
                 </div>
 
                 <div class="col-md-12 d-flex align-items-center gap-4 flex-wrap">
@@ -1334,7 +1328,7 @@ def index():
         print("Index route error:", e)
         return f"""
         <div style="padding: 30px; font-family: Prompt, sans-serif;">
-            <h3 style="color: #d9534f;">⚠ เกิดข้อผิดพลาดในการโหลดหน้า Dashboard</h3>
+            <h3 style="color: #d9534f;">⚠️ เกิดข้อผิดพลาดในการโหลดหน้า Dashboard</h3>
             <p>ระบบกำลังพยายามสร้างตารางฐานข้อมูลอัตโนมัติ กรุณารีเฟรชหน้าเว็บอีกครั้ง (Error: {str(e)})</p>
             <a href="/" style="background: #d4af37; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">รีเฟรชหน้าเว็บ</a>
         </div>
@@ -1522,7 +1516,7 @@ def customer_details(cust_name):
                                     <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="กรอกจำนวนเงินสดที่รับจริง">
                                 </div>
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
-                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                     <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
                                 </div>
                             </div>
