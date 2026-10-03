@@ -2309,3 +2309,16 @@ def logout():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    app.run(debug=True)
+
+<script>
+    function handleScheduleChange() {
+        let val = document.getElementById('scheduleTypeSelect').value;
+        let dayDiv = document.getElementById('dueDayDiv');
+        if (val === 'กำหนดจ่ายประจำเดือน') { 
+            dayDiv.style.display = 'block'; 
+        } else { 
+            dayDiv.style.display = 'none'; 
+        }
+    }
+</script>
