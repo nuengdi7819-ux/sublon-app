@@ -257,9 +257,12 @@ BASE_LAYOUT = """
         if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
     }
 
-    function handleScheduleChange() {
-    let val = document.getElementById('scheduleTypeSelect').value;
+   function handleScheduleChange() {
+    let selectElem = document.getElementById('scheduleTypeSelect');
     let dayDiv = document.getElementById('dueDayDiv');
+    if (!selectElem || !dayDiv) return;
+    
+    let val = selectElem.value;
     if (val === 'กำหนดจ่ายประจำเดือน') { 
         dayDiv.style.display = 'block'; 
     } else { 
