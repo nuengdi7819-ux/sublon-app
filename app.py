@@ -1097,7 +1097,7 @@ def index():
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                     </select>
                 </div>
-                <div class="col-md-5" id="dueDayDiv" style="display: none;">
+                <div class="col-md-5" id="dueDayDiv" style="display: block;">
                     <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
                     <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
                         <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
