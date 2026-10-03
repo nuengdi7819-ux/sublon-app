@@ -258,10 +258,22 @@ BASE_LAYOUT = """
     }
 
     function handleScheduleChange() {
-        let val = document.getElementById('scheduleTypeSelect').value;
-        let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
+    let val = document.getElementById('scheduleTypeSelect').value;
+    let dayDiv = document.getElementById('dueDayDiv');
+    if (val === 'กำหนดจ่ายประจำเดือน') { 
+        dayDiv.style.display = 'block'; 
+    } else { 
+        dayDiv.style.display = 'none'; 
     }
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    handleScheduleChange();
+    let selectElem = document.getElementById('scheduleTypeSelect');
+    if(selectElem) {
+        selectElem.addEventListener('change', handleScheduleChange);
+    }
+});
 
     function closeAllModals() {
         document.querySelectorAll('.modal').forEach(modal => {
