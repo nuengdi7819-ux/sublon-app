@@ -257,26 +257,26 @@ BASE_LAYOUT = """
         if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
     }
 
-   function handleScheduleChange() {
-    let selectElem = document.getElementById('scheduleTypeSelect');
-    let dayDiv = document.getElementById('dueDayDiv');
-    if (!selectElem || !dayDiv) return;
-    
-    let val = selectElem.value;
-    if (val === 'กำหนดจ่ายประจำเดือน') { 
-        dayDiv.style.display = 'block'; 
-    } else { 
-        dayDiv.style.display = 'none'; 
+    function handleScheduleChange() {
+        let selectElem = document.getElementById('scheduleTypeSelect');
+        let dayDiv = document.getElementById('dueDayDiv');
+        if (!selectElem || !dayDiv) return;
+        
+        let val = selectElem.value;
+        if (val === 'กำหนดจ่ายประจำเดือน') { 
+            dayDiv.style.display = 'block'; 
+        } else { 
+            dayDiv.style.display = 'none'; 
+        }
     }
-}
 
-document.addEventListener("DOMContentLoaded", function() {
-    handleScheduleChange();
-    let selectElem = document.getElementById('scheduleTypeSelect');
-    if(selectElem) {
-        selectElem.addEventListener('change', handleScheduleChange);
-    }
-});
+    document.addEventListener("DOMContentLoaded", function() {
+        handleScheduleChange();
+        let selectElem = document.getElementById('scheduleTypeSelect');
+        if(selectElem) {
+            selectElem.addEventListener('change', handleScheduleChange);
+        }
+    });
 
     function closeAllModals() {
         document.querySelectorAll('.modal').forEach(modal => {
@@ -1100,7 +1100,7 @@ def index():
                     </select>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
                     <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
                         <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
@@ -1108,9 +1108,9 @@ def index():
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                     </select>
                 </div>
-                <div class="col-md-5" id="dueDayDiv" style="display: none;">
+                <div class="col-md-4" id="dueDayDiv" style="display: none;">
                     <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
-                    <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
+                    <div class="p-2 border rounded bg-white d-flex flex-wrap gap-2">
                         <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
                         <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="6" id="chk_d6"><label class="form-check-label small" for="chk_d6">4-6</label></div>
                         <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="12" id="chk_d12"><label class="form-check-label small" for="chk_d12">9-12</label></div>
@@ -1841,7 +1841,7 @@ def check_orphaned_payments():
             </table>
         </div>
         <div class="mt-3">
-            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️️ กลับหน้าหลัก</a>
+            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅ กลับหน้าหลัก</a>
         </div>
     </div>
     """
