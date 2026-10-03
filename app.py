@@ -186,7 +186,7 @@ BASE_LAYOUT = """
         <hr class="border-secondary">
         <div class="d-flex flex-column gap-2 mb-2">
             <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">
-                <span>🗑️ ตรวจสอบประวัติขยะ</span>
+                <span>🗑️️ ตรวจสอบประวัติขยะ</span>
             </a>
             <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">📥 สำรองข้อมูล (Backup)</a>
             <button type="button" class="btn btn-outline-info btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
@@ -258,9 +258,9 @@ BASE_LAYOUT = """
     }
 
     function handleScheduleChange() {
-        let val = document.getElementById('scheduleTypeSelect').value;
+        let selectElem = document.getElementById('scheduleTypeSelect');
         let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { 
+        if (selectElem && selectElem.value === 'กำหนดจ่ายประจำเดือน') { 
             dayDiv.style.display = 'block'; 
         } else { 
             dayDiv.style.display = 'none'; 
