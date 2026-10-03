@@ -899,7 +899,7 @@ def index():
                 <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
                 <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferBankModal">🔄 โยกเงิน</button>
-                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอด</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️️ ตั้งค่า/ปรับยอด</button>
                     <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก</button>
                 </div>
             </div>
@@ -1097,7 +1097,7 @@ def index():
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
                     </select>
                 </div>
-                <div class="col-md-5" id="dueDayDiv" style="display: block;">
+                <div class="col-md-5" id="dueDayDiv" style="display: none;">
                     <label class="form-label text-primary fw-bold">รอบช่วงวันที่ต้องจ่าย</label>
                     <div class="p-2 border rounded bg-white d-flex flex-wrap gap-3">
                         <div class="form-check"><input class="form-check-input" type="checkbox" name="due_day_of_month" value="2" id="chk_d2"><label class="form-check-label small" for="chk_d2">29-2</label></div>
