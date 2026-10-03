@@ -257,10 +257,9 @@ BASE_LAYOUT = """
         if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
     }
 
-    function handleScheduleChange() {
-        let selectElem = document.getElementById('scheduleTypeMain');
+    function handleScheduleChange(selectObj) {
         let dayDiv = document.getElementById('dueDayDiv');
-        if (selectElem && selectElem.value === 'กำหนดจ่ายประจำเดือน') { 
+        if (selectObj && selectObj.value === 'กำหนดจ่ายประจำเดือน') { 
             dayDiv.style.display = 'block'; 
         } else { 
             dayDiv.style.display = 'none'; 
@@ -1091,7 +1090,7 @@ def index():
 
                 <div class="col-md-3">
                     <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
-                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeMain" onchange="handleScheduleChange()" required>
+                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeMain" onchange="handleScheduleChange(this)" required>
                         <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
                         <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
