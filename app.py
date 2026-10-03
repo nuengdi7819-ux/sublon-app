@@ -258,7 +258,7 @@ BASE_LAYOUT = """
     }
 
     function handleScheduleChange() {
-        let selectElem = document.getElementById('scheduleTypeSelect');
+        let selectElem = document.getElementById('scheduleTypeMain');
         let dayDiv = document.getElementById('dueDayDiv');
         if (selectElem && selectElem.value === 'กำหนดจ่ายประจำเดือน') { 
             dayDiv.style.display = 'block'; 
@@ -1091,7 +1091,7 @@ def index():
 
                 <div class="col-md-3">
                     <label class="form-label text-danger fw-bold">ประเภทกำหนดจ่าย</label>
-                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeSelect" onchange="handleScheduleChange()" required>
+                    <select name="schedule_type" class="form-select border-danger" id="scheduleTypeMain" onchange="handleScheduleChange()" required>
                         <option value="จ่ายทุกวัน">จ่ายทุกวัน (ทวงทุกวัน)</option>
                         <option value="กำหนดจ่ายประจำเดือน">กำหนดจ่ายประจำเดือน (เลือกได้หลายรอบ)</option>
                         <option value="ยังไม่มีกำหนดจ่าย">ยังไม่มีกำหนดจ่าย</option>
@@ -1523,7 +1523,7 @@ def customer_details(cust_name):
                                     <input type="number" step="any" name="pay_amount" class="form-control form-control-sm border-primary shadow-sm bg-white" placeholder="กรอกจำนวนเงินสดที่รับจริง">
                                 </div>
                                 <div class="mb-1" id="adjustContainer{tx.id}" style="display: none;">
-                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙️️ จำนวนเงินปรับปรุงต้น (บาท)</label>
+                                    <label class="form-label fw-bold text-dark mb-1" style="font-size: 0.85rem;">⚙ จำนวนเงินปรับปรุงต้น (บาท)</label>
                                     <input type="number" step="any" name="adjust_amount" class="form-control form-control-sm mb-1" placeholder="เช่น 500 หรือ -200">
                                 </div>
                             </div>
