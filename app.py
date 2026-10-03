@@ -260,7 +260,11 @@ BASE_LAYOUT = """
     function handleScheduleChange() {
         let val = document.getElementById('scheduleTypeSelect').value;
         let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
+        if (val === 'กำหนดจ่ายประจำเดือน') { 
+            dayDiv.style.display = 'block'; 
+        } else { 
+            dayDiv.style.display = 'none'; 
+        }
     }
 
     function closeAllModals() {
