@@ -1374,6 +1374,7 @@ def index():
             'today_history_rows_safe': today_history_rows if today_history_rows else "<tr><td colspan='9' class='text-center text-muted'>ยังไม่มีการเก็บเงินในวันนี้</td></tr>",
             'today_new_count': today_new_count,
             'today_new_rows_safe': today_new_rows if today_new_rows else "<tr><td colspan='6' class='text-center text-muted'>ไม่มีการเพิ่มเงินลงทุนใหม่ในวันนี้</td></tr>",
+            'today_payment_count': today_payment_count,
             'table_title': table_title,
             'view_today_btn': view_today_btn,
             'start_date_str': start_date_str,
@@ -1865,7 +1866,7 @@ def monthly_details(ym, category):
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 fs-5 text-danger fw-bold">📋 {}</h4>
-            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️️ กลับไปหน้ากล่องแฟ้มรายเดือน</a>
+            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅ กลับไปหน้ากล่องแฟ้มรายเดือน</a>
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
