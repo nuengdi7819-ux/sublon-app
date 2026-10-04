@@ -256,7 +256,11 @@ BASE_LAYOUT = """
     function handleScheduleChange() {
         let val = document.getElementById('scheduleTypeSelect').value;
         let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
+        if (val === 'กำหนดจ่ายประจำเดือน') { 
+            dayDiv.style.display = 'block'; 
+        } else { 
+            dayDiv.style.display = 'none'; 
+        }
     }
 
     function handleLockInterestChange() {
@@ -1735,7 +1739,7 @@ def customer_details(cust_name):
                 <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
                     📄 ออกบิลรวมที่เลือก
                 </button>
-                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับหน้าหลัก</a>
+                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️️ กลับหน้าหลัก</a>
             </div>
         </div>
         <div class="table-responsive">
