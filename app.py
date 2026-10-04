@@ -1921,7 +1921,7 @@ def check_orphaned_payments():
             </table>
         </div>
         <div class="mt-3">
-            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️ กลับหน้าหลัก</a>
+            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️️ กลับหน้าหลัก</a>
         </div>
     </div>
     """.format(orphaned_rows if orphaned_rows else "<tr><td colspan='7' class='text-center text-success fw-bold'>ยอดเยี่ยม! ไม่พบประวัติการชำระเงินตกค้างในระบบ ทุกอย่างสะอาดเรียบร้อยดี</td></tr>")
