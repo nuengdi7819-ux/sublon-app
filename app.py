@@ -309,18 +309,18 @@ BASE_LAYOUT = """
         if (isAdvance) {
             finalAmt += dailyInt;
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
-            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\n\n";
         }
         let formattedAmt = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
 
-        let textToCopy = `${titleHeader}\\n` +
-                         `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 ประเภท: ${typeName}\\n` +
+        let textToCopy = `${titleHeader}\n` +
+                         `👤 ลูกค้า: ${customerName}\n` +
+                         `📋 ประเภท: ${typeName}\n` +
                          `${advanceNote}` +
-                         `💰 ยอดที่ต้องชำระ: ${formattedAmt}\\n\\n` +
-                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
-                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
-                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `💰 ยอดที่ต้องชำระ: ${formattedAmt}\n\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\n` +
+                         `- ออมสิน: 020-409-437-819\n\n` +
                          `*โอนแล้วรบกวนส่งสลิปหลักฐานทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
         
         navigator.clipboard.writeText(textToCopy).then(() => {
@@ -396,20 +396,20 @@ BASE_LAYOUT = """
         if (isAdvance) {
             finalTotal += totalDailyInt;
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
-            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\\n\\n";
+            advanceNote = "พรุ่งนี้มีชำระ กรุณาเตรียมเงินตามยอดที่แจ้งด้วยนะครับ\n\n";
         }
 
         let formattedTotal = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
         let typesStr = Array.from(typesSet).join(', ');
 
-        let textToCopy = `${titleHeader}\\n` +
-                         `👤 ลูกค้า: ${customerName}\\n` +
-                         `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\\n` +
+        let textToCopy = `${titleHeader}\n` +
+                         `👤 ลูกค้า: ${customerName}\n` +
+                         `📋 ประเภท: ${typesStr} (${checkboxes.length} บิล)\n` +
                          `${advanceNote}` +
-                         `💰 ยอดรวมสุทธิ: ${formattedTotal}\\n\\n` +
-                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\\n` +
-                         `- กรุงศรีอยุธยา: 803-931-9819\\n` +
-                         `- ออมสิน: 020-409-437-819\\n\\n` +
+                         `💰 ยอดรวมสุทธิ: ${formattedTotal}\n\n` +
+                         `📱 ช่องทางโอนเงิน / พร้อมเพย์:\n` +
+                         `- กรุงศรีอยุธยา: 803-931-9819\n` +
+                         `- ออมสิน: 020-409-437-819\n\n` +
                          `*โอนแล้วรบกวนส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏`;
 
         navigator.clipboard.writeText(textToCopy).then(() => {
@@ -1101,7 +1101,7 @@ def index():
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">วันที่กู้/วันที่เริ่ม</label>
-                    <input type="date" name="start_date" class="form-control" value="{thai_today_str}" required>
+                    <input type="date" name="start_date" class="form-control" value="{thai_today_input_str}" required>
                 </div>
                 
                 <div class="col-md-4">
@@ -1865,7 +1865,7 @@ def monthly_details(ym, category):
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 fs-5 text-danger fw-bold">📋 {}</h4>
-            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️ กลับไปหน้ากล่องแฟ้มรายเดือน</a>
+            <a href="/monthly_summary" class="btn btn-sm btn-secondary fw-bold">⬅️️ กลับไปหน้ากล่องแฟ้มรายเดือน</a>
         </div>
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
@@ -2474,7 +2474,6 @@ def login():
         else: error = 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!'
     
     login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}}.card{{background:#fff;color:#333;border:2px solid #d4af37}}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{error_div}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
-    
     error_div = '<div class="alert alert-danger py-2 text-center">{}</div>'.format(error) if error else ''
     return render_template_string(login_html.format(error_div=error_div))
 
