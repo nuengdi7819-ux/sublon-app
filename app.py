@@ -224,8 +224,10 @@ BASE_LAYOUT = """
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebarMenu');
         const backdrop = document.getElementById('sidebarBackdrop');
-        sidebar.classList.toggle('show');
-        backdrop.classList.toggle('show');
+        if (sidebar && backdrop) {
+            sidebar.classList.toggle('show');
+            backdrop.classList.toggle('show');
+        }
     }
 
     function togglePayInput(id) {
@@ -248,18 +250,26 @@ BASE_LAYOUT = """
     }
 
     function handleTypeChange() {
-        let typeVal = document.getElementById('txTypeSelect').value;
+        let typeSelect = document.getElementById('txTypeSelect');
         let instDiv = document.getElementById('installmentDiv');
-        if (typeVal === 'ยอดค้างเก่า') { instDiv.style.display = 'block'; } else { instDiv.style.display = 'none'; }
+        if (typeSelect && instDiv) {
+            if (typeSelect.value === 'ยอดค้างเก่า') { 
+                instDiv.style.display = 'block'; 
+            } else { 
+                instDiv.style.display = 'none'; 
+            }
+        }
     }
 
     function handleScheduleChange() {
-        let val = document.getElementById('scheduleTypeSelect').value;
+        let scheduleSelect = document.getElementById('scheduleTypeSelect');
         let dayDiv = document.getElementById('dueDayDiv');
-        if (val === 'กำหนดจ่ายประจำเดือน') { 
-            dayDiv.style.display = 'block'; 
-        } else { 
-            dayDiv.style.display = 'none'; 
+        if (scheduleSelect && dayDiv) {
+            if (scheduleSelect.value === 'กำหนดจ่ายประจำเดือน') { 
+                dayDiv.style.display = 'block'; 
+            } else { 
+                dayDiv.style.display = 'none'; 
+            }
         }
     }
 
@@ -272,7 +282,7 @@ BASE_LAYOUT = """
     }
 
     function handleModalLockInterestChange(txId) {
-        let chk = document.getElementById('isLockedInterest' + txId);
+        let chk = document.getElementById('is_locked_interest' + txId);
         let box = document.getElementById('lockedInterestBox' + txId);
         if (chk && box) {
             box.style.display = chk.checked ? 'block' : 'none';
@@ -291,21 +301,28 @@ BASE_LAYOUT = """
     }
 
     function updateBillModalCalc(txId, baseAmt, dailyInt) {
-        let isAdvance = document.getElementById('advanceChk' + txId).checked;
-        let finalAmt = baseAmt;
-        let displayTitle = "ใบแจ้งยอดชำระ";
+        let advChk = document.getElementById('advanceChk' + txId);
+        let totalDisplay = document.getElementById('billTotalDisplay' + txId);
+        let titleDisplay = document.getElementById('billTitleDisplay' + txId);
         
-        if (isAdvance) {
-            finalAmt += dailyInt;
-            displayTitle = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
+        if (advChk && totalDisplay && titleDisplay) {
+            let isAdvance = advChk.checked;
+            let finalAmt = baseAmt;
+            let displayTitle = "ใบแจ้งยอดชำระ";
+            
+            if (isAdvance) {
+                finalAmt += dailyInt;
+                displayTitle = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
+            }
+            
+            totalDisplay.innerText = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+            titleDisplay.innerText = displayTitle;
         }
-        
-        document.getElementById('billTotalDisplay' + txId).innerText = finalAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
-        document.getElementById('billTitleDisplay' + txId).innerText = displayTitle;
     }
 
     function copyBillText(customerName, typeName, baseAmt, dailyInt, txId) {
-        let isAdvance = document.getElementById('advanceChk' + txId).checked;
+        let advChk = document.getElementById('advanceChk' + txId);
+        let isAdvance = advChk ? advChk.checked : false;
         let finalAmt = baseAmt;
         let titleHeader = "ใบแจ้งยอดชำระ";
         let advanceNote = "";
@@ -336,7 +353,8 @@ BASE_LAYOUT = """
 
     function updateSelectedBillsCalc() {
         let checkboxes = document.querySelectorAll('.bill-checkbox:checked');
-        let isAdvance = document.getElementById('selectedAdvanceChk').checked;
+        let advChk = document.getElementById('selectedAdvanceChk');
+        let isAdvance = advChk ? advChk.checked : false;
         
         let totalAmt = 0;
         let totalDailyInt = 0;
@@ -357,9 +375,13 @@ BASE_LAYOUT = """
             titleHeader = "ขออนุญาตแจ้งยอดชำระล่วงหน้า สำหรับวันพรุ่งนี้";
         }
 
-        document.getElementById('selectedBillsCount').innerText = checkboxes.length + ' บิล';
-        document.getElementById('selectedBillsTotalAmount').innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
-        document.getElementById('selectedBillTitleDisplay').innerText = titleHeader;
+        let countElem = document.getElementById('selectedBillsCount');
+        let totalElem = document.getElementById('selectedBillsTotalAmount');
+        let titleElem = document.getElementById('selectedBillTitleDisplay');
+
+        if (countElem) countElem.innerText = checkboxes.length + ' บิล';
+        if (totalElem) totalElem.innerText = finalTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' บาท';
+        if (titleElem) titleElem.innerText = titleHeader;
     }
 
     function openSelectedBillsModal() {
@@ -368,11 +390,15 @@ BASE_LAYOUT = """
             alert('กรุณาติ๊กเลือกอย่างน้อย 1 รายการที่ต้องการออกบิลรวมครับ');
             return;
         }
-        document.getElementById('selectedAdvanceChk').checked = false;
+        let advChk = document.getElementById('selectedAdvanceChk');
+        if (advChk) advChk.checked = false;
         updateSelectedBillsCalc();
 
-        let myModal = new bootstrap.Modal(document.getElementById('selectedBillsModal'));
-        myModal.show();
+        let modalElem = document.getElementById('selectedBillsModal');
+        if (modalElem) {
+            let myModal = new bootstrap.Modal(modalElem);
+            myModal.show();
+        }
     }
 
     function copySelectedBillsText(customerName) {
@@ -381,7 +407,8 @@ BASE_LAYOUT = """
             alert('กรุณาติ๊กเลือกรายการก่อนครับ');
             return;
         }
-        let isAdvance = document.getElementById('selectedAdvanceChk').checked;
+        let advChk = document.getElementById('selectedAdvanceChk');
+        let isAdvance = advChk ? advChk.checked : false;
         let totalAmt = 0;
         let totalDailyInt = 0;
         let typesSet = new Set();
@@ -420,6 +447,29 @@ BASE_LAYOUT = """
             alert('คัดลอกข้อความบิลรวมเรียบร้อย! กด วาง (Paste) ส่งให้ลูกค้าได้ทันทีครับ');
         });
     }
+
+    // ทำงานอัตโนมัติทันทีเมื่อโหลดหน้าเว็บสมบูรณ์
+    document.addEventListener("DOMContentLoaded", function() {
+        handleScheduleChange();
+        handleTypeChange();
+        handleLockInterestChange();
+
+        // เชื่อมโยง Event Listener แบบปลอดภัย
+        let scheduleSelect = document.getElementById('scheduleTypeSelect');
+        if (scheduleSelect) {
+            scheduleSelect.addEventListener('change', handleScheduleChange);
+        }
+
+        let typeSelect = document.getElementById('txTypeSelect');
+        if (typeSelect) {
+            typeSelect.addEventListener('change', handleTypeChange);
+        }
+
+        let lockChkAdd = document.getElementById('isLockedInterestAdd');
+        if (lockChkAdd) {
+            lockChkAdd.addEventListener('change', handleLockInterestChange);
+        }
+    });
     </script>
 </body>
 </html>
@@ -1739,7 +1789,7 @@ def customer_details(cust_name):
                 <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
                     📄 ออกบิลรวมที่เลือก
                 </button>
-                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅️️ กลับหน้าหลัก</a>
+                <a href="/" class="btn btn-sm btn-secondary fw-bold">⬅ กลับหน้าหลัก</a>
             </div>
         </div>
         <div class="table-responsive">
@@ -1930,7 +1980,7 @@ def check_orphaned_payments():
             </table>
         </div>
         <div class="mt-3">
-            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️ กลับหน้าหลัก</a>
+            <a href="/" class="btn btn-secondary btn-sm fw-bold">⬅️️ กลับหน้าหลัก</a>
         </div>
     </div>
     """.format(orphaned_rows if orphaned_rows else "<tr><td colspan='7' class='text-center text-success fw-bold'>ยอดเยี่ยม! ไม่พบประวัติการชำระเงินตกค้างในระบบ ทุกอย่างสะอาดเรียบร้อยดี</td></tr>")
