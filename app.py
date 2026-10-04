@@ -51,13 +51,17 @@ class Transaction(db.Model):
     principal = db.Column(db.Float, nullable=False)                     
     daily_interest = db.Column(db.Float, nullable=False)
     initial_daily_interest = db.Column(db.Float, nullable=False, default=0.0)
-    paid_interest = db.Column(db.Float, default=0.0)     
+    paid_interest = db.Column(db.Float, default=0.0)      
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
     due_day_of_month = db.Column(db.String(50), nullable=True)
     funding_source = db.Column(db.String(50), default='กรุงศรีอยุธยา')
     start_next_day = db.Column(db.Boolean, default=False)
+    
+    # 🌟 ฟังก์ชันใหม่: รองรับการล็อกดอกเบี้ยคงที่
+    is_locked_interest = db.Column(db.Boolean, default=False)
+    locked_interest_amount = db.Column(db.Float, default=0.0)
 
 class PaymentHistory(db.Model):
     __tablename__ = 'payment_history'
@@ -179,7 +183,7 @@ BASE_LAYOUT = """
         <hr class="border-secondary">
         <div class="d-flex flex-column gap-2 mb-2">
             <a href="/check_orphaned_payments" class="btn btn-outline-danger btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">
-                <span>🗑️ ตรวจสอบประวัติขยะ</span>
+                <span>🗑️️ ตรวจสอบประวัติขยะ</span>
             </a>
             <a href="/export_data" class="btn btn-outline-warning btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;">📥 สำรองข้อมูล (Backup)</a>
             <button type="button" class="btn btn-outline-info btn-sm py-1 px-3 text-center rounded-pill" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#importModal">📤 นำเข้าข้อมูล (Restore)</button>
@@ -254,6 +258,24 @@ BASE_LAYOUT = """
         let val = document.getElementById('scheduleTypeSelect').value;
         let dayDiv = document.getElementById('dueDayDiv');
         if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
+    }
+
+    // 🌟 เปิด/ปิด ช่องกรอกยอดล็อกดอกเบี้ยในฟอร์มเพิ่มรายการ
+    function handleLockInterestChange() {
+        let chk = document.getElementById('isLockedInterestAdd');
+        let box = document.getElementById('lockedInterestBoxAdd');
+        if (chk && box) {
+            box.style.display = chk.checked ? 'block' : 'none';
+        }
+    }
+
+    // 🌟 เปิด/ปิด ช่องกรอกยอดล็อกดอกเบี้ยใน modal จัดการยอดรายรายการ
+    function handleModalLockInterestChange(txId) {
+        let chk = document.getElementById('isLockedInterest' + txId);
+        let box = document.getElementById('lockedInterestBox' + txId);
+        if (chk && box) {
+            box.style.display = chk.checked ? 'block' : 'none';
+        }
     }
 
     function closeAllModals() {
@@ -402,6 +424,7 @@ BASE_LAYOUT = """
 </html>
 """
 
+# 🌟 ฟังก์ชันคำนวณค่าตัวเลข แยกแยะระหว่าง "ล็อกดอกเบี้ย" กับ "ดอกเบี้ยเดินปกติ"
 def calculate_tx_values(tx):
     thai_today = get_thai_today()
     end_date = tx.closed_date if tx.closed_date else thai_today
@@ -412,11 +435,16 @@ def calculate_tx_values(tx):
     if days < 0: days = 0
     tx.days_passed_val = days
     
-    if tx.original_principal > 0 and tx.initial_daily_interest > 0:
-        current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
-        tx.daily_interest = current_daily_interest
-    
-    acc = (tx.daily_interest * days) - tx.paid_interest
+    # 🌟 เช็กเงื่อนไขการล็อกดอกเบี้ย
+    if tx.is_locked_interest:
+        tx.daily_interest = 0.0  # ดอกเบี้ยต่อวันไม่นำมาคิดเพิ่ม
+        acc = tx.locked_interest_amount - tx.paid_interest
+    else:
+        if tx.original_principal > 0 and tx.initial_daily_interest > 0:
+            current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
+            tx.daily_interest = current_daily_interest
+        acc = (tx.daily_interest * days) - tx.paid_interest
+
     tx.accumulated_interest = acc if acc > 0 else 0.0
     
     sum_history_pay = 0.0
@@ -453,6 +481,10 @@ def index():
             funding_source = request.form.get('funding_source', 'กรุงศรีอยุธยา')
             start_next_day_val = True if request.form.get('start_next_day') == 'on' else False
             
+            # 🌟 รับค่าสถานะการล็อกดอกเบี้ยจากฟอร์มเพิ่มรายการ
+            is_locked_interest_val = True if request.form.get('is_locked_interest') == 'on' else False
+            locked_interest_amount_val = float(request.form.get('locked_interest_amount', 0)) if is_locked_interest_val else 0.0
+            
             schedule_type = request.form.get('schedule_type', 'จ่ายทุกวัน')
             selected_due_days = request.form.getlist('due_day_of_month') if schedule_type == 'กำหนดจ่ายประจำเดือน' else []
             due_day_str = ",".join(selected_due_days) if selected_due_days else None
@@ -465,7 +497,8 @@ def index():
                 sales_name=current_sales, start_date=parsed_date, original_principal=p_val, principal=p_val,
                 daily_interest=d_interest, initial_daily_interest=d_interest, installment_amount=inst_amt,
                 schedule_type=schedule_type, due_day_of_month=due_day_str, status='ปกติ',
-                funding_source=funding_source, start_next_day=start_next_day_val
+                funding_source=funding_source, start_next_day=start_next_day_val,
+                is_locked_interest=is_locked_interest_val, locked_interest_amount=locked_interest_amount_val
             )
             db.session.add(new_tx)
 
@@ -704,6 +737,9 @@ def index():
                 labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
                 schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
 
+            # 🌟 ป้ายแสดงสถานะการล็อกดอกเบี้ยในตาราง
+            lock_badge = ' <span class="badge bg-dark text-warning" title="ล็อกดอกเบี้ยคงที่">🔒 ล็อกดอกเบี้ย</span>' if tx.is_locked_interest else ''
+
             active_cnt = customer_active_counts.get(tx.customer_name, 1)
             count_badge = f' <a href="/customer_details/{tx.customer_name}" class="badge bg-danger text-decoration-none" title="คลิกเพื่อดูทุกรายการของลูกค้ารายนี้">🔥 {active_cnt} รายการ</a>'
 
@@ -713,14 +749,14 @@ def index():
                     <a href="/customer_details/{tx.customer_name}" class="text-dark fw-bold text-decoration-none">{tx.customer_name}</a>{count_badge}
                 </td>
                 <td>{tx.phone or '-'}</td>
-                <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}</td>
+                <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}{lock_badge}</td>
                 <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
                 <td>{start_date_str_fmt}</td>
                 <td>{last_pay_str}</td>
                 <td>{tx.original_principal:,.2f}</td>
                 <td>{tx.principal:,.2f}</td>
                 <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
-                <td>{tx.daily_interest:,.2f}</td>
+                <td>{'🔒 ล็อก (' + f"{tx.locked_interest_amount:,.2f}" + ')' if tx.is_locked_interest else f"{tx.daily_interest:,.2f}"}</td>
                 <td>{tx.days_passed}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{tx.status}</span></td>
@@ -750,6 +786,20 @@ def index():
                                 <div class="mb-2 p-2 bg-warning bg-opacity-10 rounded border border-warning">
                                     <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                     <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" id="closedDate{tx.id}" value="{closed_date_str}">
+                                </div>
+
+                                <!-- 🌟 ส่วนตั้งค่าแก้ไขการล็อกดอกเบี้ยเฉพาะรายการนี้ -->
+                                <div class="mb-2 p-2 bg-secondary bg-opacity-10 rounded border">
+                                    <div class="form-check mb-1">
+                                        <input class="form-check-input" type="checkbox" name="is_locked_interest" id="is_locked_interest{tx.id}" {% if tx.is_locked_interest %}checked{% endif %} onchange="handleModalLockInterestChange({tx.id})">
+                                        <label class="form-check-label fw-bold text-dark" style="font-size: 0.85rem;" for="is_locked_interest{tx.id}">
+                                            🔒 ล็อกดอกเบี้ยคงที่สำหรับรายการนี้
+                                        </label>
+                                    </div>
+                                    <div id="lockedInterestBox{tx.id}" style="display: {% if tx.is_locked_interest %}block{% else %}none{% endif %};">
+                                        <label class="form-label text-dark small fw-bold mb-1">ยอดดอกเบี้ยคงที่ที่ล็อกไว้ (บาท)</label>
+                                        <input type="number" step="any" name="locked_interest_amount" class="form-control form-control-sm" value="{tx.locked_interest_amount}">
+                                    </div>
                                 </div>
 
                                 <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
@@ -857,7 +907,7 @@ def index():
                 <h5 class="text-danger fw-bold mb-0">🏦 สถานะกระเป๋าเงินจริงในมือถือ</h5>
                 <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-outline-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#transferBankModal">🔄 โยกเงิน</button>
-                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️ ตั้งค่า/ปรับยอด</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#adjustBankModal">⚙️️ ตั้งค่า/ปรับยอด</button>
                     <button type="button" class="btn btn-danger btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#withdrawModal">💸 ถอนเงินออก</button>
                 </div>
             </div>
@@ -1013,6 +1063,7 @@ def index():
             </div>
         </div>
 
+        <!-- 🌟 ฟอร์มเพิ่มรายการใหม่ พร้อมตัวเลือกเปิดล็อกดอกเบี้ย -->
         <div class="card p-4 shadow-sm border-warning mb-4">
             <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
             <form method="POST" class="row g-3">
@@ -1077,6 +1128,20 @@ def index():
                 <div class="col-md-3">
                     <label class="form-label">ดอกเบี้ย/วัน (บาท)</label>
                     <input type="number" step="any" name="daily_interest" class="form-control" value="0" required>
+                </div>
+
+                <!-- 🌟 กล่องตัวเลือกเปิดล็อกดอกเบี้ย -->
+                <div class="col-md-12 p-3 bg-light rounded border border-secondary">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input border-dark" type="checkbox" name="is_locked_interest" id="isLockedInterestAdd" onchange="handleLockInterestChange()">
+                        <label class="form-check-label fw-bold text-dark" for="isLockedInterestAdd">
+                            🔒 ล็อกดอกเบี้ยคงที่ (ไม่คิดดอกเบี้ยเพิ่มตามจำนวนวัน)
+                        </label>
+                    </div>
+                    <div id="lockedInterestBoxAdd" style="display: none;" class="col-md-4">
+                        <label class="form-label text-dark small fw-bold">จำนวนดอกเบี้ยคงที่ที่ต้องการล็อกไว้ (บาท)</label>
+                        <input type="number" step="any" name="locked_interest_amount" class="form-control form-control-sm" value="0" placeholder="เช่น 500">
+                    </div>
                 </div>
 
                 <div class="col-md-6 d-flex align-items-center">
@@ -1306,7 +1371,7 @@ def transfer_bank_money():
             else: db.session.add(BankAdjustment(account_name=to_acc, adjustment_amount=transfer_amt))
 
             db.session.add(BankExpenseLog(
-                expense_date=get_thai_today(), account_name=f"{from_acc} ➡️️ {to_acc}",
+                expense_date=get_thai_today(), account_name=f"{from_acc} ➡ {to_acc}",
                 amount=transfer_amt, note=f"[โยกเงินพักบัญชี] {note_text}", admin_name=session.get('admin')
             ))
             db.session.commit()
@@ -1357,7 +1422,7 @@ def withdraw_bank_money():
 def delete_expense(exp_id):
     if 'admin' not in session: return redirect(url_for('login'))
     exp = BankExpenseLog.query.get_or_404(exp_id)
-    if "➡️️" in exp.account_name:
+    if "➡" in exp.account_name:
         parts = exp.account_name.split(" ➡️ ")
         if len(parts) == 2:
             from_acc, to_acc = parts[0], parts[1]
@@ -1411,7 +1476,7 @@ def customer_details(cust_name):
             <td>{tx.original_principal:,.2f}</td>
             <td>{tx.principal:,.2f}</td>
             <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
-            <td>{tx.daily_interest:,.2f}</td>
+            <td>{'🔒 ล็อก' if tx.is_locked_interest else f"{tx.daily_interest:,.2f}"}</td>
             <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
             <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
             <td class="text-center">
@@ -1442,6 +1507,21 @@ def customer_details(cust_name):
                                 <label class="form-label text-dark fw-bold mb-1" style="font-size: 0.85rem;">📅 วันที่ปิดยอด / วันที่คืนยอด</label>
                                 <input type="date" name="closed_date" class="form-control form-control-sm border-warning bg-white" value="{closed_date_str}">
                             </div>
+                            
+                            <!-- 🌟 ส่วนตั้งค่าแก้ไขการล็อกดอกเบี้ยเฉพาะรายการนี้ -->
+                            <div class="mb-2 p-2 bg-secondary bg-opacity-10 rounded border">
+                                <div class="form-check mb-1">
+                                    <input class="form-check-input" type="checkbox" name="is_locked_interest" id="is_locked_interest{tx.id}" {% if tx.is_locked_interest %}checked{% endif %} onchange="handleModalLockInterestChange({tx.id})">
+                                    <label class="form-check-label fw-bold text-dark" style="font-size: 0.85rem;" for="is_locked_interest{tx.id}">
+                                        🔒 ล็อกดอกเบี้ยคงที่สำหรับรายการนี้
+                                    </label>
+                                </div>
+                                <div id="lockedInterestBox{tx.id}" style="display: {% if tx.is_locked_interest %}block{% else %}none{% endif %};">
+                                    <label class="form-label text-dark small fw-bold mb-1">ยอดดอกเบี้ยคงที่ที่ล็อกไว้ (บาท)</label>
+                                    <input type="number" step="any" name="locked_interest_amount" class="form-control form-control-sm" value="{tx.locked_interest_amount}">
+                                </div>
+                            </div>
+
                             <div class="mb-2 p-2 bg-success bg-opacity-10 rounded border border-success">
                                 <label class="form-label text-success fw-bold mb-1" style="font-size: 0.85rem;">📥 ลูกค้าโอนเข้าบัญชี / ช่องทางไหน:</label>
                                 <select name="receiving_account" class="form-select form-select-sm border-success">
@@ -1502,13 +1582,11 @@ def customer_details(cust_name):
                             <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{tx.customer_name}</b> | <span class="badge bg-secondary">{tx.type}</span></span>
                         </div>
 
-                        <!-- 🌟 ยอดรวมสุทธิ (กรอบสีเขียวเข้มบนพื้นหลังสีขาว กระตุ้นการจ่าย) -->
                         <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
                             <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ</span>
                             <h3 class="text-success fw-bold mb-0" id="billTotalDisplay{tx.id}">{base_bill_amt:,.2f} บาท</h3>
                         </div>
 
-                        <!-- 🌟 QR Code พร้อมเพย์ -->
                         <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                             <div class="bg-light p-1 d-inline-block rounded border mb-1">
                                 <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1519,7 +1597,6 @@ def customer_details(cust_name):
                             </div>
                         </div>
 
-                        <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
                         <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
                             <div class="form-check d-inline-block m-0">
                                 <input class="form-check-input border-success" type="checkbox" id="advanceChk{tx.id}" onchange="updateBillModalCalc({tx.id}, {base_bill_amt}, {tx.daily_interest})">
@@ -1552,13 +1629,11 @@ def customer_details(cust_name):
                         <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{cust_name}</b> | รวม <span class="badge bg-danger" id="selectedBillsCount">0 บิล</span></span>
                     </div>
 
-                    <!-- 🌟 ยอดรวมสุทธิทุกบิล (กรอบสีเขียวเข้มบนพื้นหลังสีขาว) -->
                     <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
                         <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
                         <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
                     </div>
 
-                    <!-- 🌟 QR Code พร้อมเพย์ -->
                     <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
                         <div class="bg-light p-1 d-inline-block rounded border mb-1">
                             <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
@@ -1569,7 +1644,6 @@ def customer_details(cust_name):
                         </div>
                     </div>
 
-                    <!-- 🌟 ช่องติ๊กแจ้งยอดพรุ่งนี้ (มุมล่าง ไม่เกะกะ) -->
                     <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
                         <div class="form-check d-inline-block m-0">
                             <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
@@ -1848,20 +1922,22 @@ def all_transactions():
                 labels = [code_map.get(c, c) for c in tx.due_day_of_month.split(',')]
                 schedule_badge = f'<span class="badge bg-primary">รอบ: {", ".join(labels)}</span>'
 
+            lock_badge = ' <span class="badge bg-dark text-warning">🔒 ล็อก</span>' if tx.is_locked_interest else ''
+
             res += f"""
             <tr>
                 <td style="position: sticky; left: 0; background-color: #fff; z-index: 2; font-weight: 500; box-shadow: 2px 0 5px rgba(0,0,0,0.05);">
                     <a href="/customer_details/{tx.customer_name}" class="text-dark text-decoration-none fw-bold">{tx.customer_name}</a>
                 </td>
                 <td>{tx.phone or '-'}</td>
-                <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}</td>
+                <td><span class="badge bg-secondary">{tx.type}</span> {schedule_badge}{lock_badge}</td>
                 <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
                 <td>{start_date_str}</td>
                 <td>{last_pay_str}</td>
                 <td>{tx.original_principal:,.2f}</td>
                 <td>{tx.principal:,.2f}</td>
                 <td><strong class="text-primary">{tx.total_paid:,.2f}</strong></td>
-                <td>{tx.daily_interest:,.2f}</td>
+                <td>{'🔒' if tx.is_locked_interest else f"{tx.daily_interest:,.2f}"}</td>
                 <td>{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{'คืนแล้ว' if is_closed else tx.status}</span></td>
                 <td><a href="/" class="btn btn-sm btn-success-light">จัดการ</a></td>
@@ -1973,7 +2049,7 @@ def export_data():
     if 'admin' not in session: return redirect(url_for('login'))
     si = io.StringIO()
     cw = csv.writer(si)
-    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay'])
+    cw.writerow(['ID', 'Type', 'CustomerName', 'Phone', 'SalesName', 'StartDate', 'ClosedDate', 'OriginalPrincipal', 'Principal', 'DailyInterest', 'PaidInterest', 'Status', 'InstallmentAmount', 'TotalPaid', 'ScheduleType', 'DueDayOfMonth', 'TotalFine', 'TotalDiscount', 'FundingSource', 'StartNextDay', 'IsLockedInterest', 'LockedInterestAmount'])
     
     for t in Transaction.query.order_by(Transaction.customer_name.asc()).all():
         total_paid = (t.original_principal - t.principal) if t.type == 'ยอดค้างเก่า' else t.paid_interest
@@ -1985,7 +2061,8 @@ def export_data():
             t.start_date, t.closed_date, t.original_principal, t.principal, 
             t.daily_interest, t.paid_interest, t.status, t.installment_amount, 
             total_paid, t.schedule_type, t.due_day_of_month, 
-            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day
+            tx_fine_sum, tx_discount_sum, t.funding_source, t.start_next_day,
+            t.is_locked_interest, t.locked_interest_amount
         ])
         
     output = io.BytesIO()
@@ -2016,6 +2093,9 @@ def import_data():
                 day_val = row.get('DueDayOfMonth') if row.get('DueDayOfMonth') and row.get('DueDayOfMonth') != 'None' else None
                 funding = row.get('FundingSource', 'กรุงศรีอยุธยา')
                 s_next_day = True if str(row.get('StartNextDay', '')).lower() in ['true', '1', 'yes'] else False
+                
+                is_lock = True if str(row.get('IsLockedInterest', '')).lower() in ['true', '1', 'yes'] else False
+                lock_amt = float(row.get('LockedInterestAmount', 0) or 0)
 
                 new_t = Transaction(
                     type=row.get('Type', 'เงินฉุกเฉิน'), customer_name=row.get('CustomerName', 'ไม่ระบุ'),
@@ -2025,7 +2105,8 @@ def import_data():
                     initial_daily_interest=float(row.get('DailyInterest', 0)), paid_interest=float(row.get('PaidInterest', 0)),
                     status=row.get('Status', 'ปกติ'), installment_amount=float(row.get('InstallmentAmount', 0)),
                     schedule_type=row.get('ScheduleType', 'จ่ายทุกวัน'), due_day_of_month=day_val,
-                    funding_source=funding, start_next_day=s_next_day
+                    funding_source=funding, start_next_day=s_next_day,
+                    is_locked_interest=is_lock, locked_interest_amount=lock_amt
                 )
                 db.session.add(new_t)
                 db.session.flush()
@@ -2052,6 +2133,12 @@ def update_payment(tx_id):
     receiving_account = request.form.get('receiving_account', 'กรุงศรีอยุธยา')
     thai_today = get_thai_today()
     
+    # 🌟 อัปเดตสถานะการล็อกดอกเบี้ยตามที่แก้ไขใน Modal จัดการยอด
+    is_lock_form = True if request.form.get('is_locked_interest') == 'on' else False
+    lock_amt_form = float(request.form.get('locked_interest_amount', 0)) if is_lock_form else 0.0
+    tx.is_locked_interest = is_lock_form
+    tx.locked_interest_amount = lock_amt_form
+
     pay_amount_input = request.form.get('pay_amount', '').strip()
     pay_amount = float(pay_amount_input) if pay_amount_input != '' else 0.0
     
@@ -2067,8 +2154,13 @@ def update_payment(tx_id):
         days -= 1
     if days < 0: days = 0
         
-    current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
-    total_acc_interest = (current_effective_daily * days) - tx.paid_interest
+    # 🌟 คำนวณดอกเบี้ยสะสมโดยแยกเคส "ล็อกดอกเบี้ย" กับ "ดอกเบี้ยเดินปกติ"
+    if tx.is_locked_interest:
+        total_acc_interest = tx.locked_interest_amount - tx.paid_interest
+    else:
+        current_effective_daily = tx.initial_daily_interest * (tx.principal / tx.original_principal) if tx.original_principal > 0 else tx.daily_interest
+        total_acc_interest = (current_effective_daily * days) - tx.paid_interest
+    
     if total_acc_interest < 0: total_acc_interest = 0.0
 
     tx.last_payment_date = thai_today
