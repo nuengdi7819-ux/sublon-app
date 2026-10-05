@@ -2079,104 +2079,109 @@ def import_data():
 @app.route('/update_payment/<int:tx_id>', methods=['POST'])
 def update_payment(tx_id):
     if 'admin' not in session: return redirect(url_for('login'))
-    tx = Transaction.query.get_or_404(tx_id)
-    payment_type = request.form.get('payment_type')
-    receiving_account = request.form.get('receiving_account', 'กรุงศรีอยุธยา')
-    thai_today = get_thai_today()
-    
-    pay_amount_input = request.form.get('pay_amount', '').strip()
-    pay_amount = float(pay_amount_input) if pay_amount_input != '' else 0.0
-    
-    discount_amt = float(request.form.get('discount_amount', 0) or 0)
-    fine_amt = float(request.form.get('fine_amount', 0) or 0)
-    closed_date_str = request.form.get('closed_date')
-    note_text = request.form.get('note', '').strip()
-    
-    tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
-    
-    calculate_tx_values(tx)
-    total_acc_interest = tx.accumulated_interest
+    try:
+        tx = Transaction.query.get_or_404(tx_id)
+        payment_type = request.form.get('payment_type')
+        receiving_account = request.form.get('receiving_account', 'กรุงศรีอยุธยา')
+        thai_today = get_thai_today()
+        
+        pay_amount_input = request.form.get('pay_amount', '').strip()
+        pay_amount = float(pay_amount_input) if pay_amount_input != '' else 0.0
+        
+        discount_amt = float(request.form.get('discount_amount', 0) or 0)
+        fine_amt = float(request.form.get('fine_amount', 0) or 0)
+        closed_date_str = request.form.get('closed_date')
+        note_text = request.form.get('note', '').strip()
+        
+        tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
+        
+        calculate_tx_values(tx)
+        total_acc_interest = tx.accumulated_interest
 
-    tx.last_payment_date = thai_today
-    actual_interest_paid, actual_principal_reduced = 0.0, 0.0
+        tx.last_payment_date = thai_today
+        actual_interest_paid, actual_principal_reduced = 0.0, 0.0
 
-    if payment_type == 'adjust':
-        adjust_input = request.form.get('adjust_amount', '').strip()
-        adjust_amount = float(adjust_input) if adjust_input != '' else 0.0
-        
-        tx.principal += adjust_amount
-        if tx.principal < 0: tx.principal = 0.0
-        
-        if tx.principal > 0:
-            tx.status = 'ปกติ'
-            tx.closed_date = None
-        
-        if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
+        if payment_type == 'adjust':
+            adjust_input = request.form.get('adjust_amount', '').strip()
+            adjust_amount = float(adjust_input) if adjust_input != '' else 0.0
+            
+            tx.principal += adjust_amount
+            if tx.principal < 0: tx.principal = 0.0
+            
+            if tx.principal > 0:
+                tx.status = 'ปกติ'
+                tx.closed_date = None
+            
+            if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
+
+            db.session.add(PaymentHistory(
+                transaction_id=tx.id, payment_date=thai_today, pay_amount=0.0,
+                fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
+                principal_reduced=0.0, note=note_text, admin_name=session.get('admin'),
+                receiving_account=receiving_account
+            ))
+            db.session.commit()
+            db.session.remove()
+            return redirect(url_for('customer_details', cust_name=tx.customer_name))
+
+        elif payment_type == 'full':
+            net_interest_earned = total_acc_interest - discount_amt
+            if net_interest_earned < 0: net_interest_earned = 0.0
+            tx.paid_interest += net_interest_earned
+            actual_interest_paid = net_interest_earned
+            actual_principal_reduced = tx.principal
+            if pay_amount <= 0: pay_amount = net_interest_earned + tx.principal
+            tx.principal = 0.0
+            tx.status = 'คืนแล้ว'
+            if not tx.closed_date: tx.closed_date = thai_today
+        else:
+            net_acc_interest = total_acc_interest - discount_amt
+            if net_acc_interest < 0: net_acc_interest = 0.0
+
+            if pay_amount > 0:
+                if pay_amount >= net_acc_interest:
+                    actual_interest_paid = net_acc_interest
+                    remainder = pay_amount - net_acc_interest
+                    tx.paid_interest += net_acc_interest
+                    if remainder > 0:
+                        tx.principal -= remainder
+                        actual_principal_reduced = remainder
+                        if tx.principal < 0: tx.principal = 0.0
+                else:
+                    tx.paid_interest += pay_amount
+                    actual_interest_paid = pay_amount
+            else:
+                actual_interest_paid = net_acc_interest
+                pay_amount = actual_interest_paid + fine_amt
+
+            if tx.principal <= 0:
+                tx.status = 'คืนแล้ว'
+                tx.principal = 0.0
+                if not tx.closed_date: tx.closed_date = thai_today
+            elif tx.principal < tx.original_principal:
+                tx.status = 'ตัดยอดบางส่วน'
+
+        total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
+        if total_net_pay < 0: total_net_pay = 0.0
 
         db.session.add(PaymentHistory(
-            transaction_id=tx.id, payment_date=thai_today, pay_amount=0.0,
-            fine_amount=0.0, discount_amount=0.0, interest_paid=0.0,
-            principal_reduced=0.0, note=note_text, admin_name=session.get('admin'),
+            transaction_id=tx.id, payment_date=thai_today, pay_amount=total_net_pay,
+            fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
+            principal_reduced=actual_principal_reduced, note=note_text or f"ชำระเงินประเภท: {payment_type}", admin_name=session.get('admin'),
             receiving_account=receiving_account
         ))
+
+        if total_net_pay > 0 and receiving_account in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
+            adj_bank = BankAdjustment.query.filter_by(account_name=receiving_account).first()
+            if adj_bank: adj_bank.adjustment_amount += total_net_pay
+            else: db.session.add(BankAdjustment(account_name=receiving_account, adjustment_amount=total_net_pay))
+
         db.session.commit()
         db.session.remove()
-        return redirect(url_for('customer_details', cust_name=tx.customer_name))
-
-    elif payment_type == 'full':
-        net_interest_earned = total_acc_interest - discount_amt
-        if net_interest_earned < 0: net_interest_earned = 0.0
-        tx.paid_interest += net_interest_earned
-        actual_interest_paid = net_interest_earned
-        actual_principal_reduced = tx.principal
-        if pay_amount <= 0: pay_amount = net_interest_earned + tx.principal
-        tx.principal = 0.0
-        tx.status = 'คืนแล้ว'
-        if not tx.closed_date: tx.closed_date = thai_today
-    else:
-        net_acc_interest = total_acc_interest - discount_amt
-        if net_acc_interest < 0: net_acc_interest = 0.0
-
-        if pay_amount > 0:
-            if pay_amount >= net_acc_interest:
-                actual_interest_paid = net_acc_interest
-                remainder = pay_amount - net_acc_interest
-                tx.paid_interest += net_acc_interest
-                if remainder > 0:
-                    tx.principal -= remainder
-                    actual_principal_reduced = remainder
-                    if tx.principal < 0: tx.principal = 0.0
-            else:
-                tx.paid_interest += pay_amount
-                actual_interest_paid = pay_amount
-        else:
-            actual_interest_paid = net_acc_interest
-            pay_amount = actual_interest_paid + fine_amt
-
-        if tx.principal <= 0:
-            tx.status = 'คืนแล้ว'
-            tx.principal = 0.0
-            if not tx.closed_date: tx.closed_date = thai_today
-        elif tx.principal < tx.original_principal:
-            tx.status = 'ตัดยอดบางส่วน'
-
-    total_net_pay = pay_amount if pay_amount > 0 else (actual_interest_paid + actual_principal_reduced + fine_amt - discount_amt)
-    if total_net_pay < 0: total_net_pay = 0.0
-
-    db.session.add(PaymentHistory(
-        transaction_id=tx.id, payment_date=thai_today, pay_amount=total_net_pay,
-        fine_amount=fine_amt, discount_amount=discount_amt, interest_paid=actual_interest_paid,
-        principal_reduced=actual_principal_reduced, note=note_text or f"ชำระเงินประเภท: {payment_type}", admin_name=session.get('admin'),
-        receiving_account=receiving_account
-    ))
-
-    if total_net_pay > 0 and receiving_account in ['กรุงศรีอยุธยา', 'ออมสิน', 'วอลเล็ท']:
-        adj_bank = BankAdjustment.query.filter_by(account_name=receiving_account).first()
-        if adj_bank: adj_bank.adjustment_amount += total_net_pay
-        else: db.session.add(BankAdjustment(account_name=receiving_account, adjustment_amount=total_net_pay))
-
-    db.session.commit()
-    db.session.remove()
+    except Exception as e:
+        print("Update payment error:", e)
+        db.session.rollback()
+        db.session.remove()
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/delete_tx/<int:tx_id>')
