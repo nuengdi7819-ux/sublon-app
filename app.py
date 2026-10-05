@@ -497,8 +497,8 @@ def calculate_tx_values(tx):
             sum_interest_paid += h.interest_paid
             sum_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
     
-    if tx.type == 'ยอดค้างเก่า':
-        tx.total_paid = sum_history_pay if sum_history_pay > 0 else max(0.0, tx.original_principal - tx.principal)
+   if tx.type == 'ยอดค้างเก่า':
+        tx.total_paid = sum_history_pay - tx.original_principal
     else:
         fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
         actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
