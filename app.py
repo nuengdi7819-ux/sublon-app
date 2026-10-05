@@ -264,7 +264,6 @@ BASE_LAYOUT = """
         if (val === 'กำหนดจ่ายประจำเดือน') { dayDiv.style.display = 'block'; } else { dayDiv.style.display = 'none'; }
     }
 
-    // ฟังก์ชันซ่อน/แสดงช่องดอกเบี้ยต่อวันอัตโนมัติเมื่อติ๊กล็อกดอกเบี้ยตายตัว
     function toggleLockInterest() {
         let chk = document.getElementById('isLockedInterestAdd');
         let lockedBox = document.getElementById('lockedInterestBoxAdd');
@@ -442,7 +441,6 @@ BASE_LAYOUT = """
 def calculate_tx_values(tx):
     thai_today = get_thai_today()
     
-    # 📌 ป้องกันและแปลงค่า start_date
     tx_start_date = tx.start_date
     if isinstance(tx_start_date, str):
         try:
@@ -452,7 +450,6 @@ def calculate_tx_values(tx):
     elif not tx_start_date:
         tx_start_date = thai_today
 
-    # 📌 ป้องกันและแปลงค่า last_payment_date
     tx_last_pay = tx.last_payment_date
     if isinstance(tx_last_pay, str):
         try:
@@ -460,7 +457,6 @@ def calculate_tx_values(tx):
         except:
             tx_last_pay = None
 
-    # 📌 ป้องกันและแปลงค่า closed_date
     tx_closed_date = tx.closed_date
     if isinstance(tx_closed_date, str):
         try:
@@ -470,7 +466,6 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
     
-    # 📌 นับวันโดยอิงจากหลังวันจ่ายล่าสุด (last_payment_date) เพื่อให้จ่ายวันนี้แล้ว ดอกเบี้ยไปเริ่มนับวันพรุ่งนี้
     start_calc_date = tx_last_pay if tx_last_pay else tx_start_date
     days = (end_date - start_calc_date).days
     
@@ -480,14 +475,12 @@ def calculate_tx_values(tx):
     if days < 0: days = 0
     tx.days_passed_val = days
     
-    # 📌 คำนวณดอกเบี้ยต่อวันตามสัดส่วนเงินต้นคงเหลือปัจจุบัน (ถ้าเงินต้นลด ดอกเบี้ยต่อวันลดตาม)
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 📌 คำนวณดอกเบี้ยสะสม
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
@@ -975,7 +968,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modals จัดการกระเป๋าเงิน -->
         <div class="modal fade" id="transferBankModal" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-primary">
@@ -1085,7 +1077,6 @@ def index():
             </div>
         </div>
 
-        <!-- ฟอร์มเพิ่มรายการใหม่ -->
         <div class="card p-4 shadow-sm border-warning mb-4">
             <h4 class="mb-3 fs-5 text-danger fw-bold">➕ เพิ่มรายการใหม่ (ผู้ดูแล: <span class="text-dark">{session.get('admin')}</span>)</h4>
             <form method="POST" class="row g-3">
@@ -1204,7 +1195,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modals วันนี้ -->
         <div class="modal fade" id="todayHistoryModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-success">
@@ -1298,7 +1288,6 @@ def index():
             </div>
         </div>
 
-        <!-- Modals สรุปยอดด้านบน -->
         <div class="modal fade" id="debtModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-warning">
@@ -2098,14 +2087,13 @@ def update_payment(tx_id):
     pay_amount_input = request.form.get('pay_amount', '').strip()
     pay_amount = float(pay_amount_input) if pay_amount_input != '' else 0.0
     
-    discount_amt = float(request.form.get('discount_amount', 0))
-    fine_amt = float(request.form.get('fine_amount', 0))
+    discount_amt = float(request.form.get('discount_amount', 0) or 0)
+    fine_amt = float(request.form.get('fine_amount', 0) or 0)
     closed_date_str = request.form.get('closed_date')
     note_text = request.form.get('note', '').strip()
     
     tx.closed_date = datetime.strptime(closed_date_str, '%Y-%m-%d').date() if closed_date_str else None
     
-    # คำนวณดอกเบี้ยสะสมปัจจุบันก่อนตัด
     calculate_tx_values(tx)
     total_acc_interest = tx.accumulated_interest
 
@@ -2113,9 +2101,15 @@ def update_payment(tx_id):
     actual_interest_paid, actual_principal_reduced = 0.0, 0.0
 
     if payment_type == 'adjust':
-        adjust_amount = float(request.form.get('adjust_amount', 0))
+        adjust_input = request.form.get('adjust_amount', '').strip()
+        adjust_amount = float(adjust_input) if adjust_input != '' else 0.0
+        
         tx.principal += adjust_amount
         if tx.principal < 0: tx.principal = 0.0
+        
+        if tx.principal > 0:
+            tx.status = 'ปกติ'
+            tx.closed_date = None
         
         if not note_text: note_text = f"ปรับปรุงยอดเงินต้น: {adjust_amount:+,.2f}"
 
@@ -2127,7 +2121,7 @@ def update_payment(tx_id):
         ))
         db.session.commit()
         db.session.remove()
-        return redirect(request.referrer or url_for('index'))
+        return redirect(url_for('customer_details', cust_name=tx.customer_name))
 
     elif payment_type == 'full':
         net_interest_earned = total_acc_interest - discount_amt
