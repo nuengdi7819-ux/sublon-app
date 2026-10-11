@@ -65,7 +65,7 @@ class Transaction(db.Model):
     principal = db.Column(db.Float, nullable=False)                     
     daily_interest = db.Column(db.Float, nullable=False)
     initial_daily_interest = db.Column(db.Float, nullable=False, default=0.0)
-    paid_interest = db.Column(db.Float, default=0.0)     
+    paid_interest = db.Column(db.Float, default=0.0)      
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
@@ -458,13 +458,6 @@ def calculate_tx_values(tx):
     elif not tx_start_date:
         tx_start_date = thai_today
 
-    tx_last_pay = tx.last_payment_date
-    if isinstance(tx_last_pay, str):
-        try:
-            tx_last_pay = datetime.strptime(tx_last_pay.split()[0], '%Y-%m-%d').date()
-        except:
-            tx_last_pay = None
-
     tx_closed_date = tx.closed_date
     if isinstance(tx_closed_date, str):
         try:
@@ -474,10 +467,9 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
-    start_calc_date = tx_last_pay if tx_last_pay else tx_start_date
-    days = (end_date - start_calc_date).days
-
-    if not tx_last_pay and not tx.start_next_day:
+    # แก้ไขปัญหา: ใช้ start_date เป็นหลักในการคำนวณจำนวนวันทั้งหมดที่ผ่านไป เพื่อให้ดอกเบี้ยเดินต่อเนื่องทุกวัน
+    days = (end_date - tx_start_date).days
+    if not tx.start_next_day:
         days += 1
 
     if days < 0: days = 0
@@ -492,7 +484,10 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        acc = (tx.daily_interest * days) - tx.paid_interest
+        # คำนวณดอกเบี้ยทั้งหมดตั้งแต่วันเริ่มกู้ ลบด้วยดอกเบี้ยที่ลูกค้าเคยจ่ายสะสมไปแล้วในประวัติ
+        total_accrued = tx.daily_interest * days
+        sum_interest_paid = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
+        acc = total_accrued - sum_interest_paid
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
