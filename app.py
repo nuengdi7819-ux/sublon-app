@@ -339,14 +339,14 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
-    # 1. คำนวณดอกเบี้ยต่อวันปัจจุบัน โดยอิงตามเงินต้นที่เหลืออยู่ (Principal ปัจจุบัน)
+    # 1. คำนวณดอกเบี้ยต่อวันปัจจุบัน อิงตามเงินต้นที่เหลืออยู่ (ลดต้นลดดอก)
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 2. คำนวณจำนวนวัน: นับต่อจากวันชำระล่าสุด (last_payment_date) ถ้ามี, ถ้ายังไม่เคยจ่ายให้นับจากวันเริ่มกู้ (start_date)
+    # 2. นับวันต่อจากวันชำระล่าสุด (last_payment_date) ถ้ามี
     calc_start_date = tx.last_payment_date if tx.last_payment_date else tx_start_date
     if isinstance(calc_start_date, str):
         try:
@@ -364,27 +364,7 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # ดอกเบี้ยสะสมทั้งหมด = ดอกเบี้ยที่ค้างสะสมเดิม + ดอกเบี้ยที่งอกขึ้นมาใหม่ตามเรทเงินต้นที่ลดลง
-        sum_interest_paid = sum(h.interest_paid for h in tx.histories) if tx.histories else tx.paid_interest
-        
-        # คำนวณดอกเบี้ยทั้งหมดตั้งแต่วันเริ่มกู้จนถึงปัจจุบัน ลบด้วยดอกเบี้ยที่จ่ายไปแล้วทั้งหมด
-        total_accrued_all = tx.daily_interest * ((end_date - calc_start_date).days + (1 if not tx.last_payment_date and not tx.start_next_day else 0))
-        
-        # สะสมยอดรวมค้างจริง
-        accumulated_from_histories = 0.0
-        if tx.histories:
-            # ใช้ยอดสะสมเดิมคำนวณบวกเพิ่ม
-            pass
-            
-        # คำนวณยอดดอกเบี้ยสะสมปัจจุบันให้ถูกต้องตามการลดต้นลดดอก
-        total_full_days = (end_date - tx_start_date).days + (1 if not tx.start_next_day else 0)
-        if total_full_days < 0: total_full_days = 0
-        
-        # ดอกเบี้ยสะสม = ดอกเบี้ยจากวันเริ่มกู้จนถึงปัจจุบัน - ดอกเบี้ยที่ลูกค้าจ่ายสะสมไปแล้ว
-        # (เพื่อให้เมื่อจ่ายลดต้นแล้ว เรทดอกเบี้ยต่อวันจะถูกปรับลดลงทันทีในงวดถัดไป)
-        approx_accrued = (tx.daily_interest * days)
-        # ป้องกันค่าติดลบ
-        acc = approx_accrued
+        acc = (tx.daily_interest * days)
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
@@ -1783,7 +1763,11 @@ def customer_emergency():
                 <td class="text-end"><a href='/customer_details/{t.customer_name}' class='btn btn-sm btn-success-light fw-bold'>🔍 ดูรายละเอียด</a></td>
             </tr>
             """
-    html = BASE_LAYOUT.replace('{% block header %}3.1 เงินฉุกเฉิน{% endblock %}', 'เงินฉุกเฉิน').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan=\'4\' class=\'text-center text-muted\'>ไม่มีข้อมูล</td></tr>"}</tbody></table></div></div>')
+    
+    table_body = rows if rows else "<tr><td colspan='4' class='text-center text-muted'>ไม่มีข้อมูล</td></tr>"
+    sub_content = f"""<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{table_body}</tbody></table></div></div>"""
+    
+    html = BASE_LAYOUT.replace('{% block header %}3.1 เงินฉุกเฉิน{% endblock %}', 'เงินฉุกเฉิน').replace('{% block content %}{% endblock %}', sub_content)
     return render_template_string(html, title="เงินฉุกเฉิน", page="emergency")
 
 @app.route('/customer_gold')
@@ -1803,7 +1787,11 @@ def customer_gold():
                 <td class="text-end"><a href='/customer_details/{t.customer_name}' class='btn btn-sm btn-success-light fw-bold'>🔍 ดูรายละเอียด</a></td>
             </tr>
             """
-    html = BASE_LAYOUT.replace('{% block header %}3.2 ผ่อนทอง{% endblock %}', 'ผ่อนทอง').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan=\'4\' class=\'text-center text-muted\'>ไม่มีข้อมูล</td></tr>"}</tbody></table></div></div>')
+    
+    table_body = rows if rows else "<tr><td colspan='4' class='text-center text-muted'>ไม่มีข้อมูล</td></tr>"
+    sub_content = f"""<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{table_body}</tbody></table></div></div>"""
+    
+    html = BASE_LAYOUT.replace('{% block header %}3.2 ผ่อนทอง{% endblock %}', 'ผ่อนทอง').replace('{% block content %}{% endblock %}', sub_content)
     return render_template_string(html, title="ผ่อนทอง", page="gold")
 
 @app.route('/customer_debt')
@@ -1823,7 +1811,11 @@ def customer_debt():
                 <td class="text-end"><a href='/customer_details/{t.customer_name}' class='btn btn-sm btn-success-light fw-bold'>🔍 ดูรายละเอียด</a></td>
             </tr>
             """
-    html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', f'<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{rows if rows else "<tr><td colspan=\'4\' class=\'text-center text-muted\'>ไม่มีข้อมูล</td></tr>"}</tbody></table></div></div>')
+            
+    table_body = rows if rows else "<tr><td colspan='4' class='text-center text-muted'>ไม่มีข้อมูล</td></tr>"
+    sub_content = f"""<div class="card p-4 shadow-sm border-warning"><div class="table-responsive"><table class="table table-striped text-nowrap align-middle"><thead><tr><th>ชื่อลูกค้า</th><th>เบอร์โทร</th><th>เซลล์</th><th class="text-end">จัดการ</th></tr></thead><tbody>{table_body}</tbody></table></div></div>"""
+    
+    html = BASE_LAYOUT.replace('{% block header %}3.3 ยอดค้างเก่า{% endblock %}', 'ยอดค้างเก่า').replace('{% block content %}{% endblock %}', sub_content)
     return render_template_string(html, title="ยอดค้างเก่า", page="debt")
 
 @app.route('/all_transactions')
