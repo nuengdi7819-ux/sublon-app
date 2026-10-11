@@ -27,11 +27,15 @@ app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
 
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
-    "pool_recycle": 180,
-    "pool_size": 5,
-    "max_overflow": 10,
+    "pool_recycle": 60,
+    "pool_size": 2,
+    "max_overflow": 5,
     "connect_args": {
-        "sslmode": "require"
+        "sslmode": "require",
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
     }
 }
 
