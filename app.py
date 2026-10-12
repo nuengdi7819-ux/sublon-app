@@ -164,7 +164,7 @@ BASE_LAYOUT = """
     <div class="mobile-header shadow-sm">
         <div class="d-flex align-items-center gap-2">
             <button class="btn btn-outline-warning btn-sm" onclick="toggleSidebar()">☰ เมนู</button>
-            <h5 class="text-warning fw-bold mb-0">🔱 ทรัพย์ล้น.com</h5>
+            <a href="/dashboard" class="text-warning fw-bold text-decoration-none">🔱 ทรัพย์ล้น.com</a>
         </div>
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-warning text-dark">{{ session.get('admin') }}</span>
@@ -176,8 +176,8 @@ BASE_LAYOUT = """
 
     <div class="sidebar p-3 d-flex flex-column shadow" id="sidebarMenu">
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <h4 class="text-warning fw-bold d-none d-lg-block">🔱 ทรัพย์ล้น.com</h4>
-            <h5 class="text-warning fw-bold d-lg-none">🔱 เมนูหลัก</h5>
+            <h4 class="mb-0 d-none d-lg-block"><a href="/dashboard" class="text-warning fw-bold text-decoration-none">🔱 ทรัพย์ล้น.com</a></h4>
+            <h5 class="text-warning fw-bold d-lg-none"><a href="/dashboard" class="text-warning fw-bold text-decoration-none">🔱 ทรัพย์ล้น.com</a></h5>
             <button class="btn-close btn-close-white d-lg-none" onclick="toggleSidebar()"></button>
         </div>
         <div class="mb-3 px-2 d-none d-lg-block text-warning small border-bottom border-secondary pb-2">ผู้ใช้งาน: <b>{{ session.get('admin') }}</b></div>
@@ -339,7 +339,6 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
-    # คำนวณดอกเบี้ยต่อวันในหน่วยความจำโดยไม่สั่งอัปเดตฐานข้อมูลกลางคันเพื่อป้องกัน Deadlock
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
@@ -1260,6 +1259,7 @@ def customer_details(cust_name):
         rows += f"""
         <tr>
             <td class="text-center">{checkbox_elem}</td>
+            <td><span class="badge bg-dark text-warning border border-warning" style="font-size: 0.8rem;">#{tx.id}</span></td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str}</td>
@@ -1286,7 +1286,7 @@ def customer_details(cust_name):
                 <div class="modal-content border-warning">
                     <form action="/update_payment/{tx.id}" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
-                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name}</h5>
+                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name} (#ID: {tx.id})</h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
@@ -1455,9 +1455,9 @@ def customer_details(cust_name):
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th class="text-center" style="width: 50px;">เลือก</th><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
+                    <tr><th class="text-center" style="width: 50px;">เลือก</th><th>#ID</th><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1646,7 +1646,6 @@ def delete_orphaned_history(hid):
     db.session.remove()
     return redirect(url_for('check_orphaned_payments'))
 
-# ==================== หน้าสรุปยอดแบบกระชับ (แสดงเฉพาะชื่อ) ====================
 @app.route('/members')
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
@@ -2145,7 +2144,7 @@ def payment_history(tx_id):
             rows += f"<tr><td>{h.payment_date.strftime('%d/%m/%Y')}</td><td class='text-primary fw-bold'>{display_pay:,.2f}</td><td><span class='badge bg-info text-dark'>{h.receiving_account or 'กรุงศรีอยุธยา'}</span></td><td class='text-danger'>{h.fine_amount:,.2f}</td><td class='text-warning text-dark'>{h.discount_amount:,.2f}</td><td>{h.interest_paid:,.2f}</td><td>{h.principal_reduced:,.2f}</td><td>{h.note or '-'}</td><td><span class='badge bg-secondary'>{h.admin_name or '-'}</span></td><td>{del_btn}</td></tr>"
 
     if not rows: rows = "<tr><td colspan='10' class='text-center text-muted'>ยังไม่มีประวัติการชำระเงิน</td></tr>"
-    content = f"""<div class="card p-4 shadow-sm border-warning"><div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name}</h4><a href="/dashboard" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a></div><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th>จัดการ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
+    content = f"""<div class="card p-4 shadow-sm border-warning"><div class="d-flex justify-content-between align-items-center mb-3"><h4 class="mb-0 fs-5 text-danger fw-bold">📜 ประวัติการชำระเงิน: {tx.customer_name} (#ID: {tx.id})</h4><a href="/dashboard" class="btn btn-sm btn-secondary">กลับหน้าหลัก</a></div><div class="table-responsive"><table class="table table-striped align-middle text-nowrap"><thead class="table-dark"><tr><th>วันที่ทำรายการ</th><th>ยอดจ่ายจริง</th><th>ช่องทางรับเงิน</th><th>ค่าปรับ</th><th>ส่วนลด</th><th>ตัดดอกเบี้ย</th><th>ตัดเงินต้น</th><th>หมายเหตุ</th><th>ผู้บันทึก</th><th>จัดการ</th></tr></thead><tbody>{rows}</tbody></table></div></div>"""
     html = BASE_LAYOUT.replace('{% block header %}ประวัติการชำระเงิน{% endblock %}', 'ประวัติการชำระเงิน').replace('{% block content %}{% endblock %}', content)
     return render_template_string(html, title="ประวัติการชำระเงิน", page="dashboard")
 
