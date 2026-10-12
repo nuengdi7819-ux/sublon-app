@@ -23,7 +23,7 @@ if DATABASE_URL:
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
@@ -345,30 +345,33 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # เริ่มต้นนับดอกเบี้ยสะสมจากวันกู้ (tx_start_date) เสมอ
     calc_start_date = tx_start_date
 
-    # ตรวจสอบประวัติการชำระ: หากมีการจ่ายเงินมาเกินดอกสะสม (จนทำให้เงินต้นลดลง หรือตัดต้น)
-    # ให้เปลี่ยนจุดเริ่มต้นคำนวณดอกเบี้ยสะสมมาเป็น "วันที่ชำระเงินครั้งล่าสุดที่มีการตัดเงินต้น"
+    if getattr(tx, 'start_next_day', False) and calc_start_date == tx_start_date:
+        calc_start_date = tx_start_date + timedelta(days=1)
+
+    # ปรับปรุง: ตัดรอบวันคิดดอกเบี้ยจากประวัติการชำระเงินทุกรายการล่าสุดโดยอัตโนมัติ
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
-            if h.principal_reduced > 0:
-                if isinstance(h.payment_date, str):
-                    try:
-                        calc_start_date = datetime.strptime(h.payment_date.split()[0], '%Y-%m-%d').date()
-                    except:
-                        pass
-                elif isinstance(h.payment_date, datetime):
-                    calc_start_date = h.payment_date.date()
-                elif hasattr(h.payment_date, 'year'):
-                    calc_start_date = h.payment_date
-                break
+            h_date = None
+            if isinstance(h.payment_date, str):
+                try:
+                    h_date = datetime.strptime(h.payment_date.split()[0], '%Y-%m-%d').date()
+                except:
+                    pass
+            elif isinstance(h.payment_date, datetime):
+                h_date = h.payment_date.date()
+            elif hasattr(h.payment_date, 'year'):
+                h_date = h.payment_date
 
+            if h_date:
+                calc_start_date = h_date + timedelta(days=1)
+                break
+    
     days = (end_date - calc_start_date).days
-    # หากวันเริ่มต้นคำนวณตรงกับวันกู้ และไม่ได้เปิดใช้ start_next_day ให้บวก 1 วัน
-    if calc_start_date == tx_start_date and not tx.start_next_day:
-        days += 1
+    if calc_start_date > end_date:
+        days = 0
 
     if days < 0: days = 0
     tx.days_passed_val = days
@@ -1270,10 +1273,8 @@ def customer_details(cust_name):
         base_bill_amt = tx.principal + tx.accumulated_interest
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
-        if tx.principal <= 0 or tx.status == 'คืนแล้ว':
-            id_display = '<span class="badge bg-light text-primary border border-primary fw-bold" style="font-size: 0.8rem;">ปิดแล้ว</span>'
-        else:
-            id_display = f'<span class="badge bg-dark text-warning border border-warning" style="font-size: 0.8rem;">{tx.id}</span>'
+        # ปรับปรุง: แสดงเลข ID เป็นสไตล์ป้ายสีเดียวกันทั้งหมด
+        id_display = f'<span class="badge bg-dark text-warning border border-warning" style="font-size: 0.8rem;">{tx.id}</span>'
 
         rows += f"""
         <tr>
@@ -1410,64 +1411,14 @@ def customer_details(cust_name):
         </div>
         """
 
-    modals_html += f"""
-    <div class="modal fade" id="selectedBillsModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-success shadow-lg">
-                <div class="modal-header bg-success text-white py-2">
-                    <h5 class="modal-title fw-bold fs-6">ใบแจ้งยอดชำระรวม</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body bg-light p-2">
-                    <div class="text-center mb-1">
-                        <h6 class="text-danger fw-bold mb-0" id="selectedBillTitleDisplay">ใบแจ้งยอดชำระรวม</h6>
-                        <span class="text-muted" style="font-size: 0.75rem;">👤 <b>{cust_name}</b> | รวม <span class="badge bg-danger" id="selectedBillsCount">0 บิล</span></span>
-                    </div>
-
-                    <div class="p-3 mb-2 border border-success rounded bg-white text-center shadow-sm">
-                        <span class="text-muted d-block mb-1" style="font-size: 0.8rem;">ยอดรวมสุทธิที่ต้องชำระ (ทุกบิลที่เลือก)</span>
-                        <h3 class="text-success fw-bold mb-0" id="selectedBillsTotalAmount">0.00 บาท</h3>
-                    </div>
-
-                    <div class="p-2 rounded border border-success bg-white text-center shadow-sm mb-2">
-                        <div class="bg-light p-1 d-inline-block rounded border mb-1">
-                            <img src="https://raw.githubusercontent.com/nuengdi7819-ux/sublon-app/main/GSB.jpg" alt="QR Code พร้อมเพย์" style="width: 130px; height: 130px; object-fit: contain;">
-                        </div>
-                        <div class="text-secondary small" style="font-size: 0.72rem; line-height: 1.3;">
-                            🟡 <b>กรุงศรี:</b> 803-931-9819 | 🩷 <b>ออมสิน:</b> 020-409-437-819<br>
-                            <span class="text-muted">* โอนแล้วส่งสลิปทางแชทนี้ได้เลยครับ ขอบคุณครับ 🙏</span>
-                        </div>
-                    </div>
-
-                    <div class="px-2 py-1 bg-white rounded border border-secondary text-center">
-                        <div class="form-check d-inline-block m-0">
-                            <input class="form-check-input border-success" type="checkbox" id="selectedAdvanceChk" onchange="updateSelectedBillsCalc()">
-                            <label class="form-check-label fw-bold text-success" style="font-size: 0.85rem;" for="selectedAdvanceChk">
-                                แจ้งยอดพรุ่งนี้
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer bg-white py-1 justify-content-between">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
-                    <button type="button" class="btn btn-success btn-sm fw-bold px-3 text-white" style="font-size: 0.85rem;" onclick="copySelectedBillsText('{cust_name}')">📋 คัดลอกข้อความส่งแชท</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    """
-
     content = f"""
     <div class="card p-4 shadow-sm border-warning">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h4 class="mb-0 fs-5 text-danger fw-bold">👤 รายละเอียดบัญชีทั้งหมดของ: {cust_name}</h4>
-                <small class="text-muted">ลูกค้ารายนี้มีทั้งหมด <b>{len(txs)}</b> รายการในระบบ (ติ๊กเลือกบิลที่ต้องการรวมยอดด้านล่าง)</small>
+                <small class="text-muted">ลูกค้ารายนี้มีทั้งหมด <b>{len(txs)}</b> รายการในระบบ</small>
             </div>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-success fw-bold px-3" onclick="openSelectedBillsModal()">
-                    📄 ออกบิลรวมที่เลือก
-                </button>
+            <div>
                 <a href="/dashboard" class="btn btn-sm btn-secondary fw-bold">⬅ กลับหน้าหลัก</a>
             </div>
         </div>
