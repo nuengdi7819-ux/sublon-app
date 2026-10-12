@@ -1270,11 +1270,11 @@ def customer_details(cust_name):
         base_bill_amt = tx.principal + tx.accumulated_interest
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
+        # ปรับการแสดงผล ID ของรายการ: ถ้าปิดแล้ว (ต้น <= 0) ให้แสดงเป็นตัวเลขสีน้ำเงินเล็กบาง
         if tx.principal <= 0 or tx.status == 'คืนแล้ว':
-            id_display = '<span class="badge bg-light text-primary border border-primary fw-bold" style="font-size: 0.8rem;">ปิดแล้ว</span>'
+            id_display = f'<span class="text-primary fw-light" style="font-size: 0.78rem;" title="ID: {tx.id}">{tx.id}</span>'
         else:
             id_display = f'<span class="badge bg-dark text-warning border border-warning" style="font-size: 0.8rem;">{tx.id}</span>'
-
         rows += f"""
         <tr>
             <td class="text-center">{checkbox_elem}</td>
