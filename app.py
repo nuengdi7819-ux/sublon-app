@@ -339,6 +339,7 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
+    # คำนวณดอกเบี้ยต่อวันในหน่วยความจำโดยไม่สั่งอัปเดตฐานข้อมูลกลางคันเพื่อป้องกัน Deadlock
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
@@ -463,59 +464,60 @@ def index():
     current_year, current_month = thai_today.year, thai_today.month
 
     try:
-        query = Transaction.query.filter(Transaction.principal > 0)
-        if search_query:
-            search_pattern = f"%{search_query}%"
-            query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
+        with db.session.no_autoflush:
+            query = Transaction.query.filter(Transaction.principal > 0)
+            if search_query:
+                search_pattern = f"%{search_query}%"
+                query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
 
-        if start_date_str and end_date_str:
-            s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.filter((Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) | (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date))
-        elif start_date_str:
-            target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            query = query.filter((Transaction.start_date == target_date) | (Transaction.last_payment_date == target_date))
-        elif not search_query:
-            current_match_codes = []
-            if 4 <= today_day <= 6: current_match_codes.append("6")
-            if 9 <= today_day <= 12: current_match_codes.append("12")
-            if 14 <= today_day <= 16: current_match_codes.append("16")
-            if 20 <= today_day <= 23: current_match_codes.append("23")
-            if 24 <= today_day <= 26: current_match_codes.append("26")
-            if today_day >= 29 or today_day <= 2: current_match_codes.append("2")
+            if start_date_str and end_date_str:
+                s_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                e_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+                query = query.filter((Transaction.start_date >= s_date) & (Transaction.start_date <= e_date) | (Transaction.last_payment_date >= s_date) & (Transaction.last_payment_date <= e_date))
+            elif start_date_str:
+                target_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                query = query.filter((Transaction.start_date == target_date) | (Transaction.last_payment_date == target_date))
+            elif not search_query:
+                current_match_codes = []
+                if 4 <= today_day <= 6: current_match_codes.append("6")
+                if 9 <= today_day <= 12: current_match_codes.append("12")
+                if 14 <= today_day <= 16: current_match_codes.append("16")
+                if 20 <= today_day <= 23: current_match_codes.append("23")
+                if 24 <= today_day <= 26: current_match_codes.append("26")
+                if today_day >= 29 or today_day <= 2: current_match_codes.append("2")
 
-            all_active_txs = Transaction.query.filter(Transaction.principal > 0).all()
-            scheduled_today = []
-            for t in all_active_txs:
-                if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
-                    saved_codes = t.due_day_of_month.split(',')
-                    if any(code in current_match_codes for code in saved_codes):
-                        scheduled_today.append(t)
+                all_active_txs = Transaction.query.filter(Transaction.principal > 0).all()
+                scheduled_today = []
+                for t in all_active_txs:
+                    if t.schedule_type == 'กำหนดจ่ายประจำเดือน' and t.due_day_of_month:
+                        saved_codes = t.due_day_of_month.split(',')
+                        if any(code in current_match_codes for code in saved_codes):
+                            scheduled_today.append(t)
 
-            other_txs = Transaction.query.filter(
-                Transaction.principal > 0,
-                db.or_(
-                    Transaction.schedule_type == 'จ่ายทุกวัน',
-                    Transaction.start_date == thai_today,
-                    Transaction.last_payment_date == thai_today
-                )
-            ).all()
+                other_txs = Transaction.query.filter(
+                    Transaction.principal > 0,
+                    db.or_(
+                        Transaction.schedule_type == 'จ่ายทุกวัน',
+                        Transaction.start_date == thai_today,
+                        Transaction.last_payment_date == thai_today
+                    )
+                ).all()
 
-            seen_ids = set()
-            transactions = []
-            for t in scheduled_today + other_txs:
-                if t.id not in seen_ids:
-                    seen_ids.add(t.id)
-                    transactions.append(t)
-        else:
-            transactions = query.order_by(Transaction.customer_name.asc()).all()
+                seen_ids = set()
+                transactions = []
+                for t in scheduled_today + other_txs:
+                    if t.id not in seen_ids:
+                        seen_ids.add(t.id)
+                        transactions.append(t)
+            else:
+                transactions = query.order_by(Transaction.customer_name.asc()).all()
 
-        for tx in transactions:
-            calculate_tx_values(tx)
-            tx.days_passed = f"{tx.days_passed_val} วัน"
+            for tx in transactions:
+                calculate_tx_values(tx)
+                tx.days_passed = f"{tx.days_passed_val} วัน"
 
-        all_txs_ever = Transaction.query.all()
-        for tx in all_txs_ever: calculate_tx_values(tx)
+            all_txs_ever = Transaction.query.all()
+            for tx in all_txs_ever: calculate_tx_values(tx)
 
         customer_active_counts = defaultdict(int)
         for t in all_txs_ever:
@@ -1237,11 +1239,12 @@ def delete_expense(exp_id):
 def customer_details(cust_name):
     if 'admin' not in session: return redirect(url_for('login'))
     clean_name = cust_name.strip()
-    txs = Transaction.query.filter(db.func.lower(Transaction.customer_name) == clean_name.lower()).order_by(Transaction.start_date.desc()).all()
-    if not txs:
-        txs = Transaction.query.filter(Transaction.customer_name.ilike(f"%{clean_name}%")).order_by(Transaction.start_date.desc()).all()
+    with db.session.no_autoflush:
+        txs = Transaction.query.filter(db.func.lower(Transaction.customer_name) == clean_name.lower()).order_by(Transaction.start_date.desc()).all()
+        if not txs:
+            txs = Transaction.query.filter(Transaction.customer_name.ilike(f"%{clean_name}%")).order_by(Transaction.start_date.desc()).all()
 
-    for tx in txs: calculate_tx_values(tx)
+        for tx in txs: calculate_tx_values(tx)
 
     rows, modals_html = "", ""
     for tx in txs:
@@ -1467,8 +1470,9 @@ def customer_details(cust_name):
 def monthly_summary():
     if 'admin' not in session: return redirect(url_for('login'))
 
-    all_txs_ever = Transaction.query.all()
-    for tx in all_txs_ever: calculate_tx_values(tx)
+    with db.session.no_autoflush:
+        all_txs_ever = Transaction.query.all()
+        for tx in all_txs_ever: calculate_tx_values(tx)
 
     monthly_data = defaultdict(lambda: {'count_tx': set(), 'new_investment': 0.0, 'month_profit': 0.0})
 
@@ -1519,20 +1523,21 @@ def monthly_details(ym, category):
         year_i, month_i = int(year_val), int(month_val)
     except: return redirect(url_for('monthly_summary'))
 
-    all_txs = Transaction.query.all()
-    target_txs = []
+    with db.session.no_autoflush:
+        all_txs = Transaction.query.all()
+        target_txs = []
 
-    for tx in all_txs:
-        calculate_tx_values(tx)
-        is_in_month = False
-        if tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i: is_in_month = True
-        if tx.last_payment_date and tx.last_payment_date.year == year_i and tx.last_payment_date.month == month_i: is_in_month = True
-        if tx.histories:
-            for h in tx.histories:
-                if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
-                    is_in_month = True
-                    break
-        if is_in_month: target_txs.append(tx)
+        for tx in all_txs:
+            calculate_tx_values(tx)
+            is_in_month = False
+            if tx.start_date and tx.start_date.year == year_i and tx.start_date.month == month_i: is_in_month = True
+            if tx.last_payment_date and tx.last_payment_date.year == year_i and tx.last_payment_date.month == month_i: is_in_month = True
+            if tx.histories:
+                for h in tx.histories:
+                    if h.payment_date and h.payment_date.year == year_i and h.payment_date.month == month_i:
+                        is_in_month = True
+                        break
+            if is_in_month: target_txs.append(tx)
 
     thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
     m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
@@ -1645,7 +1650,8 @@ def delete_orphaned_history(hid):
 @app.route('/members')
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
-    txs = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
+    with db.session.no_autoflush:
+        txs = Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all()
     
     seen_names = set()
     unique_rows = ""
@@ -1687,9 +1693,10 @@ def members():
 def sales_members():
     if 'admin' not in session: return redirect(url_for('login'))
     sales_data = defaultdict(list)
-    for tx in Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all():
-        calculate_tx_values(tx)
-        sales_data[tx.sales_name].append(tx)
+    with db.session.no_autoflush:
+        for tx in Transaction.query.filter(Transaction.principal > 0).order_by(Transaction.customer_name.asc()).all():
+            calculate_tx_values(tx)
+            sales_data[tx.sales_name].append(tx)
 
     sales_content = ""
     for sales, txs in sales_data.items():
@@ -1827,13 +1834,14 @@ def all_transactions():
     search_query = request.args.get('search', '').strip()
     active_tab = request.args.get('tab', 'daily')
 
-    query = Transaction.query
-    if search_query:
-        search_pattern = f"%{search_query}%"
-        query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
+    with db.session.no_autoflush:
+        query = Transaction.query
+        if search_query:
+            search_pattern = f"%{search_query}%"
+            query = query.filter((Transaction.customer_name.ilike(search_pattern)) | (Transaction.phone.ilike(search_pattern)))
 
-    transactions = query.all()
-    for tx in transactions: calculate_tx_values(tx)
+        transactions = query.all()
+        for tx in transactions: calculate_tx_values(tx)
 
     daily_txs = [t for t in transactions if t.principal > 0 and t.schedule_type == 'จ่ายทุกวัน']
     unscheduled_txs = [t for t in transactions if t.principal > 0 and t.schedule_type == 'ยังไม่มีกำหนดจ่าย']
