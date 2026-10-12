@@ -23,7 +23,7 @@ if DATABASE_URL:
 
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your_secret_key_sublon_2026'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
@@ -345,11 +345,8 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # เริ่มต้นนับดอกเบี้ยสะสมจากวันกู้ (tx_start_date) เสมอ
     calc_start_date = tx_start_date
 
-    # ตรวจสอบประวัติการชำระ: หากมีการจ่ายเงินมาเกินดอกสะสม (จนทำให้เงินต้นลดลง หรือตัดต้น)
-    # ให้เปลี่ยนจุดเริ่มต้นคำนวณดอกเบี้ยสะสมมาเป็น "วันที่ชำระเงินครั้งล่าสุดที่มีการตัดเงินต้น"
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
@@ -366,7 +363,6 @@ def calculate_tx_values(tx):
                 break
 
     days = (end_date - calc_start_date).days
-    # หากวันเริ่มต้นคำนวณตรงกับวันกู้ และไม่ได้เปิดใช้ start_next_day ให้บวก 1 วัน
     if calc_start_date == tx_start_date and not tx.start_next_day:
         days += 1
 
@@ -1270,7 +1266,6 @@ def customer_details(cust_name):
         base_bill_amt = tx.principal + tx.accumulated_interest
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
-        # ปรับการแสดงผล ID ของรายการ: ถ้าปิดแล้ว (ต้น <= 0) ให้แสดงเป็นตัวเลขสีน้ำเงินเล็กบาง
         if tx.principal <= 0 or tx.status == 'คืนแล้ว':
             id_display = f'<span class="text-primary fw-light" style="font-size: 0.78rem;" title="ID: {tx.id}">{tx.id}</span>'
         else:
