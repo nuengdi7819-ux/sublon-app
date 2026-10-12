@@ -25,7 +25,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
-# ปรับปรุง Engine Options ให้ตัดการเชื่อมต่อเก่าที่ค้างและเชื่อมต่อใหม่ให้อัตโนมัติ ป้องกัน SSL Error
+# ปรับปรุง Engine Options ให้เชื่อมต่อใหม่อัตโนมัติ ป้องกัน SSL Error และหลุดการเชื่อมต่อ
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
     "pool_recycle": 30,
@@ -351,6 +351,7 @@ def calculate_tx_values(tx):
     if getattr(tx, 'start_next_day', False) and calc_start_date == tx_start_date:
         calc_start_date = tx_start_date + timedelta(days=1)
 
+    # ตัดรอบวันคิดดอกเบี้ยจากประวัติการชำระเงินทุกรายการล่าสุดโดยอัตโนมัติ
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
@@ -379,8 +380,7 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        approx_accrued = (tx.daily_interest * days)
-        acc = approx_accrued
+        acc = tx.daily_interest * days
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
