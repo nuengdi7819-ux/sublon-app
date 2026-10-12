@@ -25,11 +25,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
+# ปรับปรุง Engine Options ให้ตัดการเชื่อมต่อเก่าที่ค้างและเชื่อมต่อใหม่ให้อัตโนมัติ ป้องกัน SSL Error
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
-    "pool_recycle": 60,
-    "pool_size": 2,
-    "max_overflow": 5,
+    "pool_recycle": 30,
+    "pool_size": 5,
+    "max_overflow": 10,
     "connect_args": {
         "sslmode": "require",
         "keepalives": 1,
@@ -350,7 +351,6 @@ def calculate_tx_values(tx):
     if getattr(tx, 'start_next_day', False) and calc_start_date == tx_start_date:
         calc_start_date = tx_start_date + timedelta(days=1)
 
-    # ปรับปรุง: ตัดรอบวันคิดดอกเบี้ยจากประวัติการชำระเงินทุกรายการล่าสุดโดยอัตโนมัติ
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
@@ -1155,6 +1155,7 @@ def index():
         return render_template_string(html.replace('{% block content %}{% endblock %}', content), title="Dashboard", page="dashboard")
     except Exception as e:
         print("Index route error:", e)
+        db.session.rollback()
         return f"""
         <div style="padding: 30px; font-family: Prompt, sans-serif;">
             <h3 style="color: #d9534f;">⚠️ เกิดข้อผิดพลาดในการโหลดหน้า Dashboard</h3>
@@ -1273,7 +1274,6 @@ def customer_details(cust_name):
         base_bill_amt = tx.principal + tx.accumulated_interest
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
-        # ปรับปรุง: แสดงเลข ID เป็นสไตล์ป้ายสีเดียวกันทั้งหมด
         id_display = f'<span class="badge bg-dark text-warning border border-warning" style="font-size: 0.8rem;">{tx.id}</span>'
 
         rows += f"""
