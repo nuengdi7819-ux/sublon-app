@@ -339,14 +339,12 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
-    # 1. คำนวณดอกเบี้ยต่อวันปัจจุบัน อิงตามเงินต้นที่เหลืออยู่ (ลดต้นลดดอก)
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 2. นับวันต่อจากวันชำระล่าสุด (last_payment_date) ถ้ามี
     calc_start_date = tx.last_payment_date if tx.last_payment_date else tx_start_date
     if isinstance(calc_start_date, str):
         try:
@@ -364,7 +362,8 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        acc = (tx.daily_interest * days)
+        approx_accrued = (tx.daily_interest * days)
+        acc = approx_accrued
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
@@ -378,7 +377,11 @@ def calculate_tx_values(tx):
             sum_history_pay += h.pay_amount if h.pay_amount > 0 else (h.interest_paid + h.principal_reduced)
 
     if tx.type == 'ยอดค้างเก่า':
-        tx.total_paid = sum_history_pay if sum_history_pay > 0 else max(0.0, tx.original_principal - tx.principal)
+        actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else max(0.0, tx.original_principal - tx.principal)
+        if sum_principal_reduced > 0:
+            tx.principal = max(0.0, tx.original_principal - sum_principal_reduced)
+        
+        tx.total_paid = sum_history_pay if sum_history_pay > 0 else actual_prin_reduced
     else:
         fallback_principal_reduced = max(0.0, tx.original_principal - tx.principal)
         actual_prin_reduced = sum_principal_reduced if sum_principal_reduced > 0 else fallback_principal_reduced
