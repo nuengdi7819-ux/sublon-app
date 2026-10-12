@@ -345,11 +345,29 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # บังคับให้นับวันสะสมจากวันกู้เริ่มต้น (tx_start_date) เสมอ
+    # เริ่มต้นนับดอกเบี้ยสะสมจากวันกู้ (tx_start_date) เสมอ
     calc_start_date = tx_start_date
 
+    # ตรวจสอบประวัติการชำระ: หากมีการจ่ายเงินมาเกินดอกสะสม (จนทำให้เงินต้นลดลง หรือตัดต้น)
+    # ให้เปลี่ยนจุดเริ่มต้นคำนวณดอกเบี้ยสะสมมาเป็น "วันที่ชำระเงินครั้งล่าสุดที่มีการตัดเงินต้น"
+    if tx.histories:
+        sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
+        for h in sorted_histories:
+            if h.principal_reduced > 0:
+                if isinstance(h.payment_date, str):
+                    try:
+                        calc_start_date = datetime.strptime(h.payment_date.split()[0], '%Y-%m-%d').date()
+                    except:
+                        pass
+                elif isinstance(h.payment_date, datetime):
+                    calc_start_date = h.payment_date.date()
+                elif hasattr(h.payment_date, 'year'):
+                    calc_start_date = h.payment_date
+                break
+
     days = (end_date - calc_start_date).days
-    if not tx.start_next_day:
+    # หากวันเริ่มต้นคำนวณตรงกับวันกู้ และไม่ได้เปิดใช้ start_next_day ให้บวก 1 วัน
+    if calc_start_date == tx_start_date and not tx.start_next_day:
         days += 1
 
     if days < 0: days = 0
@@ -1252,7 +1270,6 @@ def customer_details(cust_name):
         base_bill_amt = tx.principal + tx.accumulated_interest
         checkbox_elem = f'<input class="form-check-input bill-checkbox" type="checkbox" value="{tx.id}" data-amount="{base_bill_amt}" data-daily-int="{tx.daily_interest}" data-type="{tx.type}" onchange="updateSelectedBillsCalc()" checked>' if tx.principal > 0 else '<span class="text-muted small">ปิดแล้ว</span>'
 
-        # เช็คสถานะเพื่อแสดงผล ID ตามที่ต้องการ (ถ้าปิดแล้วแสดงคำว่า ปิดแล้ว, ถ้ายังไม่ปิดแสดงตัวเลข ID พร้อมกรอบเหลือง)
         if tx.principal <= 0 or tx.status == 'คืนแล้ว':
             id_display = '<span class="badge bg-light text-primary border border-primary fw-bold" style="font-size: 0.8rem;">ปิดแล้ว</span>'
         else:
