@@ -8,7 +8,6 @@ import csv
 
 app = Flask(__name__)
 
-# ตั้งค่า URL และปรับปรุง SSL ของฐานข้อมูล Supabase ให้เสถียร
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:[YOUR-PASSWORD]@db.xxxxxxx.supabase.co:5432/postgres?sslmode=require')
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
@@ -339,7 +338,6 @@ def calculate_tx_values(tx):
 
     end_date = tx_closed_date if tx_closed_date else thai_today
 
-    # คำนวณดอกเบี้ยต่อวันในหน่วยความจำโดยไม่สั่งอัปเดตฐานข้อมูลกลางคันเพื่อป้องกัน Deadlock
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
         current_daily_interest = tx.initial_daily_interest * (tx.principal / tx.original_principal)
         tx.daily_interest = current_daily_interest
@@ -603,7 +601,7 @@ def index():
         for h in all_histories_for_dash:
             if h.payment_date and h.payment_date.year == current_year and h.payment_date.month == current_month:
                 if h.transaction_id and h.transaction:
-                    earned = h.principal_reduced + h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else h.interest_paid
+                    earned = h.interest_paid
                     h_profit = earned + h.fine_amount 
                     current_month_profit += h_profit
 
@@ -1260,6 +1258,7 @@ def customer_details(cust_name):
         rows += f"""
         <tr>
             <td class="text-center">{checkbox_elem}</td>
+            <td class="text-center"><span class="badge bg-dark text-warning border border-warning" style="font-size: 0.75rem; padding: 2px 5px;" title="รหัส ID ใน Supabase">#{tx.id}</span></td>
             <td><span class="badge bg-secondary">{tx.type}</span></td>
             <td><span class="badge bg-warning text-dark">{tx.funding_source or 'กรุงศรีอยุธยา'}</span></td>
             <td>{start_date_str}</td>
@@ -1286,7 +1285,7 @@ def customer_details(cust_name):
                 <div class="modal-content border-warning">
                     <form action="/update_payment/{tx.id}" method="POST">
                         <div class="modal-header bg-danger text-white py-2">
-                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name}</h5>
+                            <h5 class="modal-title fs-6">จัดการยอด: {tx.customer_name} (ID: #{tx.id})</h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body py-2">
@@ -1455,9 +1454,9 @@ def customer_details(cust_name):
         <div class="table-responsive">
             <table class="table table-striped align-middle text-nowrap">
                 <thead class="table-dark">
-                    <tr><th class="text-center" style="width: 50px;">เลือก</th><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
+                    <tr><th class="text-center" style="width: 50px;">เลือก</th><th class="text-center" style="width: 60px;">รหัส ID</th><th>ประเภทบัญชี</th><th>บัญชีปล่อยกู้</th><th>วันที่กู้</th><th>ชำระล่าสุด</th><th>เงินลงทุน</th><th>ต้นคงค้าง</th><th>ชำระแล้ว</th><th>ดอก/วัน</th><th>ดอกเบี้ยสะสม</th><th>สถานะ</th><th class="text-center">จัดการ</th></tr>
                 </thead>
-                <tbody>{rows if rows else "<tr><td colspan='12' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
+                <tbody>{rows if rows else "<tr><td colspan='13' class='text-center text-muted'>ไม่พบข้อมูลรายการของลูกค้ารายนี้</td></tr>"}</tbody>
             </table>
         </div>
     </div>
@@ -1487,7 +1486,7 @@ def monthly_summary():
     for h in all_histories:
         if h.payment_date and h.transaction_id and h.transaction:
             ym_pay = h.payment_date.strftime('%Y-%m')
-            earned = h.principal_reduced + h.interest_paid if h.transaction.type == 'ยอดค้างเก่า' else h.interest_paid
+            earned = h.interest_paid
             h_profit = earned + h.fine_amount
             monthly_data[ym_pay]['month_profit'] += h_profit
             monthly_data[ym_pay]['count_tx'].add(h.transaction_id)
@@ -1646,7 +1645,6 @@ def delete_orphaned_history(hid):
     db.session.remove()
     return redirect(url_for('check_orphaned_payments'))
 
-# ==================== หน้าสรุปยอดแบบกระชับ (แสดงเฉพาะชื่อ) ====================
 @app.route('/members')
 def members():
     if 'admin' not in session: return redirect(url_for('login'))
