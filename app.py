@@ -360,8 +360,6 @@ def calculate_tx_values(tx):
     elif isinstance(last_p_date, datetime):
         last_p_date = last_p_date.date()
 
-    
-
     if last_p_date:
         calc_start_date = last_p_date + timedelta(days=1)
 
@@ -375,7 +373,8 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        acc = tx.daily_interest * days
+        # คำนวณดอกเบี้ยรวมตามวัน หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้ว
+        acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
@@ -1514,7 +1513,7 @@ def monthly_details(ym, category):
                             break
                 if is_in_month: target_txs.append(tx)
 
-        thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+        thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
         m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
         title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
