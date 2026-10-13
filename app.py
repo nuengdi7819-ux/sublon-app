@@ -63,10 +63,10 @@ class Transaction(db.Model):
     last_payment_date = db.Column(db.Date, nullable=True)
     closed_date = db.Column(db.Date, nullable=True)
     original_principal = db.Column(db.Float, nullable=False, default=0.0)
-    principal = db.Column(db.Float, nullable=False)                     
+    principal = db.Column(db.Float, nullable=False)                                    
     daily_interest = db.Column(db.Float, nullable=False)
     initial_daily_interest = db.Column(db.Float, nullable=False, default=0.0)
-    paid_interest = db.Column(db.Float, default=0.0)      
+    paid_interest = db.Column(db.Float, default=0.0)       
     status = db.Column(db.String(20), default='ปกติ')
     installment_amount = db.Column(db.Float, default=0.0)
     schedule_type = db.Column(db.String(50), nullable=False, default='จ่ายทุกวัน') 
@@ -346,12 +346,22 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
+    # กำหนดวันเริ่มต้นคิดดอกเบี้ย
     calc_start_date = tx_start_date
 
     if getattr(tx, 'start_next_day', False) and calc_start_date == tx_start_date:
         calc_start_date = tx_start_date + timedelta(days=1)
 
-    # ตัดรอบวันคิดดอกเบี้ยจากประวัติการชำระเงินทุกรายการล่าสุดโดยอัตโนมัติ
+    # ตรวจสอบประวัติการชำระเงินล่าสุด หรือ last_payment_date เพื่อใช้เป็นฐานเริ่มนับดอกเบี้ยใหม่
+    last_p_date = tx.last_payment_date
+    if isinstance(last_p_date, str):
+        try:
+            last_p_date = datetime.strptime(last_p_date.split()[0], '%Y-%m-%d').date()
+        except:
+            last_p_date = None
+    elif isinstance(last_p_date, datetime):
+        last_p_date = last_p_date.date()
+
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
@@ -367,9 +377,14 @@ def calculate_tx_values(tx):
                 h_date = h.payment_date
 
             if h_date:
-                calc_start_date = h_date + timedelta(days=1)
+                if not last_p_date or h_date > last_p_date:
+                    last_p_date = h_date
                 break
-    
+
+    # ถ้ามีการชำระเงินหรืออัปเดตล่าสุด ให้เริ่มนับวันดอกเบี้ยถัดจากวันนั้น
+    if last_p_date:
+        calc_start_date = last_p_date + timedelta(days=1)
+
     days = (end_date - calc_start_date).days
     if calc_start_date > end_date:
         days = 0
