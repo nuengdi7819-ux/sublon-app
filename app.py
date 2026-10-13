@@ -360,24 +360,7 @@ def calculate_tx_values(tx):
     elif isinstance(last_p_date, datetime):
         last_p_date = last_p_date.date()
 
-    if tx.histories:
-        sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
-        for h in sorted_histories:
-            h_date = None
-            if isinstance(h.payment_date, str):
-                try:
-                    h_date = datetime.strptime(h.payment_date.split()[0], '%Y-%m-%d').date()
-                except:
-                    pass
-            elif isinstance(h.payment_date, datetime):
-                h_date = h.payment_date.date()
-            elif hasattr(h.payment_date, 'year'):
-                h_date = h.payment_date
-
-            if h_date:
-                if not last_p_date or h_date > last_p_date:
-                    last_p_date = h_date
-                break
+    
 
     if last_p_date:
         calc_start_date = last_p_date + timedelta(days=1)
