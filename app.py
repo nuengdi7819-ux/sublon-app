@@ -346,10 +346,10 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # กำหนดวันเริ่มต้นคิดดอกเบี้ย
+    # กำหนดวันเริ่มต้นคิดดอกเบี้ยจากวันที่กู้ก่อนเป็นหลัก
     calc_start_date = tx_start_date
 
-    if getattr(tx, 'start_next_day', False) and calc_start_date == tx_start_date:
+    if getattr(tx, 'start_next_day', False):
         calc_start_date = tx_start_date + timedelta(days=1)
 
     # ตรวจสอบประวัติการชำระเงินล่าสุด หรือ last_payment_date เพื่อใช้เป็นฐานเริ่มนับดอกเบี้ยใหม่
@@ -362,6 +362,29 @@ def calculate_tx_values(tx):
     elif isinstance(last_p_date, datetime):
         last_p_date = last_p_date.date()
 
+    if tx.histories:
+        sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
+        for h in sorted_histories:
+            h_date = None
+            if isinstance(h.payment_date, str):
+                try:
+                    h_date = datetime.strptime(h.payment_date.split()[0], '%Y-%m-%d').date()
+                except:
+                    pass
+            elif isinstance(h.payment_date, datetime):
+                h_date = h.payment_date.date()
+            elif hasattr(h.payment_date, 'year'):
+                h_date = h.payment_date
+
+            if h_date:
+                if not last_p_date or h_date > last_p_date:
+                    last_p_date = h_date
+                break
+
+    # ถ้ามีประวัติการจ่ายหรือวันจ่ายล่าสุด ให้ขยับวันเริ่มนับดอกเบี้ยเป็นวันถัดจากวันจ่ายล่าสุดทันที
+    if last_p_date:
+        calc_start_date = last_p_date + timedelta(days=1)
+        
     if tx.histories:
         sorted_histories = sorted(tx.histories, key=lambda h: h.payment_date, reverse=True)
         for h in sorted_histories:
