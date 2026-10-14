@@ -25,6 +25,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
+# ปรับปรุง Engine Options ให้เชื่อมต่อใหม่อัตโนมัติ ป้องกัน SSL Error และหลุดการเชื่อมต่อ
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
     "pool_recycle": 30,
@@ -232,7 +233,7 @@ BASE_LAYOUT = """
         {% block content %}{% endblock %}
     </div>
 
-    <script src="https://cdn.jsdelivr.5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebarMenu');
@@ -345,21 +346,13 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 กำหนดวันเริ่มต้นคำนวณดอกเบี้ย:
-    # หากมีการจ่ายเงินล่าสุดแล้ว ให้เริ่มนับวันเดินดอกเบี้ยใหม่ตั้งแต่วันถัดจากวันจ่ายล่าสุดทันที
-    if tx.last_payment_date:
-        calc_start_date = tx.last_payment_date + timedelta(days=1)
-    else:
-        if getattr(tx, 'start_next_day', False):
-            calc_start_date = tx_start_date + timedelta(days=1)
-        else:
-            calc_start_date = tx_start_date
+    # 🟢 นับวันเริ่มต้นจากวันเริ่มกู้ (start_date) เสมอสำหรับทุกประเภทรายการ
+    calc_start_date = tx_start_date
 
-    # 🟢 คำนวณจำนวนวันที่ดอกเบี้ยเดินต่อ:
-    # ถ้านับจากวันหลังจ่ายล่าสุด ให้คำนวณจำนวนวันจาก (end_date - calc_start_date) โดยบวก 1 เพื่อให้นับวันแรกหลังจ่ายรวมด้วยทันที
-    # และดอกเบี้ยสะสมจะเดินสะสมต่อไปเรื่อยๆ ทุกวันจนถึงปัจจุบัน
-    days = (end_date - calc_start_date).days + 1
+    if getattr(tx, 'start_next_day', False):
+        calc_start_date = tx_start_date + timedelta(days=1)
 
+    days = (end_date - calc_start_date).days
     if calc_start_date > end_date:
         days = 0
 
@@ -371,8 +364,8 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # ดอกเบี้ยสะสม = ดอกเบี้ยต่อวันคูณด้วยจำนวนวันที่ผ่านไปนับจากวันจ่ายล่าสุด
-        acc = tx.daily_interest * days
+        # คำนวณดอกเบี้ยรวมตั้งแต่วันเริ่มกู้จริง หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้วทั้งหมด
+        acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
@@ -1055,7 +1048,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -1095,7 +1088,7 @@ def index():
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการเก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -2188,7 +2181,7 @@ def login():
             session['admin'] = username
             return redirect(url_for('index'))
         else: error = 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!'
-    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
+    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
     return render_template_string(login_html, error=error)
 
 @app.route('/logout')
