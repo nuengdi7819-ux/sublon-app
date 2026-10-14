@@ -345,8 +345,6 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 กำหนดวันเริ่มต้นคำนวณดอกเบี้ย:
-    # หากมีการจ่ายเงินล่าสุดแล้ว ให้เริ่มนับวันเดินดอกเบี้ยใหม่ตั้งแต่วันถัดจากวันจ่ายล่าสุดทันที
     if tx.last_payment_date:
         calc_start_date = tx.last_payment_date + timedelta(days=1)
     else:
@@ -355,9 +353,6 @@ def calculate_tx_values(tx):
         else:
             calc_start_date = tx_start_date
 
-    # 🟢 คำนวณจำนวนวันที่ดอกเบี้ยเดินต่อ:
-    # ถ้านับจากวันหลังจ่ายล่าสุด ให้คำนวณจำนวนวันจาก (end_date - calc_start_date) โดยบวก 1 เพื่อให้นับวันแรกหลังจ่ายรวมด้วยทันที
-    # และดอกเบี้ยสะสมจะเดินสะสมต่อไปเรื่อยๆ ทุกวันจนถึงปัจจุบัน
     days = (end_date - calc_start_date).days + 1
 
     if calc_start_date > end_date:
@@ -371,7 +366,6 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # ดอกเบี้ยสะสม = ดอกเบี้ยต่อวันคูณด้วยจำนวนวันที่ผ่านไปนับจากวันจ่ายล่าสุด
         acc = tx.daily_interest * days
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
@@ -1029,7 +1023,7 @@ def index():
             </div>
         </div>
 
-        <!-- Modals สำหรับข้อมูลสรุปบนการ์ด -->
+        <!-- Modals สำหรับข้อมูลสรุปบนการ์ดด้านบน -->
         <div class="modal fade" id="debtModal" tabindex="-1">
             <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-warning">
@@ -1055,7 +1049,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -1095,7 +1089,7 @@ def index():
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการเก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -1298,10 +1292,10 @@ def customer_details(cust_name):
                 <td class="text-danger fw-bold">{tx.accumulated_interest:,.2f}</td>
                 <td><span class="badge {badge_color}">{'คืนแล้ว' if tx.principal <= 0 else tx.status}</span></td>
                 <td class="text-center">
-                    <div class="d-flex flex-column gap-2" style="width: 100px; margin: 0 auto;">
-                        <button type="button" class="btn btn-sm btn-success-light fw-bold w-100" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
-                        <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold w-100" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">📄 ออกบิล</button>
-                        <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold w-100" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
+                    <div class="d-flex justify-content-center gap-1 flex-nowrap" style="min-width: 180px;">
+                        <button type="button" class="btn btn-sm btn-success-light fw-bold py-1 px-2" style="font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#payModal{tx.id}">จัดการยอด</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold py-1 px-2" style="font-size: 0.8rem; background-color: #ffc107;" data-bs-toggle="modal" data-bs-target="#billModal{tx.id}">ออกบิล</button>
+                        <a href="/delete_tx/{tx.id}" class="btn btn-sm btn-danger fw-bold py-1 px-2" style="font-size: 0.8rem;" onclick="return confirm('ยืนยันการลบบิลนี้?')">ลบ</a>
                     </div>
                 </td>
             </tr>
