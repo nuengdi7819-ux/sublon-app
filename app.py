@@ -346,13 +346,20 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 แก้ไขตรงนี้: ถ้ารายการนี้มี last_payment_date ให้ใช้วันที่ชำระล่าสุดเป็นจุดตั้งต้นในการนับวันต่อทันที
-    calc_start_date = tx.last_payment_date if tx.last_payment_date else tx_start_date
+    # 🟢 กำหนดวันเริ่มต้นคำนวณดอกเบี้ย (Base Start Date)
+    if tx.last_payment_date:
+        # หากมีการชำระเงินแล้ว นับวันเริ่มดอกเบี้ยใหม่จากวันถัดไปทันที
+        calc_start_date = tx.last_payment_date + timedelta(days=1)
+    else:
+        # หากยังไม่เคยจ่ายเงิน เช็กว่าติ๊ก "เริ่มต้นคิดดอกเบี้ยวันถัดไป" หรือไม่
+        if getattr(tx, 'start_next_day', False):
+            calc_start_date = tx_start_date + timedelta(days=1)
+        else:
+            # ไม่ติ๊ก -> เริ่มคิดตั้งแต่วันนี้ (วันเริ่มกู้)
+            calc_start_date = tx_start_date
 
-    if getattr(tx, 'start_next_day', False) and not tx.last_payment_date:
-        calc_start_date = tx_start_date + timedelta(days=1)
-
-    days = (end_date - calc_start_date).days
+    # 🟢 นับจำนวนวัน: บวก 1 เพื่อให้นับวันเริ่มรวมด้วยทันที
+    days = (end_date - calc_start_date).days + 1
     if calc_start_date > end_date:
         days = 0
 
@@ -364,7 +371,6 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # คำนวณดอกเบี้ยสะสมโดยนับต่อจากวันที่ชำระล่าสุด (หรือวันเริ่มกู้) ทันที
         acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
@@ -2181,7 +2187,7 @@ def login():
             session['admin'] = username
             return redirect(url_for('index'))
         else: error = 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง!'
-    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
+    login_html = """<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>เข้าสู่ระบบ - ทรัพย์ล้น</title><link href="https://cdn.jsdelivr.5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet"><style>body{font-family:'Prompt',sans-serif;background:linear-gradient(135deg,#2c0b0e,#1a0507);color:#fff}.card{background:#fff;color:#333;border:2px solid #d4af37}</style></head><body class="d-flex align-items-center justify-content-center vh-100 p-3"><div class="card p-4 shadow-lg w-100" style="max-width:380px;"><h3 class="text-center mb-1 text-danger fw-bold">🔱 ทรัพย์ล้น</h3><p class="text-center text-muted small mb-4">ระบบบริหารจัดการการเงิน</p>{% if error %}<div class="alert alert-danger py-2 text-center">{{ error }}</div>{% endif %}<form method="POST"><div class="mb-3"><label class="form-label">ชื่อผู้ใช้งาน:</label><input type="text" name="username" class="form-control" required></div><div class="mb-3"><label class="form-label">รหัสผ่าน:</label><input type="password" name="password" class="form-control" required></div><button type="submit" class="btn btn-warning w-100 fw-bold">เข้าสู่ระบบ</button></form></div></body></html>"""
     return render_template_string(login_html, error=error)
 
 @app.route('/logout')
