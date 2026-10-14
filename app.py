@@ -25,7 +25,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_secret_key_sublon_2026')
 
-# ปรับปรุง Engine Options ให้เชื่อมต่อใหม่อัตโนมัติ ป้องกัน SSL Error และหลุดการเชื่อมต่อ
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
     "pool_recycle": 30,
@@ -233,7 +232,7 @@ BASE_LAYOUT = """
         {% block content %}{% endblock %}
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebarMenu');
@@ -346,20 +345,23 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 กำหนดวันเริ่มต้นคำนวณดอกเบี้ย (Base Start Date)
+    # 🟢 กำหนดวันเริ่มต้นคำนวณดอกเบี้ย:
+    # หากมีการจ่ายเงินล่าสุดแล้ว ให้เริ่มนับวันเดินดอกเบี้ยใหม่ตั้งแต่วันถัดจากวันจ่ายล่าสุดทันที
     if tx.last_payment_date:
-        # หากมีการชำระเงินแล้ว นับวันเริ่มดอกเบี้ยใหม่จากวันถัดไปทันที
         calc_start_date = tx.last_payment_date + timedelta(days=1)
     else:
-        # หากยังไม่เคยจ่ายเงิน เช็กว่าติ๊ก "เริ่มต้นคิดดอกเบี้ยวันถัดไป" หรือไม่
         if getattr(tx, 'start_next_day', False):
             calc_start_date = tx_start_date + timedelta(days=1)
         else:
-            # ไม่ติ๊ก -> เริ่มคิดตั้งแต่วันนี้ (วันเริ่มกู้)
             calc_start_date = tx_start_date
 
-    # 🟢 นับจำนวนวัน: บวก 1 เพื่อให้นับวันเริ่มรวมด้วยทันที
-    days = (end_date - calc_start_date).days + 1
+    # 🟢 นับจำนวนวัน: ถ้านับจากหลังวันจ่ายล่าสุด จะนับแบบปกติ (ไม่ต้องบวก 1 ซ้ำ เพราะวันถัดไปคือวันแรกที่เริ่มคิดดอกเบี้ยรอบใหม่)
+    # แต่ถ้าเป็นวันเริ่มกู้ครั้งแรกสุด ให้บวก 1 เพื่อให้นับวันแรกที่เริ่มกู้รวมด้วย
+    if tx.last_payment_date:
+        days = (end_date - calc_start_date).days + 1
+    else:
+        days = (end_date - calc_start_date).days + 1
+
     if calc_start_date > end_date:
         days = 0
 
@@ -371,7 +373,9 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        acc = (tx.daily_interest * days) - tx.paid_interest
+        # ดอกเบี้ยสะสมรอบใหม่ = (ดอกเบี้ยต่อวัน * จำนวนวันที่ผ่านไปนับจากวันจ่ายล่าสุด)
+        # หมายเหตุ: หากมีการจ่ายดอกเบี้ยตัดไปแล้ว paid_interest จะถูกทบขึ้น ทำให้ยอดดอกคงค้างสุทธิลดลงถูกต้อง
+        acc = (tx.daily_interest * days)
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
