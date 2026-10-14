@@ -321,30 +321,30 @@ BASE_LAYOUT = """
 def calculate_tx_values(tx):
     thai_today = get_thai_today()
 
-    # ตรวจสอบและแปลงชนิดข้อมูล start_date ให้เป็น date เสมอ
+    # จัดการและแปลงค่า start_date ให้เป็น date object ล้วนๆ (ตัดปัญหาเรื่องเวลาแฝง)
     tx_start_date = tx.start_date
     if isinstance(tx_start_date, str):
         try:
             tx_start_date = datetime.strptime(tx_start_date.split()[0], '%Y-%m-%d').date()
         except:
             tx_start_date = thai_today
-    elif isinstance(tx_start_date, datetime):
+    elif hasattr(tx_start_date, 'date'):
         tx_start_date = tx_start_date.date()
     elif not tx_start_date:
         tx_start_date = thai_today
 
-    # ตรวจสอบและแปลงชนิดข้อมูล closed_date ให้เป็น date เสมอ
+    # จัดการและแปลงค่า closed_date ให้เป็น date object ล้วนๆ
     tx_closed_date = tx.closed_date
     if isinstance(tx_closed_date, str):
         try:
             tx_closed_date = datetime.strptime(tx_closed_date.split()[0], '%Y-%m-%d').date()
         except:
             tx_closed_date = None
-    elif isinstance(tx_closed_date, datetime):
+    elif hasattr(tx_closed_date, 'date'):
         tx_closed_date = tx_closed_date.date()
 
     end_date = tx_closed_date if tx_closed_date else thai_today
-    if isinstance(end_date, datetime):
+    if hasattr(end_date, 'date'):
         end_date = end_date.date()
 
     if tx.original_principal > 0 and tx.initial_daily_interest > 0:
@@ -353,14 +353,14 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # แปลงค่า start_next_day ให้เป็น boolean ที่ถูกต้องเสมอ (ป้องกันค่าสตริง "False" หรือ None)
+    # แปลงค่า start_next_day ให้เป็น boolean แน่นอน
     s_next_day = tx.start_next_day
     if isinstance(s_next_day, str):
         s_next_day = s_next_day.lower() in ['true', '1', 'yes', 'on']
     else:
         s_next_day = bool(s_next_day)
 
-    # ตรรกะการนับวัน
+    # 🟢 ตรรกะการนับวันและตัดเวลาแฝงออก ป้องกันวันคำนวณพลาดเป็น 0
     if s_next_day:
         calc_start_date = tx_start_date + timedelta(days=1)
         days = (end_date - calc_start_date).days
