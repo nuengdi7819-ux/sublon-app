@@ -355,12 +355,10 @@ def calculate_tx_values(tx):
         else:
             calc_start_date = tx_start_date
 
-    # 🟢 นับจำนวนวัน: ถ้านับจากหลังวันจ่ายล่าสุด จะนับแบบปกติ (ไม่ต้องบวก 1 ซ้ำ เพราะวันถัดไปคือวันแรกที่เริ่มคิดดอกเบี้ยรอบใหม่)
-    # แต่ถ้าเป็นวันเริ่มกู้ครั้งแรกสุด ให้บวก 1 เพื่อให้นับวันแรกที่เริ่มกู้รวมด้วย
-    if tx.last_payment_date:
-        days = (end_date - calc_start_date).days + 1
-    else:
-        days = (end_date - calc_start_date).days + 1
+    # 🟢 คำนวณจำนวนวันที่ดอกเบี้ยเดินต่อ:
+    # ถ้านับจากวันหลังจ่ายล่าสุด ให้คำนวณจำนวนวันจาก (end_date - calc_start_date) โดยบวก 1 เพื่อให้นับวันแรกหลังจ่ายรวมด้วยทันที
+    # และดอกเบี้ยสะสมจะเดินสะสมต่อไปเรื่อยๆ ทุกวันจนถึงปัจจุบัน
+    days = (end_date - calc_start_date).days + 1
 
     if calc_start_date > end_date:
         days = 0
@@ -373,9 +371,8 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # ดอกเบี้ยสะสมรอบใหม่ = (ดอกเบี้ยต่อวัน * จำนวนวันที่ผ่านไปนับจากวันจ่ายล่าสุด)
-        # หมายเหตุ: หากมีการจ่ายดอกเบี้ยตัดไปแล้ว paid_interest จะถูกทบขึ้น ทำให้ยอดดอกคงค้างสุทธิลดลงถูกต้อง
-        acc = (tx.daily_interest * days)
+        # ดอกเบี้ยสะสม = ดอกเบี้ยต่อวันคูณด้วยจำนวนวันที่ผ่านไปนับจากวันจ่ายล่าสุด
+        acc = tx.daily_interest * days
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
 
@@ -1058,7 +1055,7 @@ def index():
                 <div class="modal-content border-danger">
                     <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title fw-bold fs-6">💼 รายละเอียด: เงินต้นคงค้างทั้งหมด ({total_new_principal:,.2f} บาท)</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
@@ -1098,7 +1095,7 @@ def index():
                 <div class="modal-content border-success">
                     <div class="modal-header bg-success text-white py-2">
                         <h5 class="modal-title fs-6 fw-bold">📋 รายละเอียดการเก็บเงิน ประจำวันนี้ ({thai_today.strftime('%d/%m/%Y')})</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="table-responsive">
