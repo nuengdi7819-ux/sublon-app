@@ -63,7 +63,7 @@ class Transaction(db.Model):
     last_payment_date = db.Column(db.Date, nullable=True)
     closed_date = db.Column(db.Date, nullable=True)
     original_principal = db.Column(db.Float, nullable=False, default=0.0)
-    principal = db.Column(db.Float, nullable=False)                                     
+    principal = db.Column(db.Float, nullable=False)                                             
     daily_interest = db.Column(db.Float, nullable=False)
     initial_daily_interest = db.Column(db.Float, nullable=False, default=0.0)
     paid_interest = db.Column(db.Float, default=0.0)       
@@ -346,25 +346,23 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 นับวันเริ่มต้นจากวันเริ่มกู้ (start_date) เสมอสำหรับทุกประเภทรายการ
-    calc_start_date = tx_start_date
-
+    # 🟢 ตรรกะการนับวันตามที่ผู้ใช้ต้องการ
     if getattr(tx, 'start_next_day', False):
         calc_start_date = tx_start_date + timedelta(days=1)
-
-    days = (end_date - calc_start_date).days
-    if calc_start_date > end_date:
-        days = 0
-
-    if days < 0: 
-        days = 0
+        days = (end_date - calc_start_date).days
+        if days < 0:
+            days = 0
+    else:
+        # นับตั้งแต่วันเริ่มกู้เป็นวันแรกทันที (Day 1)
+        days = (end_date - tx_start_date).days + 1
+        if days < 0:
+            days = 0
     
     tx.days_passed_val = days
 
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # คำนวณดอกเบี้ยรวมตั้งแต่วันเริ่มกู้จริง หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้วทั้งหมด
         acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
