@@ -346,34 +346,25 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
+    # 🟢 นับวันเริ่มต้นจากวันเริ่มกู้ (start_date) เสมอสำหรับทุกประเภทรายการ
     calc_start_date = tx_start_date
 
     if getattr(tx, 'start_next_day', False):
         calc_start_date = tx_start_date + timedelta(days=1)
 
-    last_p_date = tx.last_payment_date
-    if isinstance(last_p_date, str):
-        try:
-            last_p_date = datetime.strptime(last_p_date.split()[0], '%Y-%m-%d').date()
-        except:
-            last_p_date = None
-    elif isinstance(last_p_date, datetime):
-        last_p_date = last_p_date.date()
-
-    if last_p_date:
-        calc_start_date = last_p_date + timedelta(days=1)
-
     days = (end_date - calc_start_date).days
     if calc_start_date > end_date:
         days = 0
 
-    if days < 0: days = 0
+    if days < 0: 
+        days = 0
+    
     tx.days_passed_val = days
 
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # คำนวณดอกเบี้ยรวมตามวัน หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้ว
+        # คำนวณดอกเบี้ยรวมตั้งแต่วันเริ่มกู้จริง หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้วทั้งหมด
         acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
@@ -1513,7 +1504,7 @@ def monthly_details(ym, category):
                             break
                 if is_in_month: target_txs.append(tx)
 
-        thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
+        thai_months = {"01": "มกราคม", "02": "กุมภาพันธ์", "03": "มีนาคม", "04": "เมษายน", "05": "พฤษภาคม", "06": "มิถุนายน", "07": "กรกฎาคม", "08": "สิงหาคม", "09": "กันยายน", "10": "ตุลาคม", "11": "พฤศจิกายน", "12": "ธันวาคม"}
         m_label = f"{thai_months.get(month_val, month_val)} {year_i+543}"
         title_str = f"แฟ้มรายละเอียด ประจำเดือน {m_label}"
 
