@@ -346,10 +346,10 @@ def calculate_tx_values(tx):
     else:
         tx.daily_interest = tx.initial_daily_interest if tx.initial_daily_interest > 0 else tx.daily_interest
 
-    # 🟢 นับวันเริ่มต้นจากวันเริ่มกู้ (start_date) เสมอสำหรับทุกประเภทรายการ
-    calc_start_date = tx_start_date
+    # 🟢 แก้ไขตรงนี้: ถ้ารายการนี้มี last_payment_date ให้ใช้วันที่ชำระล่าสุดเป็นจุดตั้งต้นในการนับวันต่อทันที
+    calc_start_date = tx.last_payment_date if tx.last_payment_date else tx_start_date
 
-    if getattr(tx, 'start_next_day', False):
+    if getattr(tx, 'start_next_day', False) and not tx.last_payment_date:
         calc_start_date = tx_start_date + timedelta(days=1)
 
     days = (end_date - calc_start_date).days
@@ -364,7 +364,7 @@ def calculate_tx_values(tx):
     if getattr(tx, 'is_locked_interest', False):
         acc = tx.locked_interest_amount - tx.paid_interest
     else:
-        # คำนวณดอกเบี้ยรวมตั้งแต่วันเริ่มกู้จริง หักลบด้วยดอกเบี้ยที่จ่ายสะสมไปแล้วทั้งหมด
+        # คำนวณดอกเบี้ยสะสมโดยนับต่อจากวันที่ชำระล่าสุด (หรือวันเริ่มกู้) ทันที
         acc = (tx.daily_interest * days) - tx.paid_interest
 
     tx.accumulated_interest = acc if acc > 0 else 0.0
