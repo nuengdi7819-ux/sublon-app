@@ -228,24 +228,24 @@ BASE_LAYOUT = """
         backdrop.classList.toggle('show');
     }
 
-    function togglePayInput(id) {
-        let selectElem = document.getElementById('payType' + id);
-        let amountContainer = document.getElementById('amountDiv' + id);
-        let adjustContainer = document.getElementById('adjustContainer' + id);
-        
-        if (selectElem) {
-            if (selectElem.value === 'full') {
-                if(amountContainer) amountContainer.style.display = 'none';
-                if(adjustContainer) adjustContainer.style.display = 'none';
-            } else if (selectElem.value === 'adjust') {
-                if(amountContainer) amountContainer.style.display = 'none';
-                if(adjustContainer) adjustContainer.style.display = 'block';
-            } else {
-                if(amountContainer) amountContainer.style.display = 'block';
-                if(adjustContainer) adjustContainer.style.display = 'none';
-            }
+  function togglePayInput(id) {
+    let selectElem = document.getElementById('payType' + id);
+    let amountContainer = document.getElementById('amountDiv' + id);
+    let adjustContainer = document.getElementById('adjustContainer' + id);
+    
+    if (selectElem) {
+        if (selectElem.value === 'full') {
+            if(amountContainer) amountContainer.style.display = 'none';
+            if(adjustContainer) adjustContainer.style.display = 'none';
+        } else if (selectElem.value === 'adjust') {
+            if(amountContainer) amountContainer.style.display = 'none';
+            if(adjustContainer) adjustContainer.style.display = 'block'; // สั่งให้ช่องปรับปรุงต้นแสดงขึ้นมา
+        } else {
+            if(amountContainer) amountContainer.style.display = 'block';
+            if(adjustContainer) adjustContainer.style.display = 'none';
         }
     }
+}
 
     function handleTypeChange() {
         let typeVal = document.getElementById('txTypeSelect').value;
